@@ -799,6 +799,12 @@ configured — face detection, say — at exit 0. HISTORY.md § `lucid doctor`.
   when something new becomes callable, `uv sync` behind it, tag, and name the
   HISTORY.md `##` section in the annotation. There is no `CHANGELOG.md` on
   purpose. HISTORY.md § The version caught up.
+  - **A GitHub Release is a hand-written launch post, not a per-tag note, so
+    it does not follow a bump** — which is how `v0.23.0` stayed "Latest" two
+    versions on, describing a proofcut that stopped at the render and
+    claiming nobody had run Windows. Cut one only where a release is worth
+    announcing, and **a wording pass must name the published releases** or it
+    silently misses them. HISTORY.md § The release nobody had cut.
 - **A snapshot is a *pair* — `N.otio` + `N.manifest.json` — and
   `Project.write_manifest` takes one by default.** Most authoring state is
   manifest state (the cue table, framing rects, the music bed, the caption

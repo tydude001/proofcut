@@ -15249,3 +15249,38 @@ outside it).
 - Everything else in LAUNCH.md step 3 was verified live the same day:
   description and the eight topics, private vulnerability reporting on,
   `v0.23.0` latest, Ko-fi in `fundingLinks`, issues #1 and #2 pinned.
+
+## The release nobody had cut — 2026-09-15
+
+Glama listing (§ Glama takes a submission) made the awesome-list PR due, and
+checking what a stranger arriving from it would see found the repo's **Latest
+release was `v0.23.0`, from the day before the finishing half shipped**. Tags
+ran to `v0.25.0`; the four version literals all read 0.25.0; only the release
+page had not moved, because a release here is a hand-written launch post
+rather than a per-version note (there is no `CHANGELOG.md`, deliberately).
+
+- **A release body is a public claim and it ages like one.** `v0.23.0`'s said
+  proofcut "cuts a video by editing its transcript" — the front-half wording
+  SHOWCASE.md steps 1–2 replaced everywhere else on 2026-09-15 — and it said
+  **"No person has run it on Windows yet"**, which § The whole-film demo on
+  the Windows laptop had already falsified. README.md carried the corrected
+  sentence; the release did not. **Nothing re-reads a published artifact**, so
+  a wording pass has to name the releases or it misses them.
+- **`v0.24.0` was deliberately not backfilled.** Tags are the version record
+  and each annotation names its HISTORY.md section; a release page for an
+  intermediate version nobody was told about would make the Releases tab read
+  as the changelog this repo has chosen not to keep.
+- **Email rewrites links, and that reached a published page.** The body was
+  sent to Tyler's phone through Gmail to paste into the release form; Gmail
+  rewrote two markdown link targets to `google.com/url?q=…` click-trackers,
+  and one rewrite landed the closing paren early, so `&source=gmail&ust=…`
+  rendered as literal text. Published that way, found by diffing the release
+  body against the source, fixed with
+  `gh release edit v0.25.0 -R tydude001/proofcut --notes-file`. **Never send
+  markup through a channel that rewrites URLs**, and diff a pasted artifact
+  against its source rather than reading it for sense — both links still
+  resolved, so it read correctly.
+- **`gh` needs `-R` in this checkout.** There is no `github` remote (the
+  mirror is Gitea-side), so every `gh` subcommand that infers a repo from the
+  working copy fails with "none of the git remotes … point to a known GitHub
+  host" rather than acting on the wrong one.
