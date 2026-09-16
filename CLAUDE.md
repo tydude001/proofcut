@@ -65,6 +65,13 @@ truncates, the unbounded replies, progress for the long tools, the briefs
 as prompts — is [docs/plans/MCP.md](docs/plans/MCP.md), written
 2026-09-16 and built the same day but for resources, which it defers;
 HISTORY.md § The MCP surface, rebuilt for deferred loading is the record.
+How a stranger gets from a bare machine to a checked render — doctor's
+advice corrected, a no-sudo Linux installer that fills only doctor's ✗s,
+where it lives, the PyPI name, and why Linux goes ahead of LAUNCH.md's
+install-script gate — is [docs/plans/INSTALL.md](docs/plans/INSTALL.md),
+written 2026-09-16 off PRIOR-ART.md's FableCut read. It measured **Shotcut's
+portable Linux melt drawing with no X server**, where both distro MLTs need
+`xvfb-run`.
 Open-item status lives in the wiki, not here. **This repo is public: a
 goodsometimes video's production record (versions, renders, creative calls,
 release state) goes in `goodsometimes/ideas/<video>.md`**, and HISTORY.md
