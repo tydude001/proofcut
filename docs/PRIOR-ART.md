@@ -384,6 +384,68 @@ FableCut `project.json` so a word-cut film can be hand-finished there, the way
 `import_edit` already reads a `.kdenlive` — and it is **not queued**: build it
 when someone asks, not on speculation.
 
+## Glama's related servers — 2026-09-16
+
+The six Glama lists beside proofcut's own entry
+(`glama.ai/mcp/servers/tydude001/proofcut/related-servers`). Each was
+shallow-cloned and read, README against source; none was installed or run.
+Tool counts are registrations counted in source; commit counts are the GitHub
+API's. Heads that day: vidcut `4558d35`, CutPilot `2114ca2`,
+ffmpeg-mcp-video-editor `c65cd58`, mcpCut `573e443`, NeuroCut `c88f266`,
+Unflick `ddc3a3d` (pushed that day, so the read may predate it).
+
+| Project | What it is | Tools | Commits | Tests / CI |
+|---|---|---|---|---|
+| [mao-data/vidcut](https://github.com/mao-data/vidcut) · 1★ · AGPL-3.0 · TS | short-form timeline editor; the browser watches the agent's edits over a WebSocket | 39 | 408 in 6 weeks | 109 test files, no CI runs them |
+| [Hellotravisss/cutpilot](https://github.com/Hellotravisss/cutpilot) · 0★ · no licence · JS | macOS-only editor engine; ffmpeg, optional Remotion | 219 | 12 | CI runs 13 of 70 test files |
+| [AbyAbyss/ffmpeg-mcp-video-editor](https://github.com/AbyAbyss/ffmpeg-mcp-video-editor) · 0★ · MIT · Python | typed ffmpeg tools over a SQLite job queue; one whole JSON timeline per render, no project state | 38 (Glama says 32, and 38★) | 16 | unit only; rendering tests excluded from CI |
+| [musyta-labs/mcpCut](https://github.com/musyta-labs/mcpCut) · 0★ · MIT · Python | multi-user editor; immutable project versions plus an operation journal; MLT XML → `melt` | 44 | 5, one day | none; CI is lint + a smoke script |
+| [vibeDN/NeuroCut](https://github.com/vibeDN/NeuroCut) · 0★ · MIT · Python | N-track editor held only in server memory; MLT XML → `melt` | 30 | 4, one day, AI-written | none, no CI |
+| [zhitongblog/unflick](https://github.com/zhitongblog/unflick) · 0★ · MIT · Rust | a libmpv **player**, not an editor; "clip" is one `-c copy` extraction | 101 | 135 | real CI on four OSes |
+
+**None addresses an edit by transcript word** — every one is element id plus
+seconds. vidcut's `shared/src/types.ts` documents the failure this avoids:
+reordering clips moved overlay anchors to the wrong clip, fixed by requiring
+ids to be reused rather than by tracking content.
+
+**None checks a render against the intent.** mcpCut is the closest: it knows
+melt exits 0 on failure (cites MLT #547) and `_verify_mlt_output` raises on a
+short or missing file — a duration floor, not a content check. NeuroCut checks
+only that the file exists and is non-empty; CutPilot's `visual-qa-engine.mjs`
+runs `blackdetect`/`freezedetect`; vidcut's `preview-vs-export.mjs` compares
+ink boxes between preview and render, which is geometry, not words or frames.
+So `verify` and `check_frames` stay proofcut's, stated as before.
+
+**Both melt-based servers keep the first-audio-stream trap unguarded**:
+mcpCut's `_probe_clip_audio` asks only whether an audio stream exists, and
+NeuroCut's `probe.py` keeps the first. NeuroCut does get `out = nframes - 1`
+right.
+
+**What they have that proofcut does not:**
+
+- *Blur-fill* for an aspect mismatch (vidcut) — a blurred copy behind the
+  frame rather than a crop or bars; the usual vertical-video treatment.
+- A `batch` tool bundling several ops into one call (NeuroCut) — fewer agent
+  round trips, the cost docs/plans/MCP.md measured.
+- SSRF-guarded URL import (mcpCut, `app/net/egress.py`) — proofcut imports
+  only local paths.
+- A pre-export readiness audit (CutPilot, `director-acceptance-engine.mjs`) —
+  near `finish_report` already.
+- A job stamped with a hash of the tool schema it was queued under
+  (ffmpeg-mcp-video-editor, `tools/registry.py`), so a stale worker refuses.
+- Breadth nobody here has asked for: free N-track placement, crossfades and
+  arbitrary filter passthrough (NeuroCut); Remotion/JSX motion graphics,
+  multicam sync, CapCut handoff and genre "director" presets (CutPilot); a
+  cross-project asset library and a review-and-chat loop (vidcut).
+
+**Claims the code does not back:** CutPilot's "review-first natural-language
+edits" are a keyword matcher to fixed magnitudes (±15% speed, ±3 dB) unless
+an LLM key is configured; mcpCut's "every export writes an `.mlt` sidecar"
+holds only under the default `RENDER_ENGINE=mlt`.
+
+None is queued. Blur-fill and `batch` are the two worth a design note if
+either is asked for.
+
 ## Stateless-ffmpeg MCP servers
 
 Useful only as reference for tool naming and parameter conventions. None carries
