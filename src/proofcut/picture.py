@@ -872,7 +872,7 @@ def render(
     # exited too. CI's runner has no console, so it never showed there.
     # HISTORY.md § The render that never exited.
     try:
-        if reporting:
+        if progress.streamed():
             completed = _render_reporting(command, env, timeout, expect_frames, destination.name)
         else:
             completed = subprocess.run(
@@ -886,6 +886,10 @@ def render(
             )
     except FileNotFoundError as exc:
         raise PictureError(f"could not run melt: {' '.join(command)}") from exc
+    except progress.Cancelled:
+        # A stopped render is nothing to inspect, unlike a failed one.
+        shutil.rmtree(work, ignore_errors=True)
+        raise
     except subprocess.TimeoutExpired as exc:
         raise PictureError(
             f"melt did not finish rendering {path} within {timeout}s. The partial "

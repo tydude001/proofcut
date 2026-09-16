@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -87,6 +89,62 @@ def test_run_streams_both_pipes_and_returns_what_subprocess_run_would() -> None:
 def test_run_kills_a_child_past_its_timeout() -> None:
     with pytest.raises(subprocess.TimeoutExpired):
         progress.run([sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.5)
+
+
+def test_run_with_check_raises_as_subprocess_run_does() -> None:
+    with pytest.raises(subprocess.CalledProcessError) as raised:
+        progress.run([sys.executable, "-c", "import sys; sys.stderr.write('bad'); sys.exit(2)"], check=True)
+    assert raised.value.returncode == 2
+    assert raised.value.stderr == "bad"
+
+
+def _alive(pid: int) -> bool:
+    """Running, as opposed to gone or a zombie waiting on whoever reaps it."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return False
+    return stat.rsplit(")", 1)[1].split()[0] != "Z"
+
+
+@pytest.mark.skipif(not Path("/proc").is_dir(), reason="reads /proc to see the grandchild")
+def test_a_stop_kills_the_child_and_everything_it_started(tmp_path: Path) -> None:
+    """melt runs under `systemd-run` → `nice` → `flatpak run`, so killing the
+    direct child alone leaves the encode running. The kill takes the group."""
+    pid_file = tmp_path / "grandchild.pid"
+    child = (
+        "import subprocess, sys, time\n"
+        "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"open({str(pid_file)!r}, 'w').write(str(g.pid))\n"
+        "time.sleep(60)\n"
+    )
+    stop = threading.Event()
+    started = time.monotonic()
+
+    def stop_once_spawned() -> None:
+        while not pid_file.exists() or not pid_file.read_text():
+            time.sleep(0.02)
+        stop.set()
+
+    threading.Thread(target=stop_once_spawned, daemon=True).start()
+    with progress.cancellable(stop), pytest.raises(progress.Cancelled):
+        progress.run([sys.executable, "-c", child])
+
+    assert time.monotonic() - started < 10
+    grandchild = int(pid_file.read_text())
+    deadline = time.monotonic() + 3
+    while _alive(grandchild) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not _alive(grandchild)
+
+
+def test_a_job_already_stopped_spawns_nothing(tmp_path: Path) -> None:
+    marker = tmp_path / "ran"
+    stop = threading.Event()
+    stop.set()
+    with progress.cancellable(stop), pytest.raises(progress.Cancelled):
+        progress.run([sys.executable, "-c", f"open({str(marker)!r}, 'w')"])
+    assert not marker.exists()
 
 
 def test_a_workers_marker_lines_are_the_only_ones_reported() -> None:
@@ -175,3 +233,20 @@ def test_a_render_nobody_watches_asks_melt_for_no_counter(stub_melt: Path, tmp_p
     picture.render(project, tmp_path / "out.mp4", expect_frames=150)
 
     assert "-progress" not in stub_melt.read_text(encoding="utf-8").splitlines()
+
+
+def test_a_stopped_render_leaves_no_staging_directory(stub_melt: Path, tmp_path: Path) -> None:
+    """Nobody listens, and the render still goes through `progress.run` — a
+    Stop is enough reason. A failed render keeps its staging directory to be
+    looked at; a stopped one has nothing to show."""
+    project = tmp_path / "timeline.mlt"
+    project.write_text("<mlt/>", encoding="utf-8")
+    stop = threading.Event()
+    threading.Timer(0.1, stop.set).start()
+
+    with progress.cancellable(stop), pytest.raises(progress.Cancelled):
+        picture.render(project, tmp_path / "out.mp4", expect_frames=150)
+
+    assert not (tmp_path / "out.mp4").exists()
+    scratch = tmp_path / "scratch"
+    assert not scratch.exists() or not any(scratch.iterdir())

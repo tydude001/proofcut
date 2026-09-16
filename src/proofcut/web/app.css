@@ -250,6 +250,8 @@
  *                               either way
  *   .agent-progress              a running list of tool-use steps mid-turn
  *   .agent-progress-step           one step; add .active or .done
+ *   .render-stages                a running render's stage outcomes, one
+ *                                span per stage, updated in place
  *   .completion-card              a render's finished state — dimensions,
  *                                duration, and the four checks
  *   .check-row / .check-badge       one check's name and its badge; badge
@@ -2187,6 +2189,19 @@ textarea {
 
 .agent-progress-step.done {
   color: var(--kept);
+}
+
+.render-stages {
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.render-stages span + span::before {
+  content: " · ";
+}
+
+.render-stages .failed {
+  color: var(--err);
 }
 
 .completion-card {

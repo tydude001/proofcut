@@ -310,8 +310,13 @@ configured — face detection, say — at exit 0. HISTORY.md § `lucid doctor`.
     the shipped workers' `proofcut-progress i n` stderr lines report into
     it. A stdio call silent for 30 minutes is aborted by Claude Code, so a
     new long tool takes `ctx: Context | None = None`. **The streaming path
-    runs only while someone listens** — unwatched, every call is the
-    `subprocess.run` it was, which is what a dozen tests patch. The tool
+    runs only while someone listens or can stop it** (`progress.streamed()`)
+    — otherwise every call is the `subprocess.run` it was, which is what a
+    dozen tests patch. **A stoppable job installs `progress.cancellable`**,
+    and `progress.run` kills the child's whole process group and raises
+    `progress.Cancelled`: melt is three processes deep, so a subprocess a
+    web job waits on that skips `progress.run` is one Stop cannot reach.
+    HISTORY.md § Stop reaches the render, and `batch` was measured. The tool
     body runs on an anyio worker thread and reports can come from a pipe
     reader under it, so the loop token is fetched with
     `from_thread.run_sync(lowlevel.current_token)`:

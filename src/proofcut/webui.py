@@ -121,6 +121,9 @@ EXPECTED = (
     # published, `_finish()` never runs, and the view spins forever waiting
     # on an SSE event that will never arrive (Studio Step 03 contract § A).
     FaceError,
+    # A Stop killing a job's subprocess — raised only under
+    # `progress.cancellable`, which only a stoppable job installs.
+    progress.Cancelled,
 )
 
 STATIC_DIR = Path(__file__).parent / "web"
@@ -1201,13 +1204,15 @@ class RenderJob:
     and appending the whole run to `renderlog` exactly once, on every exit
     path (success, error, or cancelled).
 
-    `stop()` deletes whatever the partial output currently is rather than
-    leaving it, per PLAN.md's explicit "not left" — but honestly: `ops.export`
-    and `ops.add_captions` are blocking calls into a subprocess, and nothing
-    here holds a handle to kill that subprocess mid-encode. So cancellation
-    deletes the *result* on both ends — immediately, on the thread that
-    called `stop()`, and again when the background call eventually returns —
-    rather than pretending to halt an encode it cannot reach.
+    `stop()` kills the encode and deletes whatever the partial output
+    currently is, per PLAN.md's explicit "not left". The pipeline runs under
+    `progress.cancellable`, so the melt, auto-editor and ffmpeg calls under
+    `ops.export` and `ops.add_captions` go through `progress.run`, which kills
+    the child's process group when the event is set and raises
+    `progress.Cancelled`. Until 2026-09-16 nothing here held that handle, and
+    Stop took effect only when melt finished. The output is still deleted on
+    both ends — on the thread that called `stop()`, and again when the
+    background call returns — since a stage that is not a subprocess runs on.
 
     Only `export` and `burn` can fail or be cancelled — `check_frames` and
     `verify` are read off `_run_checks`'s own return value, which already
@@ -1330,7 +1335,8 @@ class RenderJob:
         # it must not leave `_running` latched — that would turn one bug into
         # a permanent 409 for every render until the server restarts.
         try:
-            self._run_inner(job_id, output, cancel, preset, resolution, burn)
+            with progress.cancellable(cancel):
+                self._run_inner(job_id, output, cancel, preset, resolution, burn)
         finally:
             self._finish()
 

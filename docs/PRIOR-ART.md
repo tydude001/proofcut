@@ -466,7 +466,11 @@ mcpCut pins `mcp>=1.28.1,<2.0`, so its `FastMCP` is real there — the v1 SDK,
 not the v2 proofcut is on.
 
 None is queued. Blur-fill and `batch` are the two worth a design note if
-either is asked for.
+either is asked for. **`batch` was measured the same day and is not worth
+it yet**: 12.8% of the trial turns could have been folded together, most
+of what a batch would fold is already parallel calls, and each trial reads
+a `plan` echo before applying it — HISTORY.md § Stop reaches the render,
+and `batch` was measured.
 
 ## Stateless-ffmpeg MCP servers
 

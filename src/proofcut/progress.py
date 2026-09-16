@@ -25,7 +25,9 @@ from __future__ import annotations
 import codecs
 import contextlib
 import contextvars
+import os
 import re
+import signal
 import subprocess
 import threading
 import time
@@ -50,6 +52,15 @@ _MARKER_LINE = re.compile(rf"^{MARKER} (\d+) (\d+)\s*$")
 #: When the last report went out; None until one has, so the first always goes.
 _last: ContextVar[float | None] = ContextVar("proofcut_progress_last", default=None)
 
+_CANCEL: ContextVar[threading.Event | None] = ContextVar("proofcut_cancel", default=None)
+
+#: How often a cancellable `run()` looks at its event while the child runs.
+CANCEL_POLL = 0.2
+
+
+class Cancelled(Exception):
+    """The job this ran under was stopped, and its subprocess killed."""
+
 
 @contextlib.contextmanager
 def reporting(reporter: Reporter | None) -> Iterator[None]:
@@ -65,6 +76,39 @@ def reporting(reporter: Reporter | None) -> Iterator[None]:
 
 def active() -> bool:
     return _REPORTER.get() is not None
+
+
+@contextlib.contextmanager
+def cancellable(event: threading.Event | None) -> Iterator[None]:
+    """Let setting `event` kill whatever `run()` has running inside the block."""
+    previous = _CANCEL.set(event)
+    try:
+        yield
+    finally:
+        _CANCEL.reset(previous)
+
+
+def cancel_armed() -> bool:
+    """Whether a Stop could reach a subprocess here — so the caller must go
+    through `run()` rather than a plain `subprocess.run`."""
+    return _CANCEL.get() is not None
+
+
+def streamed() -> bool:
+    """Whether a subprocess should go through `run()` at all: someone is
+    listening, or someone may stop it. Otherwise it is the plain call."""
+    return active() or cancel_armed()
+
+
+def _kill(proc: subprocess.Popen[bytes], group: bool) -> None:
+    """Kill the child, and with `group` everything it started: melt runs under
+    `systemd-run` → `nice` → `flatpak run`, and killing only the first leaves
+    the encode running."""
+    if group:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGKILL)
+    with contextlib.suppress(ProcessLookupError):
+        proc.kill()
 
 
 def report(current: float, total: float | None = None, message: str | None = None) -> None:
@@ -138,15 +182,24 @@ def run(
     env: dict[str, str] | None = None,
     stdin: Any = None,
     cwd: str | Path | None = None,
+    check: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    """`subprocess.run(capture_output=True, text=True, check=False)`, streamed.
+    """`subprocess.run(capture_output=True, text=True)`, streamed.
 
     Returns the same `CompletedProcess` with both streams as text, so a caller
     swapping this in changes nothing downstream. Each stream is read on its own
     thread, so neither can fill its pipe and stall the child. On `timeout` the
     child is killed and `subprocess.TimeoutExpired` raised, as `run` does.
     `FileNotFoundError` propagates unchanged.
+
+    Under `cancellable`, the child gets its own process group (POSIX) so a
+    Stop kills all of it, and `Cancelled` is raised — before spawning, if the
+    event is already set.
     """
+    cancel = _CANCEL.get()
+    if cancel is not None and cancel.is_set():
+        raise Cancelled(f"stopped before running {command[0]}")
+    group = cancel is not None and os.name == "posix"
     proc = subprocess.Popen(
         list(command),
         stdout=subprocess.PIPE,
@@ -154,6 +207,7 @@ def run(
         stdin=stdin,
         env=env,
         cwd=cwd,
+        start_new_session=group,
     )
     out: list[str] = []
     err: list[str] = []
@@ -168,18 +222,30 @@ def run(
     ]
     for reader in readers:
         reader.start()
-    try:
-        returncode = proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
-        # A grandchild can still hold a pipe open; the partial output is a
-        # courtesy, not worth hanging the timeout on.
-        for reader in readers:
-            reader.join(timeout=5)
-        raise subprocess.TimeoutExpired(command, timeout or 0, _text(out), _text(err)) from None
+    deadline = None if timeout is None else time.monotonic() + timeout
+    while True:
+        remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
+        wait = remaining if cancel is None else min(CANCEL_POLL, remaining if remaining is not None else CANCEL_POLL)
+        try:
+            returncode = proc.wait(timeout=wait)
+            break
+        except subprocess.TimeoutExpired:
+            stopped = cancel is not None and cancel.is_set()
+            if not stopped and (deadline is None or time.monotonic() < deadline):
+                continue
+            _kill(proc, group)
+            proc.wait()
+            # A grandchild can still hold a pipe open; the partial output is a
+            # courtesy, not worth hanging the kill on.
+            for reader in readers:
+                reader.join(timeout=5)
+            if stopped:
+                raise Cancelled(f"stopped {command[0]}") from None
+            raise subprocess.TimeoutExpired(command, timeout or 0, _text(out), _text(err)) from None
     for reader in readers:
         reader.join()
+    if check and returncode:
+        raise subprocess.CalledProcessError(returncode, list(command), _text(out), _text(err))
     return subprocess.CompletedProcess(list(command), returncode, _text(out), _text(err))
 
 

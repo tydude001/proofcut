@@ -40,6 +40,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from proofcut import progress
 from proofcut.timeline import Edit, Segment
 
 #: Milliseconds. Audio-only timelines are not bound to a frame grid, and 30fps
@@ -103,6 +104,8 @@ def binary() -> str:
 def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
     cmd = [binary(), *args]
     try:
+        if progress.cancel_armed():
+            return progress.run(cmd, check=True)
         return subprocess.run(cmd, capture_output=True, text=True, check=True)
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "").strip()

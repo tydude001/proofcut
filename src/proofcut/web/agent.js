@@ -512,6 +512,13 @@ const CHECK_LABELS = {
 
 const renderSlots = new Map(); // job_id -> the .agent-entry wrapper for that job
 
+const STAGE_LABELS = {
+  export: "Export",
+  burn: "Captions",
+  check_frames: "Frame count",
+  verify: "Audio verify",
+};
+
 function slotFor(jobId) {
   if (jobId && renderSlots.has(jobId)) return renderSlots.get(jobId);
   const wrap = el("div", "agent-entry agent-entry--tool");
@@ -628,6 +635,27 @@ function handleRenderEvent(data) {
       const done = progressText(data);
       label.textContent = `${label.dataset.base}${done ? ` ${done}` : ""}`;
     }
+    return;
+  }
+  // A stage event updates one line in place, for the same reason — and it
+  // is not a card of its own: drawn through the default branch below it
+  // wiped the card, Stop button included, and printed the event as JSON.
+  if (data.status === "stage") {
+    let line = wrap.querySelector(".render-stages");
+    if (!line) {
+      line = el("div", "render-stages");
+      wrap.append(line);
+    }
+    let part = line.querySelector(`[data-stage="${data.stage}"]`);
+    if (!part) {
+      part = el("span");
+      part.dataset.stage = data.stage;
+      line.append(part);
+    }
+    const error = data.outcome === "error" && data.detail?.error ? ` — ${data.detail.error}` : "";
+    part.textContent = `${STAGE_LABELS[data.stage] || data.stage} ${data.outcome}${error}`;
+    part.className = data.outcome === "error" ? "failed" : "";
+    scrollToBottom();
     return;
   }
   wrap.textContent = "";

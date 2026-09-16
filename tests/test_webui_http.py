@@ -15,6 +15,7 @@ import re
 import shutil
 import struct
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -28,7 +29,7 @@ from urllib.parse import urlsplit
 import pytest
 from stubs import write_stub
 
-from proofcut import media, ops, webui
+from proofcut import media, ops, progress, webui
 from proofcut import timeline as tl
 from proofcut.faces import FaceError
 from proofcut.project import Project, ProjectError
@@ -2464,6 +2465,44 @@ def test_render_stop_deletes_the_partial_output_and_reports_cancelled(
         assert not output.exists()
     finally:
         gate.set()
+        conn.close()
+
+
+def test_render_stop_kills_the_encode_rather_than_waiting_for_it(
+    server: str, project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stop reaches the subprocess under `export`: a 60 s child ends at once.
+    Until 2026-09-16 it took effect only when melt finished on its own."""
+    started = threading.Event()
+
+    def _stub(path: str, output: str, **kwargs: Any) -> dict[str, Any]:
+        _make_wav(Path(output), duration=0.2)
+        started.set()
+        progress.run([sys.executable, "-c", "import time; time.sleep(60)"])
+        return {"output": output, "format": "media", "timebase": 1000.0}
+
+    monkeypatch.setattr(ops, "export", _stub)
+
+    host, port = _host_and_port(server)
+    conn = http.client.HTTPConnection(host, port, timeout=15)
+    try:
+        conn.request("GET", "/api/events")
+        events = _sse_events(conn.getresponse())
+        next(events)  # the initial project-changed
+
+        status, payload = _post(f"{server}/api/render", {})
+        assert status == 202
+        job_id = payload["job_id"]
+        assert started.wait(timeout=5)
+
+        stopped_at = time.monotonic()
+        status, _ = _post(f"{server}/api/render/stop", {})
+        assert status == 200
+        found = _next_render_event(events, job_id)
+        assert found["status"] == "cancelled"
+        assert time.monotonic() - stopped_at < 10
+        assert not _render_output_path(project, job_id).exists()
+    finally:
         conn.close()
 
 

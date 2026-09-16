@@ -15573,3 +15573,54 @@ session, not by reading a tool body.
   `tools/list` 254 KB to 230 KB with every new argument documented. A test
   validates one value of each JSON type for every argument of every tool
   against both schemas and requires the same answer each time.
+
+## Stop reaches the render, and `batch` was measured — 2026-09-16
+
+The two defects § The MCP surface, rebuilt for deferred loading left alone,
+fixed, and the one PRIOR-ART.md lead that could be settled by counting.
+
+- **Stop kills the encode.** `progress.cancellable(event)` installs a cancel
+  event beside the reporter, and `RenderJob` runs its pipeline under it.
+  `progress.run` then starts the child in its own process group and polls
+  the event every 0.2 s. When the event is set it kills the group and raises
+  `progress.Cancelled`, which is now in `webui.EXPECTED` and lands in the
+  pipeline's existing `cancelled` branch. It kills the group, not the child,
+  because melt runs as `systemd-run` → `nice` → `flatpak run`. Every
+  subprocess a web render waits on now goes through `progress.run` while a
+  cancel is armed: melt (`picture.render`), auto-editor (`autoeditor._run`),
+  the caption burn (`captions`) and the loudness master (`finish._run`).
+  Unarmed, each is still the `subprocess.run` it was. A stopped melt render
+  also removes its staging directory. A failed one still keeps it, since
+  only a failure has anything to look at. Measured on a generated demo
+  project with two cues, over the real server and the Kdenlive flatpak's
+  melt: melt was gone **0.21 s** after `POST /api/render/stop`, the stream
+  said `export cancelled` then `cancelled`, and nothing was left in
+  `renders/` or `~/proofcut-render/`. The new HTTP test (a 60 s child under
+  a stubbed `export`) times out against the old `src/`.
+- **The render card draws stages.** `handleRenderEvent` had no `stage`
+  case. Each stage event fell to the `default` branch, which cleared the
+  card, Stop button included, and printed the event as JSON. A stage now
+  updates its own span in a `.render-stages` line, the way a progress event
+  updates only the label. Headless browser, same project: the card read
+  `Rendering… 100% · Stop render · Export done · Captions skipped · Frame
+  count done · Audio verify done`, then the completion card, and no JSON.
+  Stop clicked at 0 and 120 ms dwell both gave `Export cancelled` then
+  "Render cancelled". The first attempt failed because the rail's agent tab
+  was not selected, so the button was zero-sized. The harness refused the
+  click, and both renders ran to completion.
+- **`batch` is not worth building yet.** NeuroCut's one-call bundle of ops
+  (PRIOR-ART.md § Glama's related servers) was measured on the recorded
+  trial transcripts (`~/proofcut-work/spikes/batch-measure/measure_batch.py`).
+  A turn counts as removable when it sits in a run of consecutive turns
+  whose calls all mutate, with no error between them. Chains that contain a
+  sheet were excluded: the sheets are annotated as writes, but the agent
+  calls them to look at a picture before its next cue. On the three
+  deferred-loading runs above, that leaves **10 of 78 turns (12.8%)**, and
+  18 of 98 on the earlier `--tools ""` runs. About 40% of turns already
+  carry parallel tool calls, which covers the easy case (repeated
+  `import_media` and `cue_add`). Every run also had a `plan` → apply pair
+  inside a mutating chain, which a blind batch could not honour without
+  returning each step's result to branch on, and that is most of the
+  build. The saved tokens are mostly cache reads. Revisit only if round
+  trips become the measured bottleneck, and then narrowly, for runs of
+  `cue_add`/`cut_by_time` with precomputed arguments.

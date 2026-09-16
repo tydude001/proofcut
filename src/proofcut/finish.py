@@ -38,6 +38,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from proofcut import progress
+
 FFMPEG = "ffmpeg"
 
 #: 48 kHz: fine enough for the 20-50ms seam windows below, and the rate
@@ -84,6 +86,8 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     # check=False on purpose, `energy.integrated_loudness`'s own discipline: a
     # bad file is a finding to report (a clear FinishError naming ffmpeg's own
     # stderr), not a traceback two frames from here.
+    if progress.cancel_armed():
+        return progress.run(cmd)
     return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
 

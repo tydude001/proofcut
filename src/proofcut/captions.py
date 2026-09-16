@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from proofcut import fonts
+from proofcut import fonts, progress
 from proofcut.timeline import Edit
 from proofcut.transcript import Transcript
 
@@ -893,7 +893,10 @@ def burn(video: Path | str, subtitles: Path | str, output: Path | str) -> Path:
             str(destination.resolve()),
         ]
         try:
-            subprocess.run(cmd, cwd=tmp, capture_output=True, text=True, check=True)
+            if progress.cancel_armed():
+                progress.run(cmd, cwd=tmp, check=True)
+            else:
+                subprocess.run(cmd, cwd=tmp, capture_output=True, text=True, check=True)
         except FileNotFoundError as exc:
             raise CaptionError(f"{FFMPEG} not found on PATH") from exc
         except subprocess.CalledProcessError as exc:
