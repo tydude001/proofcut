@@ -227,6 +227,11 @@ version literal.
 
 ## Step 4 — the PyPI name (Tyler's hand)
 
+**Shipped — 0.29.0 published 2026-09-16; see HISTORY.md § `proofcut setup`,
+built.** A release is `uv build && uv publish` from the tagged tree, run by
+Tyler; the version is still read from `pyproject.toml`, so no seventh
+literal was added.
+
 `uvx proofcut doctor` drops git from the prerequisites. Publishing is a
 public-surface action, so it is Tyler's to run. It adds a seventh place the
 version is bumped (`tests/test_version.py`) and one more step per release.

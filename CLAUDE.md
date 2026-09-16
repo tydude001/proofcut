@@ -887,7 +887,10 @@ built; docs/plans/INSTALL.md):
   `importlib.metadata` version reads the *installed* dist-info, so an
   editable checkout reports whatever the last `uv sync` wrote. Bump the minor
   when something new becomes callable, `uv sync` behind it, tag, and name the
-  HISTORY.md `##` section in the annotation. There is no `CHANGELOG.md` on
+  HISTORY.md `##` section in the annotation. **proofcut is on PyPI since
+  0.29.0**, and the upload (`uv build && uv publish`) is Tyler's hand; PyPI
+  never takes a second file for a version, so README.md — its project page,
+  whose links must stay absolute — is settled before it. There is no `CHANGELOG.md` on
   purpose. HISTORY.md § The version caught up.
   - **A GitHub Release is a hand-written launch post, not a per-tag note, so
     it does not follow a bump** — which is how `v0.23.0` stayed "Latest" two

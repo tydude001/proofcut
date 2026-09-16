@@ -374,10 +374,13 @@ twos, with time to fix what they find.
   stays listed as version history. `server.json` is in the repo against the
   published `2025-12-11` schema, still what `mcp-publisher init` emits —
   re-check that URL at each publish, the mechanics have changed more than
-  once. The entry carries **no `packages` block**, because proofcut is on no
-  package registry and a `pypi` identifier would name something that does not
-  exist — `websiteUrl` points at docs/DEMO.md instead. If proofcut is ever
-  published to PyPI, that block is the one thing to add. `mcp-publisher
+  once. The entry carries **no `packages` block yet**, and `websiteUrl`
+  points at docs/DEMO.md. proofcut is on PyPI since 0.29.0 (2026-09-16), but
+  the registry verifies a `pypi` block by finding
+  `mcp-name: io.github.tydude001/proofcut` in the README *PyPI holds*, and
+  0.29.0's predates the marker README.md now carries. So the block
+  (`registryType: "pypi"`, `identifier: "proofcut"`, the version, `transport:
+  stdio`) goes in with the next upload, not before. `mcp-publisher
   validate` checks the file against the registry itself and publishes
   nothing, so it settles the entry before the handoff. A publish proves the
   `io.github.tydude001` namespace with a GitHub device login, and **the token
@@ -490,7 +493,7 @@ trial — a whole film). Draft:
 > has too, mine, and no person has run it on a Mac yet. This tells you
 > what's missing and how to fix it, without cloning anything:
 >
->     uvx --from git+https://github.com/tydude001/proofcut proofcut doctor
+>     uvx proofcut doctor
 >
 > I'd genuinely like the doctor output from your machine if it says ✗.
 

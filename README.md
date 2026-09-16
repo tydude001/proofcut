@@ -1,5 +1,7 @@
 # proofcut
 
+<!-- mcp-name: io.github.tydude001/proofcut -->
+
 **An AI video editor that proves its cuts.** Your recordings in, a finished,
 mastered film out: cut by transcript, with b-roll, cards, music and captions,
 and every step an agent can call. proofcut renders on your own machine, then
@@ -115,10 +117,10 @@ is the layer that lets an agent drive them, and check what they produced:
 Check your machine first, before cloning anything. `proofcut doctor` probes
 every tool proofcut uses and prints the fix for anything missing
 ([§ Requirements](#requirements) has the list). With
-[uv](https://docs.astral.sh/uv/) and git installed:
+[uv](https://docs.astral.sh/uv/) installed:
 
 ```sh
-uvx --from git+https://github.com/tydude001/proofcut proofcut doctor
+uvx proofcut doctor
 ```
 
 The first run downloads Python 3.13 if uv has none, plus proofcut's
@@ -130,7 +132,7 @@ added. It says what it will download and asks first; whisper is about 1.9 GB
 of it. On a Mac or a Windows PC, follow the fix doctor prints under each ✗.
 
 ```sh
-uvx --from git+https://github.com/tydude001/proofcut proofcut setup
+uvx proofcut setup
 ```
 
 The demo and your own recordings run from a checkout:
@@ -172,7 +174,7 @@ checkout at all:
 
 ```sh
 uv run --project /path/to/proofcut proofcut mcp
-uvx --from git+https://github.com/tydude001/proofcut proofcut mcp
+uvx proofcut mcp
 ```
 
 ### On your own recording

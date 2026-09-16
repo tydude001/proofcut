@@ -15842,3 +15842,16 @@ since `uv pip compile` resolves no torch for an Intel Mac above it. Its Linux
 fixes lead with `proofcut setup`, and the headless-display fix names
 Shotcut's melt beside `xvfb-run`. Logs and images:
 `~/proofcut-work/spikes/install-paths/`.
+
+**Step 4 followed the same day: `proofcut` 0.29.0 is on PyPI**, uploaded by
+Tyler with `uv build && uv publish`, and a fresh `uvx --isolated --no-cache
+proofcut --version` installs it. The README's three `uvx --from git+…` lines
+became `uvx proofcut …`, so trying proofcut no longer needs git. Two things
+had to precede the upload, because PyPI refuses a second file for a version:
+README's 24 relative links became absolute (PyPI resolves a relative one
+against pypi.org, so every link and both screenshots were broken there), and
+the build came from `main` one commit past the `v0.29.0` tag, differing only
+in those links. The MCP registry's `pypi` package block needs
+`mcp-name: io.github.tydude001/proofcut` in the README *as PyPI holds it*,
+which 0.29.0's does not, so the marker went into README.md afterwards and
+the block waits for the next upload.
