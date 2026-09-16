@@ -222,6 +222,20 @@ def _build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="emit the report as JSON instead of prose"
     )
 
+    p_setup = sub.add_parser(
+        "setup",
+        help="install, for this user, what `proofcut doctor` reports missing (Linux, no sudo)",
+    )
+    # Prose, like doctor, and for the same reason: its caller is a person. It
+    # is CLI-only on purpose — an agent must not start a 2 GB download or
+    # change PATH unasked (docs/plans/INSTALL.md § Step 3).
+    p_setup.add_argument("--plan", action="store_true", help="say what would be installed, and stop")
+    p_setup.add_argument("--yes", action="store_true", help="install without asking")
+    p_setup.add_argument(
+        "--uninstall", action="store_true", help="remove everything setup installed, and nothing else"
+    )
+    p_setup.add_argument("--json", action="store_true", help="emit JSON instead of prose")
+
     p_init = sub.add_parser("init", help="create a project directory")
     # `default=None`, not `"."`, so the handler can tell "not given" from
     # "given as `.`" and refuse the ambiguous both-were-given call.
@@ -3046,6 +3060,67 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
+def _confirm(question: str, args: argparse.Namespace) -> bool:
+    """`--yes`, or a person at a terminal saying y. Never a silent yes from a pipe."""
+    if args.yes:
+        return True
+    if not sys.stdin.isatty():
+        raise ProjectError(f"{question} There is no terminal to answer on: pass --yes.")
+    return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+
+
+def _cmd_setup(args: argparse.Namespace) -> int:
+    """Install what doctor reports missing, or remove what setup installed.
+
+    Exit 0 when doctor reports everything required afterwards (or, for
+    `--plan`, already), 1 otherwise — the gate doctor's own exit code is.
+    """
+    from proofcut import install
+
+    if args.uninstall:
+        steps = install.uninstall_plan()
+        if not steps["recorded"]:
+            print(f"Nothing to remove: setup has installed nothing here ({steps['root']}).")
+            return 0
+        if args.plan:
+            _emit(steps)
+            return 0
+        print("Will remove:")
+        for name, entry in steps["pieces"].items():
+            parts = [entry["dir"], *entry["links"]]
+            if entry["uv_tool"]:
+                parts.append(f"uv tool {entry['uv_tool']}")
+            print(f"  {name}: " + ", ".join(p for p in parts if p))
+        print(f"  and {steps['root']}")
+        if not _confirm("Remove them?", args):
+            return 1
+        result = install.uninstall()
+        if args.json:
+            _emit(result)
+        else:
+            print("\n".join(["Removed:", *(f"  {item}" for item in result["removed"])]))
+        return 0
+
+    try:
+        steps = install.plan()
+    except install.InstallError as exc:
+        raise ProjectError(str(exc)) from exc
+    if args.json and args.plan:
+        _emit(steps)
+    else:
+        print(install.render_plan(steps))
+    if args.plan or not steps["pieces"]:
+        return 0 if not steps["pieces"] and not steps["unavailable"] else 1
+    if not _confirm(f"Download and install about {install._mb(steps['bytes'])}?", args):
+        return 1
+    result = install.install(steps, say=lambda line: print(line, flush=True))
+    if args.json:
+        _emit(result)
+    else:
+        print(install.render_result(result))
+    return 0 if result["ok"] else 1
+
+
 def _cmd_brief(args: argparse.Namespace) -> int:
     """The prompt text itself, not JSON: it is for pasting into an agent.
 
@@ -3106,6 +3181,7 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
 
 _COMMANDS = {
     "doctor": _cmd_doctor,
+    "setup": _cmd_setup,
     "init": _cmd_init,
     "info": _cmd_info,
     "migrate": _cmd_migrate,

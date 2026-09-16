@@ -674,6 +674,8 @@ TOOL_TO_COMMAND = {
 CLI_ONLY = {
     "mcp",  # starts the server; nothing to call it from
     "ping",  # a tool, but takes no project and needs no mapping
+    "setup",  # downloads GBs and changes PATH; never an agent's call
+    # (docs/plans/INSTALL.md § Step 3)
     "info",  # prints the manifest, which MCP clients get from other tools —
     # and stands its descriptions down to a count, because describe_ls is
     # where the text is meant to be read

@@ -209,6 +209,21 @@ def test_missing_whisper_carries_the_resolution_chain(monkeypatch: pytest.Monkey
     assert "does not have to live in proofcut's own venv" in row["fix"]
 
 
+def test_the_whisper_fix_pins_the_python_an_intel_mac_can_install(monkeypatch: pytest.MonkeyPatch) -> None:
+    """torch's macOS x86_64 wheels stop at cp312, so an unpinned `uv tool
+    install` does not resolve there on 3.13. Both trial kits pin 3.12, and the
+    advice a stranger follows has to as well. docs/plans/INSTALL.md,
+    measurement 6."""
+
+    def refuse() -> Path:
+        raise asr.ASRError("whisper not found.")
+
+    monkeypatch.setattr(doctor.asr, "whisper_binary", refuse)
+    fix = doctor._whisper_entry()["fix"]
+    assert "uv tool install --python 3.12 openai-whisper" in fix
+    assert "--torch-backend cpu" in fix
+
+
 def test_whisper_on_disk_but_unstartable_is_not_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     """A venv that has lost torch resolves fine and dies minutes into a job."""
     monkeypatch.setattr(doctor.asr, "whisper_binary", lambda: Path("/nope/whisper"))
@@ -467,6 +482,10 @@ def test_a_headless_qt_that_draws_nothing_is_not_a_display(monkeypatch: pytest.M
     display = doctor._display()
     assert display["ok"] is False
     assert "xvfb-run" in display["fix"]
+    # The route that needs no X server at all: Shotcut's portable melt draws
+    # headless where both distro MLTs do not. docs/plans/INSTALL.md, measurement 2.
+    assert "proofcut setup" in display["fix"]
+    assert "Shotcut" in display["fix"]
     monkeypatch.setattr(doctor.picture, "qt_draws", lambda env: True)
     assert doctor._display()["ok"] is True
 

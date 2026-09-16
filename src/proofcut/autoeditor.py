@@ -40,7 +40,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from proofcut import progress
+from proofcut import deps, progress
 from proofcut.timeline import Edit, Segment
 
 #: Milliseconds. Audio-only timelines are not bound to a frame grid, and 30fps
@@ -82,12 +82,18 @@ def release_asset() -> str:
 def binary() -> str:
     """Locate the auto-editor binary, preferring an explicit override.
 
-    `shutil.which` finds `auto-editor.exe` on Windows by itself (PATHEXT), so
+    The order is `PROOFCUT_AUTO_EDITOR`, `proofcut setup`'s download, PATH,
+    then `~/.local/bin`. `shutil.which` finds `auto-editor.exe` on Windows by itself (PATHEXT), so
     the search is the same on every OS; only the name of the download differs.
     """
     override = os.environ.get("PROOFCUT_AUTO_EDITOR")
     if override:
         return override
+    # Ahead of PATH, because `proofcut setup` downloads one only when the PATH
+    # one failed doctor — usually PyPI's stale 29.x (deps.py).
+    installed = deps.auto_editor()
+    if installed.is_file():
+        return str(installed)
     found = shutil.which("auto-editor")
     if found:
         return found

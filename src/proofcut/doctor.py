@@ -31,6 +31,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,7 @@ from proofcut import (
     asr,
     autoeditor,
     captions,
+    deps,
     describe,
     faces,
     fonts,
@@ -65,6 +67,19 @@ AUTO_EDITOR_GATE = (
     "cards, music) is written as MLT and rendered through melt, which has no "
     "source-count gate. Nothing here needs the key."
 )
+
+
+def _by_setup(fix: str) -> str:
+    """`fix`, led on Linux by the command that applies it.
+
+    `proofcut setup` installs a missing ffmpeg, whisper, auto-editor or melt
+    for this user without sudo, on Linux only (docs/plans/INSTALL.md), so
+    only there is it the first thing to say. The by-hand route stays, since
+    setup installs nothing a working system tool already covers.
+    """
+    if not sys.platform.startswith("linux"):
+        return fix
+    return f"`proofcut setup` installs this for you, with no sudo. By hand: {fix}"
 
 
 def _run(command: list[str]) -> tuple[str, str, int | None]:
@@ -127,7 +142,7 @@ def _ffmpeg_entry(binary: str, what: str) -> dict[str, Any]:
             what,
             looked_for="PATH",
             why=f"{binary} is not on PATH",
-            fix=(
+            fix=_by_setup(
                 "install ffmpeg (it ships both binaries). Every media operation "
                 "in proofcut goes through them, so nothing works without this one."
             ),
@@ -165,7 +180,7 @@ def _ffmpeg_entry(binary: str, what: str) -> dict[str, Any]:
                     "preview proxy and the demo's own footage encode with it — "
                     "each would stop at `Unknown encoder`"
                 ),
-                fix=(
+                fix=_by_setup(
                     "install an ffmpeg built with libx264. Fedora's default "
                     "`ffmpeg-free` is built without it: enable RPM Fusion, then "
                     "`dnf swap ffmpeg-free ffmpeg --allowerasing`. That swap replaces "
@@ -194,7 +209,7 @@ def _ffmpeg_entry(binary: str, what: str) -> dict[str, Any]:
                     "drawtext and every caption burn goes through libass, so each "
                     "would stop at `No such filter`"
                 ),
-                fix=(
+                fix=_by_setup(
                     "install an ffmpeg built with freetype and libass. On a Mac, "
                     "Homebrew's `ffmpeg` has neither: `brew install ffmpeg-full`, then "
                     "put it first on PATH, since it is keg-only and a plain `ffmpeg` "
@@ -222,13 +237,14 @@ def _whisper_entry() -> dict[str, Any]:
             "transcription, and reading a render back to check it",
             looked_for=looked_for,
             why=str(exc),
-            fix=(
-                "install openai-whisper (`uv tool install openai-whisper`, or "
-                "into any venv) and put its `whisper` on PATH, or point "
-                "PROOFCUT_WHISPER at the binary. proofcut never imports it — it is a "
-                "subprocess, so it does not have to live in proofcut's own venv. "
-                "With no NVIDIA GPU, add `--torch-backend cpu`: the default pulls "
-                "CUDA torch, 5.5 GB against 1.9 GB, for a card that is not there."
+            fix=_by_setup(
+                "install openai-whisper (`uv tool install --python 3.12 "
+                "openai-whisper`, or into any venv) and put its `whisper` on PATH, "
+                "or point PROOFCUT_WHISPER at the binary. proofcut never imports it — "
+                "it is a subprocess, so it does not have to live in proofcut's own "
+                "venv. 3.12 because torch builds for Intel Macs stop there. With no "
+                "NVIDIA GPU, add `--torch-backend cpu`: the default pulls CUDA "
+                "torch, 5.5 GB against 1.9 GB, for a card that is not there."
             ),
         )
     out, err, code = _run([str(binary), "--help"])
@@ -270,9 +286,9 @@ def _auto_editor_entry() -> dict[str, Any]:
     """auto-editor, checked for presence *and* for a major of at least 31."""
     looked_for = (
         f"$PROOFCUT_AUTO_EDITOR ({os.environ.get('PROOFCUT_AUTO_EDITOR') or 'unset'}), "
-        "then PATH, then ~/.local/bin/auto-editor"
+        f"then {deps.auto_editor()} (`proofcut setup`'s), then PATH, then ~/.local/bin/auto-editor"
     )
-    stale_fix = (
+    stale_fix = _by_setup(
         f"install the {autoeditor.release_asset()} binary from the GitHub release. "
         "`pip install auto-editor` gets 29.3.1 — a stale fork of the old "
         "Python program under the same name, which does not speak the v3 "
@@ -339,6 +355,7 @@ def _melt_entry() -> dict[str, Any]:
     where, install = picture.melt_search()
     looked_for = (
         f"$PROOFCUT_MELT ({os.environ.get('PROOFCUT_MELT') or 'unset'}), "
+        f"then {deps.melt()} (`proofcut setup`'s), "
         f"then PATH ({', '.join(picture.MELT_NAMES)}), then {where}"
     )
     fix = (
@@ -611,7 +628,9 @@ def _display() -> dict[str, Any]:
                 "still exit 0."
             )
             report["fix"] = (
-                "run renders under a virtual X display: `xvfb-run -a proofcut …` "
+                "`proofcut setup` installs Shotcut's portable melt for this user, "
+                "which draws with no X server at all — or run renders under a "
+                "virtual X display: `xvfb-run -a proofcut …` "
                 "(`apt install xvfb`, `dnf install xorg-x11-server-Xvfb`). Some MLT "
                 "builds want X11 whatever QT_QPA_PLATFORM says; Ubuntu 24.04's MLT "
                 "7.22 and Fedora 44's MLT 7.40 are two. "

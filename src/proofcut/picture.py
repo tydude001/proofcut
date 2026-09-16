@@ -44,7 +44,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
-from proofcut import media, progress
+from proofcut import deps, media, progress
 
 #: Suffixes routed to `melt` rather than to ffprobe. `.xml` is here because
 #: that is what a bare MLT document is called; auto-editor writes `.kdenlive`.
@@ -161,7 +161,9 @@ def melt_search() -> tuple[str, str]:
             # Fedora names it `mlt`; its `melt` package is freeze, a compression
             # tool that owns /usr/bin/melt. HISTORY.md § A stranger's install, on
             # a clean Fedora.
-            "Install your distribution's melt package (`apt install melt` on "
+            "`proofcut setup` installs Shotcut's portable melt for this user "
+            "(x86_64, no sudo), which draws with no X server. Or install your "
+            "distribution's melt package (`apt install melt` on "
             "Debian/Ubuntu, `dnf install mlt` on Fedora — Fedora's own `melt` "
             "package is an unrelated compression tool), or Kdenlive's flatpak, "
             "which ships melt inside it and is found on its own (`flatpak install "
@@ -281,7 +283,9 @@ def melt_command() -> list[str]:
     """The argv prefix that runs `melt`, however it is installed here.
 
     Returns a list rather than a path because the flatpak form is four words
-    and there is no binary to point at. Every PATH and bundle candidate must
+    and there is no binary to point at. The order is `PROOFCUT_MELT`, then
+    what `proofcut setup` installed (`deps.melt`), then PATH, then the
+    desktop bundles and the flatpak. Every PATH and bundle candidate must
     print melt's banner (`melt_version`) or it is skipped, and a refusal after
     skipping one names it. `PROOFCUT_MELT` is taken at its word — it may be a
     wrapper — and so is the flatpak, whose `flatpak info` already names MLT's
@@ -291,7 +295,11 @@ def melt_command() -> list[str]:
     if override:
         return command_override(override)
     impostors: list[str] = []
-    candidates = [found for name in MELT_NAMES if (found := shutil.which(name))]
+    # What `proofcut setup` installed goes ahead of PATH: it installs a melt
+    # only when the PATH one failed doctor (deps.py).
+    installed = deps.melt()
+    candidates = [str(installed)] if installed.is_file() else []
+    candidates += [found for name in MELT_NAMES if (found := shutil.which(name))]
     candidates += [str(bundle) for bundle in melt_bundles() if bundle.is_file()]
     for candidate in dict.fromkeys(candidates):
         if melt_version(candidate) is not None:
@@ -313,7 +321,8 @@ def melt_command() -> list[str]:
         else ""
     )
     raise PictureError(
-        f"melt not found. Looked at $PROOFCUT_MELT, then PATH ({', '.join(MELT_NAMES)}), then {where}. "
+        f"melt not found. Looked at $PROOFCUT_MELT, then {deps.melt()} (`proofcut setup`'s), "
+        f"then PATH ({', '.join(MELT_NAMES)}), then {where}. "
         f"{skipped}{install} Without it the timeline's own frame total is still reported; "
         "only the comparison against melt needs melt."
     )
