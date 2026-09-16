@@ -842,7 +842,10 @@ built; docs/plans/INSTALL.md):
   `module.sys` (a control against old code then fails on the missing
   attribute and proves nothing), and stub `shutil.which` under a faked
   `win32`: it reaches for `_winapi`. HISTORY.md § The Windows crash and the
-  display gate.
+  display gate. **A fake home sets `USERPROFILE` as well as `HOME`** —
+  Windows' `Path.home()` ignores `HOME`, and `test_install`'s fixture
+  installed into the runner's real profile until it did (it now asserts
+  `deps.root()` is inside `tmp_path`).
   - **A fake binary goes through `tests/stubs.py`'s `write_stub`, never a
     `#!` script** — Windows cannot run one, and every stub the suite had was
     one. Python source in, the path to run out; use the returned path, which

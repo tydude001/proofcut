@@ -16,6 +16,7 @@ import hashlib
 import io
 import os
 import re
+import shutil
 import sys
 import tarfile
 from pathlib import Path
@@ -37,12 +38,21 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home.mkdir()
     system = tmp_path / "usr-bin"
     system.mkdir()
+    # Windows finds a home through USERPROFILE and ignores HOME: setting HOME
+    # alone installed into the CI runner's real profile, where every later
+    # resolver found it (2026-09-16).
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.setenv("PATH", os.pathsep.join([str(home / ".local" / "bin"), str(system)]))
     monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.setattr(install.platform, "machine", lambda: "x86_64")
     monkeypatch.setattr(install, "_gpu", lambda: False)
+    if os.name == "nt":
+        # A stub is `uv.cmd` there, and `shutil.which` under a faked linux
+        # applies no PATHEXT, so it would find no uv at all.
+        monkeypatch.setattr(install, "_uv", lambda: shutil.which("uv") or shutil.which("uv.cmd"))
+    assert tmp_path in deps.root().parents, "setup's folder must be inside the fake home"
     return home
 
 
@@ -342,6 +352,8 @@ def test_a_piece_setup_installed_that_still_fails_is_not_installed_again(
 def test_the_resolvers_prefer_what_setup_installed_over_path(home: Path, tmp_path: Path) -> None:
     """Setup installs one only when the PATH one failed doctor, so a PATH-first
     search would find the failing one again (deps.py)."""
+    if os.name == "nt":
+        pytest.skip("a stub on Windows is a .cmd, which neither resolver looks for under a faked linux")
     system = tmp_path / "usr-bin"
     write_stub(system / "auto-editor", "print('29.3.1')\n")
     banner = "import sys\nprint('melt 7.41.0')\n"
@@ -352,8 +364,6 @@ def test_the_resolvers_prefer_what_setup_installed_over_path(home: Path, tmp_pat
     installed_ae = write_stub(deps.auto_editor(), "print('31.6.0')\n")
     deps.melt().parent.mkdir(parents=True)
     installed_melt = write_stub(deps.melt(), banner)
-    if installed_ae != deps.auto_editor():
-        pytest.skip("a stub on Windows is a .cmd beside the name the resolver looks for")
     assert autoeditor.binary() == str(installed_ae)
     assert picture.melt_command() == [str(installed_melt)]
 
