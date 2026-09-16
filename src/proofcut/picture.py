@@ -364,9 +364,13 @@ def display_env() -> dict[str, str]:
     env = dict(os.environ)
     if native_qt_platform():
         return env
+    if env.get("DISPLAY") and not env.get("WAYLAND_DISPLAY"):
+        return env
+    # Past the check above, so a named X display asks nothing of `os.getuid`,
+    # which Windows has not got — a test standing in for Linux there is the case.
     runtime = Path(env.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
-    if env.get("WAYLAND_DISPLAY") or env.get("DISPLAY"):
-        if env.get("WAYLAND_DISPLAY") and (runtime / env["WAYLAND_DISPLAY"]).exists():
+    if env.get("WAYLAND_DISPLAY"):
+        if (runtime / env["WAYLAND_DISPLAY"]).exists():
             env["XDG_RUNTIME_DIR"] = str(runtime)
         return env
     for socket in sorted(runtime.glob("wayland-*")):
