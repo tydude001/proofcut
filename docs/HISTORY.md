@@ -15855,3 +15855,12 @@ in those links. The MCP registry's `pypi` package block needs
 `mcp-name: io.github.tydude001/proofcut` in the README *as PyPI holds it*,
 which 0.29.0's does not, so the marker went into README.md afterwards and
 the block waits for the next upload.
+
+**The first Windows CI run of the setup tests failed 11, and none was
+setup's.** `test_install`'s fake home set `HOME`, which Windows'
+`Path.home()` ignores, so one test installed a stub auto-editor into the
+runner's real profile and seven later resolver tests found it — four of
+them in `test_portability`, which never changed. The fixture now sets
+`USERPROFILE` and asserts setup's folder is inside `tmp_path`; the whisper
+tests find the `uv` stub as `uv.cmd`, which `shutil.which` skips under a
+faked linux. No assertion changed.
