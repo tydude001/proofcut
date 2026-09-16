@@ -433,6 +433,25 @@ right.
   near `finish_report` already.
 - A job stamped with a hash of the tool schema it was queued under
   (ffmpeg-mcp-video-editor, `tools/registry.py`), so a stale worker refuses.
+- A project store with a lock directory that expires, a revision counter for
+  optimistic concurrency and `.bak` recovery on a corrupt read (CutPilot,
+  `project-store.mjs`) — the same ground as `Project._manifest_stamp`,
+  with recovery added.
+- Tool arguments checked against the real function signature (mcpCut,
+  `app/mcp/argspec.py`), the goal `_PARAM_DOCS` serves from the other side.
+- Checksum-verified ffmpeg downloaded on first run, cross-platform from day
+  one, a job queue with cancellation shared between MCP and its UI, and
+  one-call MediaPipe `track_and_crop` (ffmpeg-mcp-video-editor). Its
+  `captions.py` passes text to `drawtext` via `textfile=` with
+  `expansion=none` and tests an adversarial string — irrelevant to proofcut's
+  ASS path, but the right way if `drawtext` ever appears.
+- Text-anchored seek (`search_transcript`/`seek_to_text`, Unflick) — the
+  player's version of `locate`.
+- Fonts fetched from Google Fonts on demand, and a render shared through a
+  tokenized Cloudflare quick-tunnel link (NeuroCut, `run.sh`).
+- A gapless two-`<video>` preview, word-highlight captions rasterized with
+  Pillow and shared byte-for-byte between preview and export, and an
+  `export_publish_package` for manual upload (vidcut).
 - Breadth nobody here has asked for: free N-track placement, crossfades and
   arbitrary filter passthrough (NeuroCut); Remotion/JSX motion graphics,
   multicam sync, CapCut handoff and genre "director" presets (CutPilot); a
@@ -441,7 +460,10 @@ right.
 **Claims the code does not back:** CutPilot's "review-first natural-language
 edits" are a keyword matcher to fixed magnitudes (±15% speed, ±3 dB) unless
 an LLM key is configured; mcpCut's "every export writes an `.mlt` sidecar"
-holds only under the default `RENDER_ENGINE=mlt`.
+holds only under the default `RENDER_ENGINE=mlt`. Glama's "32 tools" and 38★
+for ffmpeg-mcp-video-editor disagree with its source (38) and GitHub (0★).
+mcpCut pins `mcp>=1.28.1,<2.0`, so its `FastMCP` is real there — the v1 SDK,
+not the v2 proofcut is on.
 
 None is queued. Blur-fill and `batch` are the two worth a design note if
 either is asked for.
