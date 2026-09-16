@@ -1062,6 +1062,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("undo", help="roll back the last timeline mutation")
 
+    p_changes = sub.add_parser(
+        "changes", help="what the last mutations did — what undo would roll back, in words"
+    )
+    p_changes.add_argument(
+        "--steps", type=int, default=1,
+        help="compare against this many mutations back (default: 1, the last one)",
+    )
+
     p_cap = sub.add_parser("captions", help="write word-timed ASS captions for the timeline")
     p_cap.add_argument("output", help="where to write the .ass subtitle file")
     p_cap.add_argument(
@@ -2530,6 +2538,10 @@ def _cmd_undo(args: argparse.Namespace) -> int:
     return _emit(ops.undo(args.project))
 
 
+def _cmd_changes(args: argparse.Namespace) -> int:
+    return _emit(ops.changes(args.project, steps=args.steps))
+
+
 def _cmd_captions(args: argparse.Namespace) -> int:
     return _emit(
         ops.add_captions(
@@ -3127,6 +3139,7 @@ _COMMANDS = {
     "web": _cmd_web,
     "open": _cmd_open,
     "undo": _cmd_undo,
+    "changes": _cmd_changes,
     "captions": _cmd_captions,
     "caption-view": _cmd_caption_view,
     "caption-style": _cmd_caption_style,

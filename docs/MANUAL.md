@@ -69,7 +69,9 @@ and every later command reads it without knowing.
 `--preset youtube|web|tiktok-reels|custom` picks a quality bundle for it
 (`tiktok-reels` checks the project's canvas is vertical and refuses rather than
 reshaping it), and `undo` rolls back the last mutation while
-`restore` un-cuts one specific range. A project written by an older proofcut is
+`restore` un-cuts one specific range. `changes [--steps N]` says what `undo`
+N times would roll back, in words: the source spans cut or restored and the
+manifest records added, removed or changed. It writes nothing. A project written by an older proofcut is
 refused rather than guessed at; `proofcut migrate` brings it forward (`--plan`
 says what it would do first, and the old manifest is kept under
 `cache/history/`). A timeline with a cue table or a second

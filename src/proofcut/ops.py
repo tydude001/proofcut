@@ -6549,6 +6549,291 @@ def undo(path: Path | str) -> dict[str, Any]:
     return report
 
 
+# -- what changed ------------------------------------------------------------
+
+#: How many entries one list in a `changes` reply carries before it is
+#: counted rather than listed. A `reel` removes dozens of spans and an import
+#: can add a long clip record; the counts beside each list stay exact.
+CHANGES_LIMIT = 40
+
+#: Words shown for one changed span — the head and the tail of it, since the
+#: edges are where a cut is judged. Every span also carries its full count.
+CHANGES_SPAN_WORDS = 12
+
+#: A changed span this short is counted, never listed: one frame at any rate
+#: from 20 fps up. Two edits of the same recording disagree by a frame at
+#: many segment edges — 28 of the 75 removed spans between split-detect's
+#: silence-cut VO and the shipped one were single 1/30 s frames carrying no
+#: word, and listed they filled most of the window ahead of the real cuts.
+CHANGES_SLIVER = 0.05
+
+#: The fields that name one record in a manifest list, so a record edited in
+#: place reads as *changed* rather than as one removal beside one addition.
+#: A key missing here still diffs, as added and removed records. Spelled as
+#: literals because `REFRAME_KEY` and `UNSPOKEN_KEY` are defined further down.
+_RECORD_IDENTITY: dict[str, tuple[str, ...]] = {
+    "clips": ("clip_id",),
+    "cues": ("clip_id", "word_index"),
+    "unspoken": ("clip_id", "word_index"),
+    "reframe": ("clip_id", "src_start"),
+    "cards": ("card",),
+}
+
+
+def _source_sets(edit: tl.Edit | None) -> dict[str, list[tuple[float, float]]]:
+    """Each clip's source material on the timeline, merged — order ignored."""
+    if edit is None:
+        return {}
+    by_clip: dict[str, list[tuple[float, float]]] = {}
+    for seg in edit.segments:
+        by_clip.setdefault(seg.clip_id, []).append((seg.start, seg.end))
+    return {clip: sp.merge_runs(spans, max_gap=0.0) for clip, spans in by_clip.items()}
+
+
+def _span_words(parsed: tx.Transcript | None, lo: float, hi: float) -> dict[str, Any] | None:
+    """The words a changed source span touches — by overlap, never containment,
+    because a word's duration is whisper's and a retake hides inside one."""
+    if parsed is None:
+        return None
+    hit = [w for w in parsed.words if (w.end > lo and w.start < hi) or (w.start == w.end and lo <= w.start < hi)]
+    if not hit:
+        return {"count": 0, "first_word": None, "last_word": None, "text": ""}
+    half = CHANGES_SPAN_WORDS // 2
+    if len(hit) <= CHANGES_SPAN_WORDS:
+        text = " ".join(w.text for w in hit)
+    else:
+        text = " ".join(w.text for w in hit[:half]) + " … " + " ".join(w.text for w in hit[-half:])
+    return {"count": len(hit), "first_word": hit[0].index, "last_word": hit[-1].index, "text": text}
+
+
+def _changed_spans(
+    ahead: dict[str, list[tuple[float, float]]],
+    behind: dict[str, list[tuple[float, float]]],
+    placed_in: tl.Edit | None,
+    transcripts: dict[str, tx.Transcript | None],
+) -> list[dict[str, Any]]:
+    """Source material in `ahead` that `behind` does not have, placed on the
+    timeline of `placed_in` (the edit it is actually on)."""
+    out: list[dict[str, Any]] = []
+    for clip_id in sorted(ahead):
+        for run in ahead[clip_id]:
+            for lo, hi in sp.subtract_runs(run, behind.get(clip_id, [])):
+                if hi - lo < tl.MIN_SEGMENT:
+                    continue  # float residue of an unchanged edge, not material
+                entry: dict[str, Any] = {
+                    "clip_id": clip_id,
+                    "source_start": round(lo, 3),
+                    "source_end": round(hi, 3),
+                    "duration": round(hi - lo, 3),
+                }
+                if placed_in is not None:
+                    pieces = placed_in.timeline_spans(clip_id, lo, hi)
+                    if pieces:
+                        entry["timeline_start"] = round(pieces[0].timeline_start, 3)
+                words = _span_words(transcripts.get(clip_id), lo, hi)
+                if words is not None:
+                    entry["words"] = words
+                out.append(entry)
+    out.sort(key=lambda e: (e.get("timeline_start", float("inf")), e["clip_id"], e["source_start"]))
+    return out
+
+
+def _capped(key: str, items: list[Any]) -> dict[str, Any]:
+    return {key: items[:CHANGES_LIMIT], f"{key}_count": len(items)}
+
+
+def _canonical(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+def _record_echo(record: Any, transcripts: dict[str, tx.Transcript | None]) -> Any:
+    """A word-addressed record, with the word it addresses and three either side."""
+    if not (isinstance(record, dict) and isinstance(record.get("word_index"), int)):
+        return record
+    parsed = transcripts.get(str(record.get("clip_id")))
+    index = record["word_index"]
+    if parsed is None or not 0 <= index < len(parsed):
+        return record
+    words = parsed.window(index, index, context=3)
+    echo = " ".join(f"[{w.text}]" if w.index == index else w.text for w in words)
+    return {**record, "echo": echo}
+
+
+def _list_changes(
+    key: str, before: list[Any], after: list[Any], transcripts: dict[str, tx.Transcript | None]
+) -> dict[str, Any]:
+    """Records added, removed, and — where the key names its records — changed."""
+    remaining = [_canonical(item) for item in after]
+    removed: list[Any] = []
+    for item in before:
+        text = _canonical(item)
+        if text in remaining:
+            remaining.remove(text)
+        else:
+            removed.append(item)
+    added_pool = [json.loads(text) for text in remaining]
+
+    changed: list[dict[str, Any]] = []
+    fields = _RECORD_IDENTITY.get(key)
+    if fields:
+        def ident(item: Any) -> tuple[Any, ...] | None:
+            if not isinstance(item, dict) or any(f not in item for f in fields):
+                return None
+            return tuple(_canonical(item[f]) for f in fields)
+
+        for old in list(removed):
+            name = ident(old)
+            match = next((new for new in added_pool if name is not None and ident(new) == name), None)
+            if match is None:
+                continue
+            removed.remove(old)
+            added_pool.remove(match)
+            differs = sorted(set(old) | set(match))
+            changed.append(
+                {
+                    "record": _record_echo({f: match[f] for f in fields}, transcripts),
+                    "fields": {
+                        f: {"before": old.get(f), "after": match.get(f)}
+                        for f in differs
+                        if old.get(f) != match.get(f)
+                    },
+                }
+            )
+
+    out: dict[str, Any] = {}
+    for label, items in (("added", added_pool), ("removed", removed)):
+        if items:
+            out.update(_capped(label, [_record_echo(i, transcripts) for i in items]))
+    if changed:
+        out.update(_capped("changed", changed))
+    return out
+
+
+def _manifest_changes(
+    before: dict[str, Any], after: dict[str, Any], transcripts: dict[str, tx.Transcript | None]
+) -> dict[str, Any]:
+    keys: dict[str, Any] = {}
+    for key in sorted(set(before) | set(after)):
+        if key not in after:
+            keys[key] = {"removed": True, "before": before[key]}
+        elif key not in before:
+            keys[key] = {"added": True, "after": after[key]}
+        elif _canonical(before[key]) == _canonical(after[key]):
+            continue
+        elif isinstance(before[key], list) and isinstance(after[key], list):
+            keys[key] = _list_changes(key, before[key], after[key], transcripts)
+        elif isinstance(before[key], dict) and isinstance(after[key], dict):
+            old, new = before[key], after[key]
+            keys[key] = {
+                "fields": {
+                    f: {"before": old.get(f), "after": new.get(f)}
+                    for f in sorted(set(old) | set(new))
+                    if _canonical(old.get(f)) != _canonical(new.get(f))
+                }
+            }
+        else:
+            keys[key] = {"before": before[key], "after": after[key]}
+    return keys
+
+
+def changes(path: Path | str, *, steps: int = 1) -> dict[str, Any]:
+    """What the last `steps` mutations did — exactly what `undo` that many
+    times would roll back, stated as material and records rather than files.
+
+    Nothing is stored for this: every mutation already leaves its pre-state in
+    `cache/history/`, so the answer is that snapshot against the live project.
+    The timeline half compares each clip's source material **as a set**, so a
+    cut reads as the words it removed, not as every later segment moving up;
+    a pure reorder, which changes no set, is `reordered`. A span under
+    `CHANGES_SLIVER` is counted in `*_slivers` rather than listed. Transcripts are not
+    snapshotted, so words are read off the transcript as it stands now — a
+    transcript replaced in between echoes the new words.
+    """
+    project = Project.open(path)
+    history = project.snapshots()
+    if not history:
+        raise ProjectError("nothing has changed — this project has no history")
+    if steps < 1 or steps > len(history):
+        raise ProjectError(
+            f"steps must be between 1 and {len(history)} (this project's undo depth), not {steps}"
+        )
+    base = history[-steps]
+    # A snapshot with no timeline half is a state that had none (`restore`'s
+    # rule), so `None` there is a fact, not a gap.
+    old_edit = tl.read(base.timeline) if base.timeline is not None else None
+    new_edit = tl.read(project.timeline_path) if project.timeline_path.exists() else None
+
+    clip_ids = {s.clip_id for e in (old_edit, new_edit) if e is not None for s in e.segments}
+    old_manifest = (
+        json.loads(base.manifest.read_text(encoding="utf-8")) if base.manifest is not None else None
+    )
+    new_manifest = project.read_manifest()
+    for m in (old_manifest, new_manifest):
+        for record in (m or {}).get("cues", []) + (m or {}).get(UNSPOKEN_KEY, []):
+            if isinstance(record, dict) and record.get("clip_id"):
+                clip_ids.add(str(record["clip_id"]))
+    transcripts: dict[str, tx.Transcript | None] = {}
+    for clip_id in sorted(clip_ids):
+        try:
+            transcripts[clip_id] = _transcript(project, clip_id)
+        except (tx.TranscriptError, ValueError, OSError):
+            transcripts[clip_id] = None
+
+    def shape(edit: tl.Edit | None) -> dict[str, Any] | None:
+        if edit is None:
+            return None
+        return {"duration": round(edit.duration, 3), "segments": len(edit.segments)}
+
+    old_sets, new_sets = _source_sets(old_edit), _source_sets(new_edit)
+    removed = _changed_spans(old_sets, new_sets, old_edit, transcripts)
+    added = _changed_spans(new_sets, old_sets, new_edit, transcripts)
+    order = lambda e: [(s.clip_id, s.start, s.end) for s in e.segments] if e else []
+    def listed(spans: list[dict[str, Any]], key: str) -> dict[str, Any]:
+        slivers = [e for e in spans if e["duration"] < CHANGES_SLIVER]
+        return {
+            **_capped(key, [e for e in spans if e["duration"] >= CHANGES_SLIVER]),
+            f"{key}_slivers": {"count": len(slivers), "seconds": round(sum(e["duration"] for e in slivers), 3)},
+        }
+
+    timeline: dict[str, Any] = {
+        "before": shape(old_edit),
+        "after": shape(new_edit),
+        **listed(removed, "removed"),
+        **listed(added, "added"),
+        "reordered": bool(old_edit and new_edit and not removed and not added
+                          and order(old_edit) != order(new_edit)),
+    }
+    timeline["changed"] = bool(
+        removed or added or timeline["reordered"] or (old_edit is None) != (new_edit is None)
+    )
+    if old_edit is None and new_edit is not None:
+        timeline["note"] = "there was no timeline before — this is where it was seeded"
+    elif old_edit is not None and new_edit is None:
+        timeline["note"] = "the timeline has been removed since"
+
+    report: dict[str, Any] = {
+        "steps": steps,
+        "undo_depth": len(history),
+        "snapshot": base.index,
+        "timeline": timeline,
+    }
+    if old_manifest is None:
+        report["manifest"] = None
+        report["note"] = (
+            "this snapshot was written before proofcut saved manifests, so only the "
+            "timeline can be compared"
+        )
+    else:
+        keys = _manifest_changes(old_manifest, new_manifest, transcripts)
+        report["manifest"] = {"changed_keys": sorted(keys), "keys": keys}
+    report["unchanged"] = not timeline["changed"] and not (
+        report["manifest"] and report["manifest"]["changed_keys"]
+    )
+    if any(t is None for t in transcripts.values()):
+        report["untranscribed"] = sorted(c for c, t in transcripts.items() if t is None)
+    return report
+
+
 # -- attenuating noise, rather than cutting it ----------------------------
 
 

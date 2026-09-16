@@ -15624,3 +15624,43 @@ fixed, and the one PRIOR-ART.md lead that could be settled by counting.
   build. The saved tokens are mostly cache reads. Revisit only if round
   trips become the measured bottleneck, and then narrowly, for runs of
   `cue_add`/`cut_by_time` with precomputed arguments.
+
+## `changes`: what the last edits did — 2026-09-16
+
+PRIOR-ART.md § The OTIO + MCP niche named chaoz23/otio-diff as the "what did
+the agent just change?" primitive, and proofcut had nothing like it: `undo`
+was the only history tool, and it only rolls back. `changes` (CLI
+`proofcut changes [--steps N]`, read-only) answers what `undo` N times would
+roll back. It stores nothing new. Every mutation already leaves its
+pre-state pair in `cache/history/`, so the op compares that snapshot against
+the live project.
+
+- **The timeline half compares each clip's source material as a set.** A
+  cut reads as the source span it removed, with the words it carried
+  (overlap, never containment) and where it played. Diffing the segment
+  list instead would report every later segment as moved. A pure reorder
+  changes no set, so it gets its own flag, `reordered`. Undoing a seed
+  shows as `before: null` plus a note.
+- **The manifest half is key by key.** A list's records show as `added`,
+  `removed`, and, for keys whose records have a name (a clip by id, a cue or
+  unspoken mark by its word, a framing window by `(clip_id, src_start)`, a
+  card by name), `changed` field by field. A word-addressed record echoes
+  its word in brackets with three either side. An older timeline-only
+  snapshot gives `manifest: null` and a note, the same as `undo`.
+- **A span under 50 ms is counted, never listed** (`removed_slivers`,
+  `added_slivers`). Run against `~/proofcut-work/projects/split-detect`,
+  whose one snapshot holds the silence-cut VO that the shipped VO replaced,
+  the first build listed 75 removed spans. 52 of them were single-frame
+  edge shifts carrying no word (1.731 s in all), and they filled the
+  40-entry window ahead of the real cuts. With slivers counted, the 23 real
+  spans all fit and the reply is 5.5 KB. `demo/proj`'s last step reads as
+  one `reframe` record added. `final-cut/proj` correctly answers "no
+  history": its `cache/history/` holds only the pre-migration manifest
+  backups, which `snapshots()` ignores.
+- Words come from the transcript as it stands, since transcripts are not
+  snapshotted. A clip with no transcript is named in `untranscribed`, and
+  its spans carry no words.
+
+Tests: `tests/test_ops_changes.py` (14 cases, including an undone change
+dropping out of the answer and the op writing nothing), plus a stdio test
+covering a cut and a cue through the real server.

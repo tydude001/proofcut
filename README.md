@@ -73,7 +73,7 @@ a film, and proves the film matches the edit.
   that never renumbers, so `cut vo 111:114` names the same words however many
   cuts came before it. `--plan` prints what a range says before anything
   changes, and `restore` and `undo` walk it back.
-- **Built for agents.** 90 MCP tools with typed inputs and structured
+- **Built for agents.** 93 MCP tools with typed inputs and structured
   returns, so Claude Code, Codex or your own agent can drive it. Tools like
   `shot-sheet` return an image of the edit, not a file path the agent can't
   open.
@@ -144,7 +144,7 @@ uv run python scripts/make_demo.py ~/proofcut-demo
 
 ### In Claude Code
 
-The plugin registers proofcut's MCP server, so all 90 tools are available
+The plugin registers proofcut's MCP server, so all 93 tools are available
 with no setup of your own:
 
 ```

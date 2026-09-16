@@ -80,6 +80,7 @@ EXPECTED_TOOLS = {
     "timeline_status",
     "timeline_view",
     "undo",
+    "changes",
     "add_captions",
     "caption_view",
     "caption_style",
@@ -334,6 +335,39 @@ def test_a_manifest_only_mutation_undoes_over_the_wire(
 
 
 @needs_ffprobe
+def test_changes_names_what_the_last_mutations_did_over_the_wire(
+    tmp_path: Path, sources: tuple[Path, Path]
+) -> None:
+    """`changes` is read-only and reached through the real server: a cue is a
+    manifest change with its word echoed, and two steps back reach the cut."""
+    audio, transcript = sources
+    project = tmp_path / "proj"
+
+    async def body(session: ClientSession) -> Any:
+        client = Client(session)
+        clip = await _seeded(client, project, audio, transcript)
+        await client.call("cut_by_transcript", path=str(project), clip_id=clip, cut=[[1, 2]])
+        await client.call(
+            "cue_add", path=str(project), clip_id=clip, word_index=4, asset="card:title"
+        )
+        return {
+            "last": await client.call("changes", path=str(project)),
+            "both": await client.call("changes", path=str(project), steps=2),
+            "depth": (await client.call("undo", path=str(project)))["undo_depth"],
+        }
+
+    out = anyio.run(_with_server, body)
+
+    assert out["last"]["timeline"]["changed"] is False
+    assert out["last"]["manifest"]["changed_keys"] == ["cues"]
+    assert "[" in out["last"]["manifest"]["keys"]["cues"]["added"][0]["echo"]
+    removed = out["both"]["timeline"]["removed"]
+    assert removed and removed[0]["words"]["first_word"] <= 1 <= removed[0]["words"]["last_word"]
+    # Asking twice took no snapshot of its own.
+    assert out["depth"] == out["both"]["undo_depth"] - 1
+
+
+@needs_ffprobe
 @needs_ffmpeg
 def test_a_framing_rect_undoes_over_the_wire(tmp_path: Path) -> None:
     """`reframe` is the other manifest-only one-gesture mutation (Frame mode).
@@ -583,6 +617,7 @@ TOOL_TO_COMMAND = {
     "timeline_status": "status",
     "timeline_view": "view",
     "undo": "undo",
+    "changes": "changes",
     "add_captions": "captions",
     "caption_view": "caption-view",
     "caption_style": "caption-style",
@@ -7937,7 +7972,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
     hung on the parameter in `server.py` that never reached `tools/list` is
     exactly the failure this pins: the two tools whose `path` means *no
     project* (`fonts`, `pack_show`) have to say their own thing, and the
-    other 87 share `ProjectPath`'s sentence."""
+    other 88 share `ProjectPath`'s sentence."""
 
     async def body(session: ClientSession) -> Any:
         return await session.list_tools()
@@ -7955,7 +7990,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
             assert "no project" in description, tool.name
         else:
             assert "bound project" in description, tool.name
-    assert seen == 89
+    assert seen == 90
 
 
 def test_no_tool_advertises_an_argument_with_nothing_said_about_it() -> None:

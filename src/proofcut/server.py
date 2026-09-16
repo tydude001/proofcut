@@ -63,7 +63,7 @@ INSTRUCTIONS = (
     "- sound: music (the bed), hold_add, vo_extend, vo_synth\n"
     "- cards and ends: card_templates, card_new, head, tail\n"
     "- finish: add_captions, caption_style, export (render with export_format=null)\n"
-    "- checks: check_frames, verify, film_check, finish_check\n\n"
+    "- checks: check_frames, verify, film_check, finish_check; changes (what the last edits did)\n\n"
     "Rules nothing will warn you about:\n"
     "- Word indices address the ORIGINAL recording and never renumber, so a range "
     "stays valid across cuts. Prefer phrase= over a hand-typed index; "
@@ -341,7 +341,7 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "ping", "doctor", "list_media", "hear", "get_transcript", "resolve_phrase",
             "transcript_checks", "describe_ls", "card_templates", "card_safe_zones",
             "pack_show", "pack_status", "cue_ls", "assets", "unspoken_ls", "build_shots",
-            "locate", "timeline_status", "timeline_view", "properties", "finish_report",
+            "locate", "timeline_status", "timeline_view", "changes", "properties", "finish_report",
             "caption_view", "hold_ls", "hold_check", "finish_check", "reframe_coverage",
             "continuity_check", "continuity_ls", "thumbnail", "contact_sheet",
             "broll_brief", "verify", "check_frames", "check_black", "spot_frames",
@@ -446,6 +446,13 @@ _COMMON_PARAMS: dict[str, str] = {
 }
 
 _PARAM_DOCS: dict[str, dict[str, str]] = {
+    "changes": {
+        "steps": (
+            "How many mutations back to compare against, from 1 (the last one — what "
+            "a single undo would roll back) up to the undo depth. The reply covers "
+            "everything since that point, not only the oldest step."
+        ),
+    },
     "init": {
         "name": (
             "A name for the project, recorded in the manifest. Unset, the directory's "
@@ -3276,6 +3283,26 @@ def undo(path: ProjectPath = None) -> dict[str, Any]:
     when stepping back more than once.
     """
     return ops.undo(path)
+
+
+@_tool()
+def changes(path: ProjectPath = None, steps: int = 1) -> dict[str, Any]:
+    """What the last `steps` mutations did — what `undo` that many times would roll back.
+
+    Read-only. Compares the snapshot every mutation already leaves against the
+    live project. `timeline.removed` and `timeline.added` are source spans per
+    clip with the words they carry and where they played, so a cut reads as the
+    words it took out rather than as every later segment moving; a pure
+    reorder is `reordered`; spans under 50 ms (a frame's edge moving) are only
+    counted, in `removed_slivers`/`added_slivers`. `manifest.keys` lists each changed manifest key:
+    records `added`/`removed`, and `changed` field by field where a record has a
+    name (a cue by its word, a framing window by its in-point, a clip by its
+    id); a word-addressed record echoes its word in brackets with three either
+    side. Lists past 40 entries are cut, with exact `_count`s beside them.
+    `unchanged: true` means the snapshot and the project agree. Words come from
+    the transcripts as they stand now.
+    """
+    return ops.changes(path, steps=steps)
 
 
 @_tool()

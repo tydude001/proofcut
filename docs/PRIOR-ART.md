@@ -290,7 +290,7 @@ micro-repos found by the first sweep:
 |---|---|---|---|
 | [satoh-y-0323/clipwright](https://github.com/satoh-y-0323/clipwright) | 2 | Python | Closest match — MCP server *suite* wrapping FFmpeg/OTIO, split per domain (`clipwright-stabilize`, `clipwright-transcribe`, …). Careful work; runtime depends only on ffprobe, uses whisper.cpp + ggml models |
 | [alexrienzie/open-post-production](https://github.com/alexrienzie/open-post-production) | 2 | Python | Transcribe/search/cut at documentary scale, local hardware |
-| [chaoz23/otio-diff](https://github.com/chaoz23/otio-diff) | 1 | Python | Structural diff between two OTIO timelines — added/removed/retimed/moved clips. CLI + MCP. **Directly useful to proofcut** as the "what did the agent just change?" primitive |
+| [chaoz23/otio-diff](https://github.com/chaoz23/otio-diff) | 1 | Python | Structural diff between two OTIO timelines — added/removed/retimed/moved clips. CLI + MCP. **Directly useful to proofcut** as the "what did the agent just change?" primitive. Built natively 2026-09-16 over the undo history (HISTORY.md § `changes`: what the last edits did) |
 | [plokdalberb-byte/cutible](https://github.com/plokdalberb-byte/cutible) | 0 | Python | Created and abandoned the same day (2026-06-22); ignore |
 
 The OTIO rendering thesis is also still unproven. **Nobody has demonstrated
