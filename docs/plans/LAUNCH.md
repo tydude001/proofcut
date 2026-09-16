@@ -370,19 +370,15 @@ List it a week *before* Show HN so the first strangers arrive in ones and
 twos, with time to fix what they find.
 
 - **The official MCP registry** (`registry.modelcontextprotocol.io`) — **live
-  at 0.25.0**, republished 2026-09-15 with the SHOWCASE description; 0.23.0
-  stays listed as version history. `server.json` is in the repo against the
-  published `2025-12-11` schema, still what `mcp-publisher init` emits —
-  re-check that URL at each publish, the mechanics have changed more than
-  once. The entry carries **no `packages` block yet**, and `websiteUrl`
-  points at docs/DEMO.md. proofcut is on PyPI since 0.29.0 (2026-09-16), but
-  the registry verifies a `pypi` block by finding
-  `mcp-name: io.github.tydude001/proofcut` in the README *PyPI holds*, and
-  0.29.0's predates the marker README.md now carries. So the block
-  (`registryType: "pypi"`, `identifier: "proofcut"`, the version, `transport:
-  stdio`) goes in with the next upload, not before. **It is in `server.json`
-  as of 0.29.1, validated** —
-  HISTORY.md § The registry entry names its PyPI package. `mcp-publisher
+  at 0.29.1** (2026-09-16), with a `pypi` package block, so a client installs
+  it as `uvx proofcut mcp`; older versions stay listed as history.
+  `server.json` is in the repo against the published `2025-12-11` schema,
+  still what `mcp-publisher init` emits — re-check that URL at each publish,
+  the mechanics have changed more than once. `websiteUrl` points at
+  docs/DEMO.md. The registry verifies the `pypi` block by finding
+  `mcp-name: io.github.tydude001/proofcut` in the README *PyPI holds*, so
+  **upload to PyPI before publishing to the registry**. HISTORY.md § The
+  registry entry names its PyPI package. `mcp-publisher
   validate` checks the file against the registry itself and publishes
   nothing, so it settles the entry before the handoff. A publish proves the
   `io.github.tydude001` namespace with a GitHub device login, and **the token
