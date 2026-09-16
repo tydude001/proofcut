@@ -394,9 +394,14 @@ def main() -> int:
     if args.footage:
         where = args.footage.absolute()
         # Longest first, so the folder is not replaced out from under the file's full path.
+        # The folder is scrubbed because its name can say something (`Private Stuff`); a
+        # drive root says nothing, and scrubbing `E:\\` turned every path on the second
+        # drive into `<your-footage>…`, so the report never said which drive the
+        # second-drive case ran on (HISTORY.md § The second-drive case, on a flash drive).
         for spelling in {where, where.resolve()}:
-            FOOTAGE.extend([str(spelling).replace("\\", "\\\\"), str(spelling),
-                            str(spelling.parent).replace("\\", "\\\\"), str(spelling.parent)])
+            FOOTAGE.extend([str(spelling).replace("\\", "\\\\"), str(spelling)])
+            if spelling.parent != spelling.parent.parent:
+                FOOTAGE.extend([str(spelling.parent).replace("\\", "\\\\"), str(spelling.parent)])
         FOOTAGE.append(where.name)
     work = kit / "probe"
     remove_tree(work)

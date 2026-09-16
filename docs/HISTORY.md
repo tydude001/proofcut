@@ -15417,3 +15417,41 @@ argument in five, every tool sat in the first band.
   validate an `Image` against it, so the tool answers `is_error` from a
   correct body and the picture never arrives. An output schema would cost the
   thing these tools exist to do.
+
+## The second-drive case, on a flash drive — 2026-09-16
+
+The one `windows_probe.ps1` case no real PC had run. windows-demo runs it
+against the runner's `D:`, a second fixed disk on Windows Server; the
+laptop had no second drive at all until Tyler put a USB stick in it for
+this. `-SecondDrive E:\ -Footage E:\IMG_2309.MOV` at `e2fbdd9`, 08:32
+local, on the same iPhone clip as § The phone's black last frame, now
+read off the stick.
+
+**`ALL CASES RAN CLEAN`, nine of nine.** The second-drive case put the
+project on `E:` with the demo's footage on `C:` and rendered 289 of 289
+through melt, blue at 3 s and rust at 10 s. Passing the clip from the
+stick ran the same split the other way — footage on `E:`, project on
+`C:` — which the 2026-09-15 runs could not: import picked the AAC stream
+into `cache\mixed\` (`mode: pick`, `apple_apac` named as undecodable),
+the seed came out at the clip's own 35.141667 s, and `frames` read 1054
+of 1054, delta 0. Every other case matched the `968ba4b` run line for
+line, the caption burn at 1.38% with a line up and 0.0% in the gap. Long
+paths are still enabled on this PC, so the long-path case still measures
+the opt-in.
+
+**One defect, in the probe's own report, not in proofcut.** The scrub
+hides the tester's footage by its full path, its name, *and its folder*,
+so a clip that sits at the root of a drive turns that whole drive into
+`<your-footage>`: the second-drive case's every path printed as
+`<your-footage>proofcut-probe\proj`, and the report never said which
+drive the case ran on. The folder is scrubbed because a folder's name
+can say something (`Private Stuff`); a drive root says nothing. The
+folder is now left out when it is its own parent, checked here with a
+root-level and a nested Windows path against the same `scrub`. What the
+laptop printed is still a correct report of a clean run; it only names
+the drive as a placeholder.
+
+### Still open
+
+- Nobody but Tyler has run either script, on any Windows. Windows 10 and
+  ARM64 are untried. Issue #2 stays open for that.
