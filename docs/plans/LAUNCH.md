@@ -554,6 +554,9 @@ goes into a queue the same way the trial's did.
 Not all at once: each channel's feedback should land separately, so it can
 be told apart. Order by fit, each with the same clip and a one-line hook
 tuned to the room.
+The five posts are drafted in
+`~/proofcut-work/spikes/launch-listings/POSTS.md` (2026-09-16), each with
+what it may not claim.
 
 1. **r/LocalLLaMA** — the hook is local whisper, a local VLM, a local face
    model, no cloud. This is their thesis, not a video-editing pitch.
