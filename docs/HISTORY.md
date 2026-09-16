@@ -15913,3 +15913,33 @@ package attached. Two snags on the way are worth knowing next time: `uv
 publish` from a non-interactive shell has no way to ask for the token, and a
 bare `uv publish` uploads everything in `dist/`, stale versions included.
 So name the files: `uv publish dist/proofcut-<version>*`.
+
+## The README, reorganized — 2026-09-16
+
+The README was good copy in the wrong order. Its first command sat at line
+115 of 429, behind the trials, the stage table, the essays, § Why proofcut,
+a screenshot and § How it works; and it said the same things three times.
+Music, holds, the cold open, `attenuate`, the master, captions and `verify`
+each appeared in the stage table, in § What it does and in § Why proofcut,
+and § How it works listed the same six tools § Requirements did. Help wanted
+was in three places, two of them full sections splitting the feature list
+from the requirements, and the Windows one had become a paragraph of dated
+history with an issue number in it.
+
+**The order is now the clip and the trials, § Try it, the feature map,
+§ Why proofcut, one § Help wanted, § Requirements, § Working on proofcut.**
+The first command is on line 36. The stage table absorbed § What it does,
+and each of its rows links the manual section that walks it, which
+SHOWCASE.md § Step 1 asked for and the shipped table did not do; seven
+bullets under it hold what a stage cannot (the workspace, the sheets, the
+transcript checks, `describe`, reframing, `reel`, the NLE round-trip).
+§ How it works' table became § Requirements' *For* column. The plans-status
+paragraph went, because status lives in the wiki; the multi-mic bullet went
+to where the manual already had it. 363 lines from 429, and no claim a
+stranger needs was cut.
+
+**Checked rather than assumed:** all ten manual anchors resolve against
+MANUAL.md's headings, every absolute link names a file in the tree, and
+nothing outside the README links into its anchors, so the merged heading
+cost no reader. Both screenshots are unchanged, so `capture_screenshots.py`
+was not run. PyPI's project page keeps the old README until the next bump.
