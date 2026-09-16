@@ -95,6 +95,10 @@ let pendingPictureSeek = null; // as pendingSeek, for the picture element
 let pendingPaneSeek = null; // and its own for the split's lower pane, which
 // loads independently: one variable would be cleared by whichever element
 // happened to fire `loadedmetadata` first, leaving the other at zero
+let pictureFill = null; // a blur-filled shot's background element
+let pictureFillView = null; // and the shot's `fill` it is drawing, null when none
+let pendingFillSeek = null; // its own pending seek, for the pane's reason
+let mediaFill = null; // the edit track's blur-fill background element
 let shotCursor = 0; // cache for the shot-under-the-playhead scan
 const pictureRefused = new Set(); // assets the browser would not decode
 
@@ -113,6 +117,79 @@ function setClip(clipId) {
   mediaClip = clipId;
   media.src = `/api/media/${encodeURIComponent(clipId)}`;
   place(media, clipId);
+  placeEditFill();
+}
+
+/* -- blur-fill backgrounds ------------------------------------------------
+ *
+ * A blur-filled window draws the whole source contained, over a blurred,
+ * darkened copy of the same moment covering the canvas (PLAN.md § Blur-fill).
+ * The writer's second node is a second element here, placed by the rect the
+ * server sent. The blur is `fill.blur` of the width it is drawn at, never a
+ * pixel constant: melt's radius is relative to the image, so a fixed CSS
+ * radius would be three times as strong in a small window as in a large one.
+ * A box of radius r spreads like a Gaussian of r/√3, which is what CSS takes.
+ */
+
+function edgeFill() {
+  const v = view();
+  const entry = mediaClip && v && v.reframe ? v.reframe[mediaClip] : null;
+  return entry ? entry.fill || null : null;
+}
+
+function placeFill(el, fill) {
+  if (!el) return;
+  const canvas = canvasSize();
+  const box = frameBox();
+  if (!fill || !canvas || !box.width) {
+    el.style.filter = "";
+    return;
+  }
+  const scale = box.width / canvas[0];
+  const [x, y, w, h] = fill.dest;
+  const sigma = (fill.blur * w * scale) / Math.sqrt(3);
+  // CSS blurs an element's own edges into transparency, and a covering
+  // background's edges sit on the frame's, which drew a dark band along them
+  // that melt's blur does not. Grown by 3σ each way, centred: a zoom of a few
+  // percent on something already blurred, where the band was plainly visible.
+  const grow = (h * scale + 6 * sigma) / (h * scale);
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  place(el, null, [cx - (w * grow) / 2, cy - (h * grow) / 2, w * grow, h * grow]);
+  el.style.filter = `blur(${sigma.toFixed(2)}px) brightness(${fill.darken})`;
+}
+
+/* Load `url` into a fill element when a fill needs it, or empty and hide it. */
+function loadFill(el, url, fill) {
+  if (!fill) {
+    if (!el.hidden) {
+      el.hidden = true;
+      el.pause();
+      el.removeAttribute("src");
+      delete el.dataset.url;
+    }
+    return false;
+  }
+  el.hidden = false;
+  if (el.dataset.url === url) return false;
+  el.dataset.url = url;
+  el.src = url;
+  return true;
+}
+
+function placeEditFill() {
+  if (!mediaFill) return;
+  const fill = edgeFill();
+  const url = mediaClip ? `/api/media/${encodeURIComponent(mediaClip)}` : "";
+  loadFill(mediaFill, url, fill);
+  placeFill(mediaFill, fill);
+}
+
+/* The edit track's clock is the transport itself, so its background follows
+ * `media` directly. */
+function followEditFill() {
+  if (!mediaFill || mediaFill.hidden || mediaFill.readyState === 0) return;
+  follow(mediaFill, media.currentTime, media.paused);
 }
 
 function segAt(t) {
@@ -198,6 +275,7 @@ function tick() {
   paintPlayhead(t);
   paintWord(t);
   paintPicture(t);
+  followEditFill();
   paintCaption(t);
   drawVisualizer();
 }
@@ -349,8 +427,10 @@ function layoutFrame() {
     balancePanes(box.height, canvas[1] * scale);
   }
   place(media, mediaClip);
+  placeEditFill();
   place(pictureVideo, pictureAsset, pictureDest);
   place(picturePane, pictureAsset, picturePaneDest);
+  placeFill(pictureFill, pictureFillView);
 }
 
 /* Put one element where the render puts that source. Called whenever either
@@ -452,6 +532,8 @@ function loadShot(shot) {
     pictureVideo.pause();
     picturePane.hidden = true;
     picturePane.pause();
+    loadFill(pictureFill, "", null);
+    pictureFillView = null;
     pictureStill.hidden = false;
     pictureStill.src = assetURL(shot.asset);
   } else {
@@ -476,12 +558,27 @@ function loadShot(shot) {
   placeShot(shot);
 }
 
+/* A fill can begin mid-asset — a window boundary inside one placement — so
+ * its element is loaded when the shot's fill first appears, not only on a
+ * new asset. */
+function placeShotFill(shot) {
+  const fill = shot.is_image ? null : shot.fill || null;
+  if (loadFill(pictureFill, assetURL(shot.asset), fill)) pendingFillSeek = shot.src_start;
+  if (fill === pictureFillView || (fill && pictureFillView && sameRect(fill.dest, pictureFillView.dest))) {
+    pictureFillView = fill;
+    return;
+  }
+  pictureFillView = fill;
+  placeFill(pictureFill, fill);
+}
+
 /* A still is never placed (the render does not crop one); a clip goes where
  * the render puts *that shot*. `shot.dest` and not the clip's entry, because
  * framing is source-addressed: two shots of one asset can read either side of
  * a window boundary and so want different rects, with the asset unchanged —
  * which is why this is called per frame rather than only on a load. */
 function placeShot(shot) {
+  placeShotFill(shot);
   const dest = shot.is_image ? null : shot.dest || null;
   const pane = shot.is_image ? null : shot.dest_pane || null;
   if (sameRect(dest, pictureDest) && sameRect(pane, picturePaneDest) && pictureAsset === shot.asset)
@@ -511,6 +608,7 @@ function paintPicture(t) {
     picture.hidden = true;
     pictureVideo.pause();
     picturePane.pause();
+    pictureFill.pause();
     pictureAsset = null;
     pictureDest = null;
     picturePaneDest = null;
@@ -525,17 +623,20 @@ function paintPicture(t) {
   if (pictureVideo.readyState === 0) {
     pendingPictureSeek = target;
     pendingPaneSeek = target;
+    pendingFillSeek = target;
     return;
   }
   if (media.paused) {
     if (!pictureVideo.paused) pictureVideo.pause();
     if (Math.abs(pictureVideo.currentTime - target) > PICTURE_EPS) pictureVideo.currentTime = target;
     followPane(target, true);
+    followFill(target, true);
     return;
   }
   if (Math.abs(pictureVideo.currentTime - target) > PICTURE_DRIFT) pictureVideo.currentTime = target;
   if (pictureVideo.paused) pictureVideo.play().catch(() => {});
   followPane(target, false);
+  followFill(target, false);
 }
 
 /* The split's lower pane, held to the same clock as the upper one.
@@ -548,13 +649,23 @@ function paintPicture(t) {
  */
 function followPane(target, paused) {
   if (!picturePane || picturePane.hidden || picturePane.readyState === 0) return;
+  follow(picturePane, target, paused);
+}
+
+/* A blur-fill background, on the same clock and for the same reason. */
+function followFill(target, paused) {
+  if (!pictureFill || pictureFill.hidden || pictureFill.readyState === 0) return;
+  follow(pictureFill, target, paused);
+}
+
+function follow(el, target, paused) {
   if (paused) {
-    if (!picturePane.paused) picturePane.pause();
-    if (Math.abs(picturePane.currentTime - target) > PICTURE_EPS) picturePane.currentTime = target;
+    if (!el.paused) el.pause();
+    if (Math.abs(el.currentTime - target) > PICTURE_EPS) el.currentTime = target;
     return;
   }
-  if (Math.abs(picturePane.currentTime - target) > PICTURE_DRIFT) picturePane.currentTime = target;
-  if (picturePane.paused) picturePane.play().catch(() => {});
+  if (Math.abs(el.currentTime - target) > PICTURE_DRIFT) el.currentTime = target;
+  if (el.paused) el.play().catch(() => {});
 }
 
 /* -- the caption layer: what the burn-in will put on the frame -----------
@@ -893,6 +1004,8 @@ export function init(passedCtx) {
   picture = $("picture");
   pictureVideo = $("picture-video");
   picturePane = $("picture-pane");
+  pictureFill = $("picture-fill");
+  mediaFill = $("media-fill");
   pictureStill = $("picture-still");
   pictureNote = $("picture-note");
   captionLayer = $("caption-layer");
@@ -918,6 +1031,13 @@ export function init(passedCtx) {
     if (pendingPaneSeek !== null) {
       picturePane.currentTime = pendingPaneSeek;
       pendingPaneSeek = null;
+    }
+  });
+
+  pictureFill.addEventListener("loadedmetadata", () => {
+    if (pendingFillSeek !== null) {
+      pictureFill.currentTime = pendingFillSeek;
+      pendingFillSeek = null;
     }
   });
 

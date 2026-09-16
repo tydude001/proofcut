@@ -4269,6 +4269,9 @@ def timeline_view(
                 else None
             ),
             "crops": not entry.is_identity(resolution),
+            # The head window's blur-fill background, for the edit track's
+            # preview — the same head-window answer `dest` is.
+            "fill": _fill_view(entry, 0.0, resolution),
         }
         for clip_id_, entry in entries.items()
     }
@@ -4288,6 +4291,9 @@ def timeline_view(
         # `dest` above is already the upper one. Null is the ordinary case.
         pane = found.pane_dest_at(at, resolution) if drawn else None
         shot["dest_pane"] = list(pane) if pane else None
+        # A blur-filled shot's background: where the writer puts it and how it
+        # is treated, so the preview derives neither. Null on every other shot.
+        shot["fill"] = _fill_view(found, at, resolution) if drawn else None
 
     head_cfg = _stored_head(project)
     head_view = {**head_cfg, "frames": _head_frames(project, shots_rate)} if head_cfg else None
@@ -7762,6 +7768,25 @@ def _reframe_map(project: Project, resolution: tuple[int, int]) -> dict[str, mlt
     return reframes
 
 
+def _fill_view(
+    entry: mlt.Reframe | None, seconds: float, resolution: tuple[int, int]
+) -> dict[str, Any] | None:
+    """A blur-fill background as the preview draws it, or None.
+
+    `blur` is `box_blur`'s radius as a fraction of the drawn background's
+    width — `FILL_BLUR` is in tenths of a percent of the image width (melt's
+    own `-query filter=box_blur`), and the image is the source, which the
+    background shows whole — so the page scales it by the width it drew and
+    never holds a pixel constant (PLAN.md § Blur-fill, finding 2).
+    """
+    if entry is None:
+        return None
+    dest = entry.fill_dest_at(seconds, resolution)
+    if dest is None:
+        return None
+    return {"dest": list(dest), "blur": mlt.FILL_BLUR / 1000, "darken": mlt.FILL_DARKEN}
+
+
 def _rect_text(rect: tuple[int, int, int, int]) -> str:
     return ",".join(str(value) for value in rect)
 
@@ -8707,6 +8732,10 @@ def reframe_sheet(
                     label = f"{row} {placement['asset']} @{when:.2f}s  {_rect_text(crop)}"
                     if pane is not None:
                         label += f" + {_rect_text(pane)} (split)"
+                    if entry is not None and entry.is_fill_at(when):
+                        # The rect is the whole frame, which is what a fill
+                        # shows; the label is what says it is not a crop.
+                        label += " (blur-fill)"
                     if pick["subject_x"] is not None:
                         # The number the tile is being read for: where the subject
                         # is against the middle of the crop, signed, so which way
@@ -8770,6 +8799,10 @@ def reframe_sheet(
                 # Whether any sampled frame of this placement is drawn as a
                 # stacked split, which is what a review page filters on.
                 "split": any(sample["pane"] for sample in samples),
+                # Whether this stretch is drawn blur-filled — the whole frame
+                # contained over its own blur (PLAN.md § Blur-fill). Its tiles'
+                # rect is then the whole source, which is not a crop.
+                "fill": bool(entry is not None and not sliding and entry.is_fill_at(begin)),
                 # And how much of the two panes is the same strip of source,
                 # which is what the split is *judged* on — the sheet draws the
                 # lower pane dashed so a reviewer can see the duplication, and

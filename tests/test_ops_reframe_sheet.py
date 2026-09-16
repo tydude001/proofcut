@@ -148,6 +148,22 @@ def test_a_placement_crossing_a_window_boundary_says_so(project: Project) -> Non
     assert [row["windows"] for row in rows] == [2, 2], "a property of the shot, not of the row"
 
 
+@needs_tools
+def test_a_blur_filled_window_is_named_on_its_row(project: Project) -> None:
+    """PLAN.md § Blur-fill, step 4: a fill's rect is the whole frame, which is
+    what it shows — so the row says it is a fill, not a crop that kept
+    everything, and the stretch after it is an ordinary crop again."""
+    ops.cue_add(project.root, "vo", 0, "clipa")
+    ops.reframe(project.root, "clipa", fill="blur")
+    ops.reframe(project.root, "clipa", rect="1461,0,459,816", src_start=1.0)
+
+    rows = ops.reframe_sheet(project.root)["rows"]
+
+    assert [row["fill"] for row in rows] == [True, False]
+    assert rows[0]["samples"][0]["crop"] == "0,0,1920,816"
+    assert rows[1]["samples"][0]["crop"] == "1461,0,459,816"
+
+
 # -- the keyframed move: a sliding window is never one static rect ---------
 #
 # PLAN.md § Per-shot framing, refused section; § The keyframed move.

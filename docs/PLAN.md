@@ -4871,12 +4871,16 @@ same clip. No new service, no mask, no `<blank>`.
 
 ### Finding 2 — the blur has to be a percentage, which rules out every avfilter blur
 
-`box_blur`'s radius is a percentage of the image, and ffmpeg's `gblur` sigma
+`box_blur`'s radius is relative to the image, and ffmpeg's `gblur` sigma
 is pixels. Measured as the seam's transition width over frame width, at
 1080x1920 and at 360x640: `box_blur` gives 6.20% and 6.39% (ratio 1.03),
 `gblur` gives 12.69% and 38.61% (ratio 3.04). A pixel blur tuned on one
 canvas is three times as strong on a third-size one, and it renders at
-exit 0 either way. **Use `box_blur`**. The same rule binds the preview (step
+exit 0 either way. **Use `box_blur`**. Its unit, corrected while building
+step 3: melt's own `-query filter=box_blur` says a radius of 100 is 10% of
+the image *width* (for `vradius` too), so the spike's 12 is **1.2%**, 23 px
+on a 1920-wide source. That matches the spike's measured seam; the "12%"
+this note first said did not. The same rule binds the preview (step
 3): CSS `filter: blur()` takes pixels, so its radius must be computed from
 the drawn frame's width, never written as a constant.
 
@@ -4951,5 +4955,5 @@ its document stays byte-identical (the aspect swap's rule).
 - **Per-window, not project-wide** (recommended). A project-wide "fill
   every mismatched shot" is one line on top of it later, if asked.
 - **Whole-source background** (recommended), not following the crop.
-- **Darkening fixed at 0.7, blur at 12%**, until a real render has been
+- **Darkening fixed at 0.7, blur at `box_blur` 12 (1.2% of the width)**, until a real render has been
   watched. A pack value would be tuning a number nobody has looked at.

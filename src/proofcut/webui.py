@@ -3509,6 +3509,8 @@ def _reframe(root: str, payload: dict[str, Any]) -> dict[str, Any]:
     already follows for its own args. `interp`, `reset` and `plan` are not
     read from the payload at all in this step (Studio Step 03 contract § B) —
     nudge and direct-rect-entry produce only `rect`/`pane`/`src_start`.
+    `fill` is the panel's Blur-fill choice (PLAN.md § Blur-fill), passed
+    through for `ops.reframe` to validate.
     """
     clip_id = _clip_arg(payload)
     rect = payload.get("rect")
@@ -3517,12 +3519,16 @@ def _reframe(root: str, payload: dict[str, Any]) -> dict[str, Any]:
     pane = payload.get("pane")
     if pane is not None and not isinstance(pane, str):
         raise WebUIError("'pane' must be a string")
+    fill = payload.get("fill")
+    if fill is not None and not isinstance(fill, str):
+        raise WebUIError("'fill' must be a string")
     src_start = payload.get("src_start")
     return ops.reframe(
         root,
         clip_id,
         rect=rect,
         pane=pane,
+        fill=fill,
         src_start=None if src_start is None else _float_arg(payload, "src_start"),
         interp=False,
         reset=False,

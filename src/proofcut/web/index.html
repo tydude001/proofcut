@@ -189,12 +189,19 @@
             <!-- Never display:none, even on an audio-only clip (PLAN.md §
                  Layout) — player.js draws a level display into #visualizer
                  instead when there is no picture to show. -->
+            <!-- A blur-filled edit clip's background: the same file, blurred,
+                 darkened and covering the canvas under #media (PLAN.md §
+                 Blur-fill). Hidden unless the clip's head window is a fill. -->
+            <video id="media-fill" preload="metadata" muted playsinline hidden></video>
             <video id="media" preload="metadata"></video>
             <canvas id="visualizer" width="960" height="240"></canvas>
             <!-- V2 over V1, stacked the way melt composites the picture track
                  over the edit's own track. player.js shows the shot under the
                  playhead in here, muted: the audio is always the transport's. -->
             <div id="picture" hidden>
+              <!-- A blur-filled shot's background, under the shot itself: a
+                   second producer of the same file, as the writer emits. -->
+              <video id="picture-fill" preload="metadata" muted playsinline hidden></video>
               <video id="picture-video" preload="metadata" muted playsinline></video>
               <!-- The lower half of a stacked split: a second producer of the
                    same file, which is exactly what the MLT writer emits for

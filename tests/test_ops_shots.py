@@ -448,3 +448,37 @@ def test_an_ordinary_shot_has_no_pane(project: Project) -> None:
 
     assert view["shots"][0]["dest_pane"] is None
     assert view["reframe"]["clipa"]["pane"] is None
+
+
+def test_a_blur_filled_shot_carries_its_background(project: Project) -> None:
+    """PLAN.md § Blur-fill, step 3: the preview draws the writer's own two
+    rects — the contained shot as `dest`, the covering background as
+    `fill.dest` — and its blur as a fraction of the width it draws, so the
+    page derives none of it."""
+    _wide(project)
+    ops.cue_add(project.root, "vo", 1, "clipa")
+    ops.reframe(project.root, "clipa", fill="blur")
+
+    view = ops.timeline_view(project.root)
+    shot = view["shots"][0]
+
+    filled = mlt.Reframe((1920, 816), (0, 0, 1920, 816), fills=(0.0,))
+    assert shot["dest"] == list(mlt.fit_rect((1920, 816), (1080, 1920)))
+    assert shot["fill"] == {
+        "dest": list(filled.cover_rect((1080, 1920))),
+        "blur": mlt.FILL_BLUR / 1000,
+        "darken": mlt.FILL_DARKEN,
+    }
+    assert shot["dest_pane"] is None
+    assert view["reframe"]["clipa"]["fill"] == shot["fill"]
+
+
+def test_an_ordinary_shot_has_no_fill(project: Project) -> None:
+    _wide(project)
+    ops.cue_add(project.root, "vo", 1, "clipa")
+    ops.reframe(project.root, "clipa", rect="0,0,459,816")
+
+    view = ops.timeline_view(project.root)
+
+    assert view["shots"][0]["fill"] is None
+    assert view["reframe"]["clipa"]["fill"] is None

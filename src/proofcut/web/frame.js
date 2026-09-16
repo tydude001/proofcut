@@ -618,6 +618,7 @@ function buildRow(row, windowIndex) {
   wrapper.append(header);
 
   const badges = el("div", "frame-row-badges");
+  if (row.fill) badges.append(el("span", "frame-badge", "blur-fill"));
   if (row.split) {
     const overlapText =
       row.pane_overlap === null || row.pane_overlap === undefined
@@ -733,6 +734,7 @@ function toggleReframePanel(row, anchorBtn) {
   const draft = {
     rect: parseRect(head && head.crop),
     pane: row.split ? parseRect(head && head.pane) : null,
+    fill: Boolean(row.fill),
   };
   const panel = buildReframePanel(row, draft);
   panel.dataset.rowKey = key;
@@ -771,14 +773,42 @@ function positionPanel(panel, anchorBtn, container) {
 
 function buildReframePanel(row, draft) {
   const panel = el("div", "toolbar-popover frame-reframe-panel");
-  panel.append(
-    el("div", "hint", `${row.asset} · src ${secs(windowAddress(row))} — nudge or type the crop`),
-  );
-  panel.append(buildRectEditor("rect", draft, "rect"));
+  panel.append(el("div", "hint", `${row.asset} · src ${secs(windowAddress(row))}`));
+
+  // Crop, or blur-fill: the whole frame contained over its own blurred copy
+  // (PLAN.md § Blur-fill). A fill takes no rect, so its editors fold away.
+  const mode = el("div", "frame-reframe-mode");
+  const cropBtn = el("button", null, "Crop");
+  const fillBtn = el("button", null, "Blur-fill");
+  cropBtn.type = fillBtn.type = "button";
+  cropBtn.title = "keep the rect below, cropped to fill the frame";
+  fillBtn.title = "show the whole frame, over a blurred, darkened copy of itself";
+  mode.append(cropBtn, fillBtn);
+  panel.append(mode);
+
+  const crop = el("div", "frame-reframe-crop");
+  crop.append(el("div", "hint", "nudge or type the crop"));
+  crop.append(buildRectEditor("rect", draft, "rect"));
   if (row.split) {
-    panel.append(el("div", "hint", "pane (lower half of the split)"));
-    panel.append(buildRectEditor("pane", draft, "pane"));
+    crop.append(el("div", "hint", "pane (lower half of the split)"));
+    crop.append(buildRectEditor("pane", draft, "pane"));
   }
+  panel.append(crop);
+
+  function syncMode() {
+    cropBtn.setAttribute("aria-pressed", String(!draft.fill));
+    fillBtn.setAttribute("aria-pressed", String(draft.fill));
+    crop.hidden = draft.fill;
+  }
+  cropBtn.addEventListener("click", () => {
+    draft.fill = false;
+    syncMode();
+  });
+  fillBtn.addEventListener("click", () => {
+    draft.fill = true;
+    syncMode();
+  });
+  syncMode();
 
   const actions = el("div", "frame-reframe-actions");
   const cancelBtn = el("button", null, "Cancel");
@@ -849,12 +879,10 @@ function buildRectEditor(label, draft, key) {
 async function submitReframe(row, draft, submitBtn) {
   if (!ctx) return;
   submitBtn.disabled = true;
-  const body = {
-    clip_id: row.asset,
-    rect: rectText(draft.rect),
-    src_start: windowAddress(row),
-  };
-  if (row.split && draft.pane) body.pane = rectText(draft.pane);
+  const body = draft.fill
+    ? { clip_id: row.asset, fill: "blur", src_start: windowAddress(row) }
+    : { clip_id: row.asset, rect: rectText(draft.rect), src_start: windowAddress(row) };
+  if (!draft.fill && row.split && draft.pane) body.pane = rectText(draft.pane);
   try {
     await ctx.api("/api/reframe", body);
   } catch (err) {

@@ -9,6 +9,6 @@ The public surface is the MCP server (``proofcut mcp``) and the equivalent CLI
 #: would remove the copy reads the *installed* dist-info, which goes stale
 #: against an editable checkout without saying so; tests/test_version.py
 #: has the reasoning and holds the two numbers together.
-__version__ = "0.27.0"
+__version__ = "0.28.0"
 
 __all__ = ["__version__"]

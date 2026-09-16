@@ -1055,10 +1055,13 @@ def _pane_filter(
     _property(node_filter, "rect", reframe.pane_rect_property(resolution, rate))
 
 
-#: A blur-fill background's blur, as `box_blur`'s radius — a **percentage**
-#: of the image, which is why it is `box_blur` and never an avfilter blur: a
-#: pixel sigma is three times as strong on a third-size canvas (PLAN.md
-#: § Blur-fill, finding 2). Fixed, with the darkening, until a real render has
+#: A blur-fill background's blur, as `box_blur`'s radius. Relative to the
+#: image, which is why it is `box_blur` and never an avfilter blur: a pixel
+#: sigma is three times as strong on a third-size canvas (PLAN.md § Blur-fill,
+#: finding 2). **The unit is not a plain percent**: melt's own
+#: `-query filter=box_blur` says 100 is a radius of 10% of the image *width*,
+#: for `vradius` too, so 12 is 1.2% — 23px on a 1920-wide source, which is the
+#: seam the spike measured. Fixed, with the darkening, until a real render has
 #: been watched.
 FILL_BLUR = 12
 FILL_DARKEN = 0.7

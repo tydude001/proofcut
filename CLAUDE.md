@@ -1543,6 +1543,18 @@ configured — face detection, say — at exit 0. HISTORY.md § `lucid doctor`.
       neither; **4 of its 10 proposals are the duplicating kind**, 3 of them
       predating the 0.15 floor. Reported, never enforced. HISTORY.md § The thirty-nine windows, reviewed; § What the
       re-pin did to the detector.
+  - **A window can be blur-filled (`fill: "blur"`)**: the whole source
+    contained, over a blurred, darkened copy covering the canvas, on its own
+    node role (`fchain`/`fvchain`) and track *under* its lane, switched by
+    opacity at every window boundary like a pane. Its record's `rect` is the
+    whole source, so every reader of the stored window still works. Three
+    traps, each measured. **The blur is `box_blur`, never an avfilter blur**:
+    a pixel sigma is 3x as strong on a third-size canvas. **`box_blur`'s
+    radius 100 is 10% of the image *width***, so `FILL_BLUR = 12` is 1.2%,
+    not the 12% it reads as. **CSS `blur()` fades an element's own edges into
+    transparency**, and a covering background's edges sit on the frame's, so
+    the preview grows the element by 3σ or draws a dark band that melt does
+    not. PLAN.md § Blur-fill; HISTORY.md § Blur-fill, built.
   - **An export preset never sets the canvas — `tiktok-reels` *checks* it and
     refuses.** The obvious build is the wrong one: a flag that reshapes the
     project is an export argument rewriting project state, the same failure as

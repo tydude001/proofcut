@@ -1612,6 +1612,8 @@ textarea {
 #picture[hidden],
 #picture-video[hidden],
 #picture-pane[hidden],
+#picture-fill[hidden],
+#media-fill[hidden],
 #picture-still[hidden] {
   display: none;
 }
@@ -3306,6 +3308,24 @@ textarea {
   min-width: 260px;
   max-height: min(60vh, 420px);
   overflow-y: auto;
+}
+
+/* Crop or Blur-fill, one pressed. The crop editors fold away under a fill,
+   and `.frame-reframe-crop[hidden]` is the companion rule that makes
+   `hidden` hold against any display rule a later edit adds. */
+.frame-reframe-mode {
+  display: flex;
+  gap: 4px;
+  margin: 6px 0 8px;
+}
+
+.frame-reframe-mode button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.frame-reframe-crop[hidden] {
+  display: none;
 }
 
 .frame-rect-editor {

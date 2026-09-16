@@ -15664,3 +15664,67 @@ the live project.
 Tests: `tests/test_ops_changes.py` (14 cases, including an undone change
 dropping out of the answer and the op writing nothing), plus a stdio test
 covering a cut and a cue through the real server.
+
+## Blur-fill, built — 2026-09-16
+
+PLAN.md § Blur-fill, all four steps, with the note's three recommendations
+taken: per window, a background that covers the whole source, and the look
+fixed at `brightness 0.7` and `box_blur 12`. `reframe <clip> --fill blur
+[--at S]` (MCP `fill="blur"`) makes a window show the whole source,
+contained, over a blurred, darkened copy of the same moment covering the
+canvas.
+
+- **The writer.** `mlt.Reframe.fills` marks fill windows. The picture node
+  steps to the contain rect there, and a new node role (`fchain` on the edit
+  lane, `fvchain` on the picture lane) carries `box_blur`, `brightness` and a
+  cover-rect `qtblend` whose opacity is keyed at every window boundary. Its
+  track goes directly under the lane it backs, which puts the picture lane's
+  background above the edit lane; otherwise the edit's footage would show
+  through a filled shot's bars. A slide into or out of a fill is refused, as
+  is a window that is both a split and a fill. A project with no fill
+  writes no new node.
+- **Read back off a real melt render**, against a no-fill control. The
+  source's halves change colour every 1.5 s. Inside the fill, the bands read
+  174–176 on the lit channel (255 × 0.7 is 178) and the contained centre
+  reads 251. The control's bands read 251–252. At 2.25 s both bands had
+  changed colour with the source, so the background is the same moment. The
+  crop from 3 s filled the frame at full brightness. This is
+  `test_a_blur_fill_renders_the_same_moment_contained_over_its_own_darkened_copy`.
+- **`box_blur`'s unit was misread in the design note.** melt's own
+  `-query filter=box_blur` says a radius of 100 is 10% of the image width,
+  so 12 is 1.2% (23 px on a 1920-wide source). That matches the spike's
+  measured seam; the note's "12%" did not. The note is corrected.
+- **The preview** (`player.js`) draws each fill as a second muted element
+  under its layer (`#picture-fill`, and `#media-fill` for the edit track's
+  head window), placed by `timeline_view`'s `fill.dest`. It is blurred by
+  `fill.blur` × its drawn width ÷ √3, the spread of a box that wide.
+  Checked in headless Chrome on a 360x640 project over `testsrc2`:
+  - The rects and the 6.53 px blur matched the server's numbers exactly.
+  - Canvas readback of the fill element matched ffmpeg's frame at 1.5 s
+    (mean difference 14.0) against 19.2 or more a tenth of a second either
+    side, the same curve as the main shot element.
+  - Over 2 s of playback the fill kept the shot's `currentTime` to the
+    hundredth.
+  - **The first build drew a dark band along the frame's top and bottom**,
+    because CSS `blur()` fades an element's edges into transparency and a
+    cover rect's edges sit on the frame's. Growing the element by 3σ fixed
+    it: the top rows' mean went from `#3B3C3B` to `#585957`, against the
+    render's `#575756`.
+- **The sheet** labels a fill tile `(blur-fill)` and sets `fill` on its row.
+  **Frame mode's Re-frame panel** has a Crop / Blur-fill choice, and a fill
+  row carries a `blur-fill` badge. Driven at 0 and 120 ms dwell:
+  - The choice submits `fill`, and the manifest took it.
+  - The rebuilt sheet shows the badge, and the panel reopens on Blur-fill.
+  - No page overflow at 700 px.
+  - The first submit was refused, visibly, because the server process
+    predated the route change. That was the harness, not the page.
+  - **A rough edge, left as it is:** switching a fill row back to Crop
+    starts from the whole-source rect, which the server refuses with the
+    largest crop that fits. The page does not derive a crop itself.
+- **A reply row carries `fill` only on a fill window.**
+  `test_the_windows_come_back_in_source_order` pins a row's exact shape, so
+  the key is absent on crops, the same way it is absent from the manifest
+  record.
+
+**Not yet watched:** a blur-fill on real footage. The fixed look waits on
+that viewing.

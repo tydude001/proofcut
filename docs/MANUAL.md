@@ -610,6 +610,7 @@ proofcut -C myproject reframe cold-open --rect 1400,0,459,816
 proofcut -C myproject reframe cold-open --rect 0,0,459,816 --at 20.4   # from there on
 proofcut -C myproject reframe cold-open --rect 0,0,918,816 --pane 1002,0,918,816
 proofcut -C myproject reframe cold-open --rect 930,0,450,800 --at 7.34 --interp  # slide, don't step
+proofcut -C myproject reframe cold-open --fill blur --at 12.0   # whole frame, over its own blur
 proofcut -C myproject reframe cold-open --reset        # back to the centre
 proofcut -C myproject reframe-detect                   # propose a window per shot
 proofcut -C myproject reframe-sheet                    # every window, drawn, for review
@@ -623,6 +624,13 @@ it is stored as asked and refit whenever the canvas moves. A rect that is not
 already the canvas's shape is *grown* to it rather than shrunk into it —
 everything named stays on screen — and one that cannot be shown whole is
 refused with the largest rect that can.
+
+`--fill blur` is for the shot no crop and no split can hold: that window
+shows the whole frame, contained, over a blurred, darkened copy of the same
+moment covering the canvas. It takes no `--rect`, and the preview and the
+sheet both draw it (the sheet labels the row `blur-fill`). It renders a
+second copy of the footage, which cost about 80% more render time in the
+measurement, and only a project that uses it pays that.
 
 `reframe-detect` will propose one window per camera shot from where the faces
 are — it beats the centre crop on every measure against fifteen hand-framed
