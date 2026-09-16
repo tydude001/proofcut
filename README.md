@@ -13,7 +13,7 @@ film the agent cut): [the workspace](https://github.com/tydude001/proofcut/relea
 (2:26) and [Claude Code with the proofcut plugin](https://github.com/tydude001/proofcut/releases/download/v0.23.0/proofcut-v0.23.0-uncut-claude-code-run.mp4)
 (3:09).
 
-That is not a staged run. [TRIAL.md](docs/TRIAL.md) scores three unattended
+That is not a staged run. [TRIAL.md](https://github.com/tydude001/proofcut/blob/main/docs/TRIAL.md) scores three unattended
 ones, each handed a goal and no steps, and each passed every one of its checks.
 - **The demo cut**, the one above.
 - **Real footage:** 96 seconds of narration with its fluffed takes left in,
@@ -35,8 +35,8 @@ ones, each handed a goal and no steps, and each passed every one of its checks.
 
 One project, and proofcut's own commands from the first import to the
 delivered file. No NLE finishes the film, and nothing else touches the render.
-Each stage is one command. The [manual](docs/MANUAL.md) walks every one, and
-its [§ Music, holds, a cold open and the master](docs/MANUAL.md#music-holds-a-cold-open-and-the-master)
+Each stage is one command. The [manual](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md) walks every one, and
+its [§ Music, holds, a cold open and the master](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#music-holds-a-cold-open-and-the-master)
 covers the sound:
 
 | Stage | Command |
@@ -94,7 +94,7 @@ a film, and proves the film matches the edit.
 through, the preview drawing the shot under the playhead with its captions, the
 side rail on its agent tab reporting a finished render against the timeline,
 and the layered timeline below — picture, waveform and captions as three
-projections of one edit](docs/img/edit-mode.png)
+projections of one edit](https://raw.githubusercontent.com/tydude001/proofcut/main/docs/img/edit-mode.png)
 
 ## How it works
 
@@ -142,7 +142,7 @@ uv sync
 
 ### The two-minute demo
 
-No footage needed. [docs/DEMO.md](docs/DEMO.md) generates a voiceover with a
+No footage needed. [docs/DEMO.md](https://github.com/tydude001/proofcut/blob/main/docs/DEMO.md) generates a voiceover with a
 real retake, b-roll and a score, then walks a whole small film: cut the retake
 by naming its words, hang b-roll off a phrase, lay the score under the voice,
 render and master it, end on a card, and check the render against the
@@ -199,7 +199,7 @@ uv run proofcut -C myproject web --open  # the same page in a browser tab
 
 ## What it does
 
-One line each. The [manual](docs/MANUAL.md) covers every command and the
+One line each. The [manual](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md) covers every command and the
 reasoning behind it.
 
 **Editing**
@@ -265,7 +265,7 @@ reasoning behind it.
 drawn as a rect on three of the source's own frames, over a filmstrip of the
 whole shot with the sampled instants ticked on it, the window's rect quoted
 in source pixels, Approve/Re-frame beside it, and coverage chips for stale
-framing and unexplained steps](docs/img/frame-mode.png)
+framing and unexplained steps](https://raw.githubusercontent.com/tydude001/proofcut/main/docs/img/frame-mode.png)
 
 proofcut is 0.x software. A project from an older version is refused rather
 than guessed at, and `proofcut migrate` brings it forward.
@@ -322,13 +322,13 @@ proofcut is developed on Linux (a Fedora-based desktop). On macOS and
 Windows the test suite passes on CI and GitHub's runners take the demo to a
 checked render. On Windows one person's PC has too, the author's; no person
 has run it on a Mac yet. Where each OS stands is in
-[docs/plans/PORTABILITY.md](docs/plans/PORTABILITY.md).
+[docs/plans/PORTABILITY.md](https://github.com/tydude001/proofcut/blob/main/docs/plans/PORTABILITY.md).
 
 Run `uv run proofcut doctor` to check everything below at once. On Linux,
 `uv run proofcut setup` installs any of the last four that doctor marks ✗:
 a static ffmpeg, whisper, auto-editor's release binary and Shotcut's
 portable melt, which renders with no display at all
-([docs/plans/INSTALL.md](docs/plans/INSTALL.md)).
+([docs/plans/INSTALL.md](https://github.com/tydude001/proofcut/blob/main/docs/plans/INSTALL.md)).
 
 | You need | For | Notes |
 |---|---|---|
@@ -352,10 +352,10 @@ available, and everything else works without it:
 ## Working on proofcut
 
 Whether you're a person or a coding agent, start with
-[CLAUDE.md](CLAUDE.md). It holds the rules and the traps this repo has
+[CLAUDE.md](https://github.com/tydude001/proofcut/blob/main/CLAUDE.md). It holds the rules and the traps this repo has
 already hit, and Claude Code loads it automatically.
-[CONTRIBUTING.md](CONTRIBUTING.md) is the short version a pull request is
-checked against, and [SECURITY.md](SECURITY.md) says how to report a
+[CONTRIBUTING.md](https://github.com/tydude001/proofcut/blob/main/CONTRIBUTING.md) is the short version a pull request is
+checked against, and [SECURITY.md](https://github.com/tydude001/proofcut/blob/main/SECURITY.md) says how to report a
 vulnerability.
 
 Where things live:
@@ -389,29 +389,29 @@ regression.
 
 ## Documentation
 
-- [docs/MANUAL.md](docs/MANUAL.md): every command, with the reasoning.
-- [docs/DEMO.md](docs/DEMO.md): the whole loop in two minutes.
+- [docs/MANUAL.md](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md): every command, with the reasoning.
+- [docs/DEMO.md](https://github.com/tydude001/proofcut/blob/main/docs/DEMO.md): the whole loop in two minutes.
 
 proofcut's reasoning is part of what it ships, so the design record is public:
 
-- [PLAN.md](docs/PLAN.md): architecture, stack decisions, open questions.
-- [HISTORY.md](docs/HISTORY.md): the dated record of what shipped and what the
+- [PLAN.md](https://github.com/tydude001/proofcut/blob/main/docs/PLAN.md): architecture, stack decisions, open questions.
+- [HISTORY.md](https://github.com/tydude001/proofcut/blob/main/docs/HISTORY.md): the dated record of what shipped and what the
   evidence said.
-- [PRIOR-ART.md](docs/PRIOR-ART.md): what else exists in this space, and what
+- [PRIOR-ART.md](https://github.com/tydude001/proofcut/blob/main/docs/PRIOR-ART.md): what else exists in this space, and what
   proofcut does that they don't.
-- [NEXT.md](docs/NEXT.md): the directions after the queues closed, ranked.
-- [TRIAL.md](docs/TRIAL.md): an agent cutting a video end to end, unattended
+- [NEXT.md](https://github.com/tydude001/proofcut/blob/main/docs/NEXT.md): the directions after the queues closed, ranked.
+- [TRIAL.md](https://github.com/tydude001/proofcut/blob/main/docs/TRIAL.md): an agent cutting a video end to end, unattended
   and scored.
-- [docs/plans/](docs/plans): the plans. LAUNCH.md, PORTABILITY.md, NATIVE.md
+- [docs/plans/](https://github.com/tydude001/proofcut/tree/main/docs/plans): the plans. LAUNCH.md, PORTABILITY.md, NATIVE.md
   and SHOWCASE.md are in progress, and RENAME.md is done. Three are finished and kept because the code
-  cites their reasoning: [DAYDREAM.md](docs/plans/DAYDREAM.md), the
+  cites their reasoning: [DAYDREAM.md](https://github.com/tydude001/proofcut/blob/main/docs/plans/DAYDREAM.md), the
   feature map from [Daydream](https://www.daydreamvideo.com), the closest
-  commercial product; [STUDIO.md](docs/plans/STUDIO.md), the workspace
-  design; and [POLISH.md](docs/plans/POLISH.md), the works-for-anyone pass.
+  commercial product; [STUDIO.md](https://github.com/tydude001/proofcut/blob/main/docs/plans/STUDIO.md), the workspace
+  design; and [POLISH.md](https://github.com/tydude001/proofcut/blob/main/docs/plans/POLISH.md), the works-for-anyone pass.
 
 ## License
 
-[PolyForm Shield 1.0.0](LICENSE). proofcut is source-available, not open
+[PolyForm Shield 1.0.0](https://github.com/tydude001/proofcut/blob/main/LICENSE). proofcut is source-available, not open
 source: you can read, run, change and redistribute it for any purpose except
 building a product that competes with it. Cutting your own videos, running it
 for clients, building on it and forking it to fix a bug are all fine. For a
