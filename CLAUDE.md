@@ -58,6 +58,12 @@ listings that predate the finishing half, the third trial that measures an
 agent doing it, why never "generate" or "from scratch", and why the name
 stays — is [docs/plans/SHOWCASE.md](docs/plans/SHOWCASE.md), written
 2026-09-15.
+What the MCP surface costs its clients and what to change — the agent
+panel's `--tools ""` loading all 92 definitions on every turn (measured
+ten times the price of a `ping`), the ten descriptions Claude Code
+truncates, the unbounded replies, progress for the long tools, the briefs
+as prompts — is [docs/plans/MCP.md](docs/plans/MCP.md), written
+2026-09-16; nothing in it is built.
 Open-item status lives in the wiki, not here. **This repo is public: a
 goodsometimes video's production record (versions, renders, creative calls,
 release state) goes in `goodsometimes/ideas/<video>.md`**, and HISTORY.md
