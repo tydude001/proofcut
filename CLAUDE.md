@@ -63,7 +63,8 @@ panel's `--tools ""` loading all 92 definitions on every turn (measured
 ten times the price of a `ping`), the ten descriptions Claude Code
 truncates, the unbounded replies, progress for the long tools, the briefs
 as prompts — is [docs/plans/MCP.md](docs/plans/MCP.md), written
-2026-09-16; nothing in it is built.
+2026-09-16 and built the same day but for resources, which it defers;
+HISTORY.md § The MCP surface, rebuilt for deferred loading is the record.
 Open-item status lives in the wiki, not here. **This repo is public: a
 goodsometimes video's production record (versions, renders, creative calls,
 release state) goes in `goodsometimes/ideas/<video>.md`**, and HISTORY.md
@@ -238,7 +239,7 @@ configured — face detection, say — at exit 0. HISTORY.md § `lucid doctor`.
     on the raw `CallToolResult`: `test_server_stdio`'s `Client` reads
     `content[0]`, so a tool returning only its table passes.
   - **All four sheets return the bytes; `reframe_sheet` unpaged is the one
-    path, deliberately.** The agent panel's `--tools ""` means no Read, so a
+    path, deliberately.** The agent panel's `--tools ToolSearch` means no Read, so a
     path is unreachable there. Each answers a different question:
     `shot_sheet` is the *timeline's* picture track, `footage_sheet` browses
     one registered clip's own *source* and needs no edit, cues or transcript,
@@ -286,9 +287,44 @@ configured — face detection, say — at exit 0. HISTORY.md § `lucid doctor`.
 - **`claude -p` stream-json output requires `--verbose`, and the
   allow/disallow-tools flags do not gate built-in tools.** Without
   `--verbose`, 2.1.226 errors and **exits 0** with empty stdout; a built-in
-  tool named in neither list just runs, unprompted — `--tools ''` is what
+  tool named in neither list just runs, unprompted — `--tools` is what
   actually confines the agent panel to proofcut's MCP tools. Both verified by
   reproduction. PLAN.md § The agent panel, in mechanism.
+  - **`--tools` is `ToolSearch`, never `""` — `webui._AGENT_TOOLS`, which
+    `agent_trial.py` imports.** `""` strips tool search with the rest, and
+    then Claude Code loads every one of proofcut's definitions on every turn:
+    92,266 turn-1 tokens against 9,359 for the same `ping`, ten times the
+    cost. `ToolSearch` reads no file and runs nothing, so the confinement
+    holds; what it changes is that `instructions` (`server.INSTRUCTIONS`) is
+    the only proofcut text loaded up front, so it is a **map of tool
+    families**, capped at 2 KB like every description (both silently
+    truncated past that, both held by a wire test). A reply past the
+    client's 25K tokens becomes a file path the panel cannot open, so a
+    reply that grows with the film is **windowed by default**
+    (`get_transcript`, `caption_view`, `timeline_view`). HISTORY.md § The
+    MCP surface, rebuilt for deferred loading.
+  - **A long tool reports progress through `proofcut.progress`, a context
+    variable — never a callback argument on the op.** `_tool()` installs a
+    reporter when the tool takes the SDK's `Context`, a web UI job installs
+    one per job, and whisper's segment lines, melt's `-progress` counter and
+    the shipped workers' `proofcut-progress i n` stderr lines report into
+    it. A stdio call silent for 30 minutes is aborted by Claude Code, so a
+    new long tool takes `ctx: Context | None = None`. **The streaming path
+    runs only while someone listens** — unwatched, every call is the
+    `subprocess.run` it was, which is what a dozen tests patch. The tool
+    body runs on an anyio worker thread and reports can come from a pipe
+    reader under it, so the loop token is fetched with
+    `from_thread.run_sync(lowlevel.current_token)`:
+    `from_thread.current_token()` wants a loop in *this* thread and raises.
+  - **The trial briefs and the `cut`/`film`/`review` prompts are one text,
+    `proofcut.briefs`** — `tests/test_briefs.py` holds the trial rendering
+    byte for byte, so editing a shared goal line changes what the next trial
+    measures. The prompts differ only where the reader does: a person's
+    agent has a shell, so no prompt says it has none.
+  - **An unbound `proofcut mcp` started inside a project binds to it**
+    (`bound_by: "cwd"` in `ping`/`doctor`), which is how the plugin spares
+    its users `path`. It also means a server launched from a project refuses
+    every other one; start it elsewhere to reach several.
   - **A generated MCP config's `command` is resolved by `claude` against
     *its* PATH, never by proofcut — so it names `sys.executable` and
     `-m proofcut.cli`, never the string `proofcut`.** A bare name is absent from
@@ -403,7 +439,7 @@ configured — face detection, say — at exit 0. HISTORY.md § `lucid doctor`.
     docstrings mean `path=None` as "no project", not "which one". HISTORY.md
     § The trial's queue, closed.
   - **`list_media` is what hands an unattended agent source paths** —
-    `--tools ""` gives it no directory listing of its own. `source_dir` is
+    `--tools ToolSearch` gives it no directory listing of its own. `source_dir` is
     deliberately not a `_tool()` selector (`import_media`'s own `source`
     precedent): it names where footage lives, not a project, so confining
     it would refuse the tool's whole point. A filename filter against

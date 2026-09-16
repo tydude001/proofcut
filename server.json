@@ -3,7 +3,7 @@
   "name": "io.github.tydude001/proofcut",
   "title": "proofcut",
   "description": "Local-first AI video editor: recordings to a finished film, cut by transcript, then verified",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "repository": {
     "url": "https://github.com/tydude001/proofcut",
     "source": "github"

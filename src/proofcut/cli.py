@@ -199,6 +199,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sub.add_parser("ping", help="print the same payload the MCP ping tool returns")
 
+    p_brief = sub.add_parser(
+        "brief", help="print one of the briefs the MCP server ships as a prompt"
+    )
+    p_brief.add_argument("brief", choices=["cut", "film", "review"])
+    p_brief.add_argument("media", nargs="?", help="the material folder (cut, film)")
+    p_brief.add_argument("--output", help="where the finished file goes")
+    p_brief.add_argument("--length", help="how long the result should run, e.g. 90s")
+    p_brief.add_argument("--end-card", help="what the film's end card reads (film)")
+    p_brief.add_argument("--loudness", help="the film's master level in LUFS (film)")
+    p_brief.add_argument("--render", help="the rendered file to check (review)")
+
     p_doctor = sub.add_parser(
         "doctor", help="check every external dependency proofcut needs, and say how to fix each"
     )
@@ -317,6 +328,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_tx.add_argument("--first", type=int, help="first word index (inclusive)")
     p_tx.add_argument("--last", type=int, help="last word index (inclusive)")
     p_tx.add_argument("--search", help="locate a phrase; returns word ranges")
+    p_tx.add_argument("--limit", type=int, help="return at most this many words (default: all)")
 
     p_tx_checks = sub.add_parser(
         "transcript-checks",
@@ -422,7 +434,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p_card = sub.add_parser("card", help="generate the card assets a picture cue points at")
     card_sub = p_card.add_subparsers(dest="card_command", required=True)
 
-    card_sub.add_parser("templates", help="the card templates proofcut ships, and their slots")
+    p_card_templates = card_sub.add_parser(
+        "templates", help="the card templates proofcut ships, and their slots"
+    )
+    p_card_templates.add_argument(
+        "name", nargs="?", help="one template's slots in full; the rest by name only"
+    )
 
     p_card_new = card_sub.add_parser(
         "new", help="fill a template's slots and land both the SVG and its PNG"
@@ -822,6 +839,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_view.add_argument(
         "--clip-id", help="which clip's words to report (default: the one the timeline opens with)"
     )
+    p_view.add_argument("--first", type=int, help="first word of the words list to report")
+    p_view.add_argument("--limit", type=int, help="report at most this many words (default: all)")
 
     sub.add_parser("assets", help="every clip and card a cue can point at, with usage counts")
 
@@ -1077,6 +1096,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_capview.add_argument(
         "--clip-id", help="caption only this clip (default: every clip with a transcript)"
     )
+    p_capview.add_argument("--first", type=int, help="first cue to report")
+    p_capview.add_argument("--limit", type=int, help="report at most this many cues (default: all)")
 
     p_capstyle = sub.add_parser(
         "caption-style", help="read or change the caption look this project keeps"
@@ -2091,7 +2112,12 @@ def _cmd_hear(args: argparse.Namespace) -> int:
 def _cmd_transcript(args: argparse.Namespace) -> int:
     return _emit(
         ops.get_transcript(
-            args.project, args.clip_id, first=args.first, last=args.last, search=args.search
+            args.project,
+            args.clip_id,
+            first=args.first,
+            last=args.last,
+            search=args.search,
+            limit=args.limit,
         )
     )
 
@@ -2149,7 +2175,7 @@ def _slot_assignments(pairs: list[str]) -> dict[str, str]:
 
 def _cmd_card(args: argparse.Namespace) -> int:
     if args.card_command == "templates":
-        return _emit(ops.card_templates())
+        return _emit(ops.card_templates(args.name))
     if args.card_command == "new":
         return _emit(
             ops.card_new(
@@ -2366,7 +2392,9 @@ def _cmd_status(args: argparse.Namespace) -> int:
 
 
 def _cmd_view(args: argparse.Namespace) -> int:
-    return _emit(ops.timeline_view(args.project, clip_id=args.clip_id))
+    return _emit(
+        ops.timeline_view(args.project, clip_id=args.clip_id, first=args.first, limit=args.limit)
+    )
 
 
 def _cmd_assets(args: argparse.Namespace) -> int:
@@ -2520,7 +2548,9 @@ def _cmd_captions(args: argparse.Namespace) -> int:
 
 
 def _cmd_caption_view(args: argparse.Namespace) -> int:
-    return _emit(ops.caption_view(args.project, clip_id=args.clip_id))
+    return _emit(
+        ops.caption_view(args.project, clip_id=args.clip_id, first=args.first, limit=args.limit)
+    )
 
 
 def _cmd_caption_style(args: argparse.Namespace) -> int:
@@ -2997,6 +3027,35 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     return 0 if payload["ok"] else 1
 
 
+def _cmd_brief(args: argparse.Namespace) -> int:
+    """The prompt text itself, not JSON: it is for pasting into an agent.
+
+    `-C` names the project when typed, the prompts' own `project` argument.
+    """
+    from pathlib import Path
+
+    from proofcut import briefs
+
+    project = str(Path(args.project).resolve()) if args.project_given else None
+    if args.brief == "review":
+        text = briefs.review(render=args.render, project=project)
+    elif not args.media:
+        raise ProjectError(f"`proofcut brief {args.brief}` needs the material folder")
+    elif args.brief == "cut":
+        text = briefs.cut(args.media, output=args.output, length=args.length, project=project)
+    else:
+        text = briefs.film(
+            args.media,
+            output=args.output,
+            length=args.length,
+            end_card=args.end_card,
+            loudness=args.loudness,
+            project=project,
+        )
+    print(text, end="")
+    return 0
+
+
 def _cmd_ping(_args: argparse.Namespace) -> int:
     from proofcut.server import ping
 
@@ -3012,7 +3071,9 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
     # client happened to launch from. Unbound is the general-client default;
     # bound is what the web UI's agent panel spawns (`webui.py`'s generated
     # MCP config), and what confines that agent to the project it was opened
-    # on rather than to proofcut's ops in general.
+    # on rather than to proofcut's ops in general. Untyped, `serve` still binds
+    # when it is started inside a project (docs/plans/MCP.md § Step 8) — that
+    # is a directory that says it is one, not whatever the client stood in.
     serve(
         root=args.project if args.project_given else None,
         transport=args.transport,
@@ -3101,6 +3162,7 @@ _COMMANDS = {
     "speech-overlap": _cmd_speech_overlap,
     "export": _cmd_export,
     "ping": _cmd_ping,
+    "brief": _cmd_brief,
     "mcp": _cmd_mcp,
 }
 

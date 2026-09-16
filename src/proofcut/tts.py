@@ -53,6 +53,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from proofcut import progress
+
 #: Qwen3-TTS's 12 Hz codec, measured: `max_new_tokens=420` rendered 33.5 s.
 TOKENS_PER_SECOND = 12.5
 
@@ -243,7 +245,11 @@ def synth(
             encoding="utf-8",
         )
         cmd = [str(python), str(_WORKER), str(job_path), str(out_path)]
-        completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        completed = (
+            progress.run_worker(cmd, "synthesising the voice")
+            if progress.active()
+            else subprocess.run(cmd, capture_output=True, text=True, check=False)
+        )
         if completed.returncode != 0 or not out_path.exists():
             raise TTSError(_worker_failure(python, completed))
         payload = json.loads(out_path.read_text(encoding="utf-8"))

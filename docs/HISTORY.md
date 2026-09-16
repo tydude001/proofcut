@@ -15455,3 +15455,97 @@ the drive as a placeholder.
 
 - Nobody but Tyler has run either script, on any Windows. Windows 10 and
   ARM64 are untried. Issue #2 stays open for that.
+
+## The MCP surface, rebuilt for deferred loading — 2026-09-16
+
+docs/plans/MCP.md, built the same day it was written, all but step 10
+(resources, deferred by the plan itself). v0.26.0: the prompts are new
+callable things. Each step below was judged on the wire, over a real stdio
+session, not by reading a tool body.
+
+- **Step 1.** The agent panel spawns `claude --tools ToolSearch`
+  (`webui._AGENT_TOOLS`) instead of `--tools ""`, and `agent_trial.py` now
+  imports the name — it had restated `""` at its own spawn while its
+  docstring said the flags were imported. The one test that pinned `""`
+  (`test_webui_http`'s agent argv test) now pins `ToolSearch`: the plan
+  changed the value, not the rule the test holds.
+- **Step 2.** `instructions` went from a 786-byte command order to a
+  1,435-byte map (`server.INSTRUCTIONS`): what proofcut is, the tool family
+  per phase, the four rules an agent breaks silently, and the three tools to
+  read first. A wire test caps it at 2,048 bytes and holds every tool name
+  in it to a registered tool.
+- **Step 3.** The ten descriptions over 2 KB are under it; the longest tool
+  description is now `verify` at 1,980 bytes. Almost all of what came out was
+  already in `_PARAM_DOCS` word for word. One argument row was wrong and the
+  cut surfaced it: `footage_sheet`'s `mode` described two of its four modes,
+  and called `auto` an interval when it prefers described windows.
+- **Step 4.** `_tool(always_load=True)` sets `_meta["anthropic/alwaysLoad"]`;
+  nothing uses it, and a test pins the empty set until a trial says
+  otherwise.
+- **Step 5.** Measured on the 336 s film, the text the SDK sends was
+  `timeline_view` 388 KB, `caption_view` 225 KB and `get_transcript` 118 KB.
+  All three are windowed by default now — 300 words (31 KB on the film), 30
+  cues (39 KB), 100 view words (85 KB) — each reply naming its total and
+  where to continue. `card_templates(name=)` is 3.7 KB against 19.1 KB.
+  **One departure from the plan:** it gave `timeline_view` a raised
+  `maxResultSizeChars` "for the window", but the window calls
+  `ops.timeline_view` directly and never goes through MCP, so the words are
+  windowed there too and the raised cap (200,000) covers only the lanes
+  (segments, seams, shots), which are 60 KB of text on the film and cannot
+  be split. The CLI takes the same `--first`/`--limit` and defaults to all.
+  A test builds a 20-minute, 3,600-word transcript, holds each
+  default reply under `server.REPLY_CAP_BYTES`, and pages all 3,600 words
+  with nothing skipped or repeated; with the window removed it reads 453 KB.
+- **Step 6.** `proofcut.progress` holds a reporter in a context variable,
+  where the plan said a callback threaded through each op — the sources are
+  three calls deep (`export` → `picture.render` → melt) and nothing between
+  has anything to say. whisper's verbose segment lines (with
+  `PYTHONUNBUFFERED`, or a piped child holds them to exit), melt's
+  `-progress` counter (checked on the flatpak's melt first: `Current Frame:
+  N, percentage: P`, redrawn with a carriage return) and a
+  `proofcut-progress i n` stderr line from each of the three workers all
+  report into it. `-progress` is a melt option, not a consumer property, so
+  the measured-safe consumer key set is untouched, and it is only passed
+  while someone listens: **unwatched, every call is still the
+  `subprocess.run` it was**, which is also what a dozen tests patch. The
+  seven long tools take `ctx: Context | None`, and `_tool()` turns reports
+  into `notifications/progress`, stacking a phase that restarts from 0 on
+  top of what was sent, since the spec wants values that only rise.
+  Two defects were caught before shipping. `from_thread.current_token()` raises on
+  an anyio worker thread (it wants a loop in *that* thread), so the token
+  comes from `from_thread.run_sync(lowlevel.current_token)`. And the
+  throttle dropped the first report whenever the clock read under a second,
+  which a test with a fake clock found. Watched live over stdio on a
+  generated demo project: a real whisper pass reported 3.5 of 18.7 s, and a
+  real melt render 263 then **405 of 405** — the last only after the file
+  checked out, because melt's counter is a frame index and stops at 404.
+  The web UI's jobs publish the same reports as `progress` events. In a
+  headless browser on a 170 s project, the Export chip and the agent pane's
+  render card counted 9% → 100%, and the card's Stop button stayed the same
+  DOM node throughout (only the label is rewritten), so Stop landed at 0 and
+  120 ms dwell mid-render. Two things seen there and left alone:
+  **Stop takes effect only when melt finishes** (`RenderJob.stop` sets a
+  flag and kills nothing, as before), and the render card prints each
+  post-render `stage` event as raw JSON (`handleRenderEvent`'s `default`
+  branch). The chip no longer shows the word `stage` while those run.
+- **Step 7.** The briefs are `proofcut.briefs`, and both the trial and the
+  `cut`/`film`/`review` prompts compose from it. The trial rendering is
+  byte-identical to what the recorded runs were given — the film brief
+  checked against run `20260915-140025`'s `brief.txt` — and
+  `tests/test_briefs.py` pins it. The prompts differ only in the preamble
+  (a person's agent has a shell, so no prompt says otherwise), the material
+  line (a folder, not the demo's three names) and the retake line (any
+  fluffed take, not "the" one). `review` is new and changes nothing.
+  `proofcut brief` prints them for scripting.
+- **Step 8.** An unbound `proofcut mcp` started in a directory holding
+  `proofcut.json` binds to it; `ping` and `doctor` say `bound_by: "cwd"`,
+  and a refusal of another project now names that reason rather than
+  claiming `-C` was typed. A `lucid.json`-only directory does not bind.
+- **Step 9.** `initialize` carries `title`, `description` and `websiteUrl`
+  off the same strings as `server.json` (a test reads both), and the web
+  UI's favicon as an inline SVG icon.
+- **Step 11.** The advertised input schema drops pydantic's `title`s and
+  collapses `anyOf … null` into a type list: 138.7 KB to 120.6 KB (13.1%),
+  `tools/list` 254 KB to 230 KB with every new argument documented. A test
+  validates one value of each JSON type for every argument of every tool
+  against both schemas and requires the same answer each time.

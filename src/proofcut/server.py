@@ -19,42 +19,120 @@ route to the port.
 
 from __future__ import annotations
 
+import base64
 import functools
 import inspect
+import re
 import socket
 from collections.abc import Callable, Sequence
+from importlib import resources
 from pathlib import Path
 from typing import Annotated, Any, TypeVar, get_args, get_origin, get_type_hints
 
+import anyio.from_thread
+import anyio.lowlevel
 from mcp.server import MCPServer
+from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.utilities.types import Image
-from mcp.types import ToolAnnotations
+from mcp.types import Icon, ToolAnnotations
 from pydantic import Field
 from starlette.datastructures import Headers
 from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from proofcut import __version__, asr, energy, ops, webui
-from proofcut.project import ProjectError, refusing_path_too_long
+from proofcut import __version__, asr, briefs, energy, ops, progress, webui
+from proofcut.project import MANIFEST_NAME, ProjectError, refusing_path_too_long
+
+#: The one text about proofcut a client loads before it decides which tool to
+#: search for — Claude Code defers every tool definition and keeps only names
+#: and this. So it is a map rather than a manual: what proofcut is, which tool
+#: family each phase of a film lives in, and the invariants an agent breaks
+#: silently without. The client truncates it past 2 KB and says nothing, so a
+#: test holds it under `INSTRUCTIONS_CAP` on the wire. docs/plans/MCP.md § Step 2.
+INSTRUCTIONS = (
+    "proofcut edits video from a project directory on disk, addressed by the "
+    "words spoken in it. Everything is local; nothing is uploaded, and it never "
+    "generates footage.\n\n"
+    "Start any project with timeline_status, finish_report and list_media.\n\n"
+    "Phases, and the tools to search for in each:\n"
+    "- footage in: init, import_media, list_media, footage_sheet, synopsis\n"
+    "- transcript: transcribe or attach_transcript; get_transcript with search=\n"
+    "- cut: seed_timeline, then cut_by_transcript / cut_by_time, restore, locate\n"
+    "- picture: cue_add (b-roll under a line), broll_brief, shot_sheet, canvas, "
+    "reframe, reframe_sheet\n"
+    "- sound: music (the bed), hold_add, vo_extend, vo_synth\n"
+    "- cards and ends: card_templates, card_new, head, tail\n"
+    "- finish: add_captions, caption_style, export (render with export_format=null)\n"
+    "- checks: check_frames, verify, film_check, finish_check\n\n"
+    "Rules nothing will warn you about:\n"
+    "- Word indices address the ORIGINAL recording and never renumber, so a range "
+    "stays valid across cuts. Prefer phrase= over a hand-typed index; "
+    "resolve_phrase shows a resolution without writing.\n"
+    "- Mutating tools take plan=; use it before a write you are unsure of. Every "
+    "mutation is snapshotted, and undo rolls one back.\n"
+    "- Sheets return the image in the reply; look at them before choosing footage "
+    "or approving framing.\n"
+    "- export does not burn captions, and a render existing is not a render being "
+    "right: run check_frames and verify after every export.\n"
+)
+
+#: Where Claude Code silently cuts both `instructions` and a tool description.
+#: Bytes, measured on the wire — an em-dash is three.
+INSTRUCTIONS_CAP = 2048
+DESCRIPTION_CAP = 2048
+
+#: What Claude Code will put in context from one tool reply: 25,000 tokens,
+#: past which it writes the reply to a file and hands the model a path — which
+#: the agent panel, with no `Read`, cannot open. Held in bytes of the reply's
+#: pretty-printed text at a conservative three bytes a token, because that text
+#: is what the SDK sends. A reply that grows with the film has a default window
+#: sized well under it (the defaults below, measured on the 336s film: a
+#: transcript word is ~100 bytes, a timeline word ~320, a caption cue ~1,170).
+#: docs/plans/MCP.md § Step 5.
+REPLY_CAP_BYTES = 25_000 * 3
+TRANSCRIPT_WORDS = 300
+VIEW_WORDS = 100
+CAPTION_CUES = 30
+
+#: `timeline_view`'s lanes (segments, seams, shots) are not windowed — each is
+#: the whole edit or it is wrong — and on the film they are ~60 KB of text
+#: before a single word. `_meta["anthropic/maxResultSizeChars"]` raises the
+#: client's threshold for that one tool rather than trimming what it must
+#: return; 500,000 is the client's own ceiling.
+MAX_RESULT_META = "anthropic/maxResultSizeChars"
+VIEW_RESULT_CHARS = 200_000
+
+#: What `initialize` says about the server, beside `name` and `version`. The
+#: same strings `server.json` gives the registry, restated rather than read,
+#: because `server.json` is not in the wheel — `tests/test_server_stdio.py`
+#: reads both back and holds them together, `test_version.py`'s discipline.
+#: docs/plans/MCP.md § Step 9.
+TITLE = "proofcut"
+DESCRIPTION = (
+    "Local-first AI video editor: recordings to a finished film, cut by transcript, "
+    "then verified"
+)
+WEBSITE_URL = "https://github.com/tydude001/proofcut/blob/main/docs/DEMO.md"
+
+
+def _icons() -> list[Icon]:
+    """The web UI's favicon as the server's icon, inline — a client showing a
+    server list has no reason to be able to reach anything else. The SVG's
+    comment is for whoever edits the file and is stripped from the wire."""
+    svg = (resources.files("proofcut") / "web" / "favicon.svg").read_text(encoding="utf-8")
+    svg = re.sub(r"\s*<!--.*?-->", "", svg, flags=re.DOTALL)
+    data = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    return [Icon(src=f"data:image/svg+xml;base64,{data}", mime_type="image/svg+xml", sizes=["any"])]
+
 
 mcp: MCPServer = MCPServer(
     name="proofcut",
+    title=TITLE,
+    description=DESCRIPTION,
+    website_url=WEBSITE_URL,
+    icons=_icons(),
     version=__version__,
-    instructions=(
-        "proofcut edits video locally. All state lives in a project directory on "
-        "disk; nothing is uploaded.\n\n"
-        "The usual order is: init -> import_media -> attach_transcript -> "
-        "seed_timeline -> cut_by_transcript (repeatedly) -> export.\n\n"
-        "Word indices in cut_by_transcript address the ORIGINAL recording and "
-        "never renumber, so a range stays valid across accumulated cuts. Use "
-        "get_transcript with search= to locate a phrase rather than reading "
-        "the whole transcript. cue_add, cue_rm, unspoken_add, unspoken_rm, "
-        "vo_extend, music and locate all accept phrase= directly instead of a "
-        "hand-typed word_index — prefer it over reading indices out of "
-        "get_transcript by hand; resolve_phrase inspects a resolution "
-        "(including ambiguity) without writing anything. Every mutation is "
-        "snapshotted; undo rolls one back."
-    ),
+    instructions=INSTRUCTIONS,
 )
 
 
@@ -63,6 +141,12 @@ mcp: MCPServer = MCPServer(
 #: only when `-C` was actually typed, because a globally-configured
 #: `proofcut mcp` has no project and must keep reaching any of them.
 _BOUND_ROOT: Path | None = None
+
+#: How `_BOUND_ROOT` was set: `"-C"`, `"cwd"`, or None while unbound. `ping`
+#: and `doctor` report it, because a server that bound itself to where it was
+#: started refuses every other project, and whoever meets that refusal needs
+#: to see why.
+_BOUND_BY: str | None = None
 
 #: Bind address and port `proofcut mcp --transport http` uses when neither flag
 #: is given. Loopback, matching `webui.DEFAULT_HOST` (127.0.0.1): an HTTP MCP
@@ -149,6 +233,15 @@ class _LoopbackGuard:
 F = TypeVar("F", bound=Callable[..., Any])
 
 
+_BOUND_REASON = {
+    "-C": "It was started as `proofcut -C DIR mcp`. ",
+    "cwd": (
+        "It was started inside that project, so it bound to it; start it from "
+        "outside any project to reach several. "
+    ),
+}
+
+
 def _confine(path: str | None) -> str | None:
     """Resolve a tool's project-selector argument against the bound project.
 
@@ -191,8 +284,8 @@ def _confine(path: str | None) -> str | None:
         if root is not None:
             return str(root)
         raise ProjectError(
-            "this server is not bound to a project (no `-C` at startup), so "
-            "`path` is required."
+            "this server is not bound to a project (no `-C` at startup, and not "
+            "started inside one), so `path` is required."
         )
     if root is None:
         return path
@@ -205,8 +298,8 @@ def _confine(path: str | None) -> str | None:
     if resolved != root and root not in resolved.parents:
         raise ProjectError(
             f"this server is bound to {root} and {path!r} resolves outside it "
-            f"({resolved}). It was started as `proofcut -C {root} mcp`, so every "
-            "tool addresses that project; pass a path at or under it."
+            f"({resolved}). {_BOUND_REASON.get(_BOUND_BY, '')}Every tool addresses "
+            "that project; pass a path at or under it."
         )
     return str(resolved)
 
@@ -455,6 +548,11 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         "clip_id": "The clip to read.",
         "first": "First word index to return, inclusive.",
         "last": "Last word index to return, inclusive.",
+        "limit": (
+            "Most words to return in one call, counted from `first`. The reply's "
+            "`next_first` says where to continue. Bounded by default because a whole "
+            "transcript can be past what a client will put in context."
+        ),
         "search": (
             "Return each match as a word range ready to hand to `cut_by_transcript`, "
             "instead of the whole transcript. Prefer it: a transcript is a lot of words "
@@ -803,6 +901,11 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "but not on the edit still answers — read `off_timeline`, or every word "
             "reads `present: false` and looks cut."
         ),
+        "first": "Index into the `words` list to start the window at. 0 by default.",
+        "limit": (
+            "Most entries of `words` to return; `words_next` says where to continue. "
+            "The segments, seams and shots are always whole."
+        ),
     },
     "properties": {
         "clip_id": "Add this clip's assets entry, framing windows and cue table to the report.",
@@ -886,6 +989,14 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
     },
     "caption_view": {
         "clip_id": "Show one transcript's captions rather than every clip's.",
+        "first": "Index of the first cue to return. 0 by default.",
+        "limit": "Most cues to return; `cues_next` says where to continue.",
+    },
+    "card_templates": {
+        "name": (
+            "One template to return in full. The others come back as name and "
+            "description only. Unset, every template in full."
+        ),
     },
     "caption_style": {
         "preset": (
@@ -1411,13 +1522,17 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "source**, so it needs no edit, no cues and no transcript."
         ),
         "mode": (
-            "`auto` (the default) draws a tile every `interval` seconds; `scenes` "
-            "draws one per detected cut. Scenes is opt-in because its yield is "
+            "Which instants to draw: `auto` (the default) uses the clip's described "
+            "windows if it has any and the interval otherwise, and never scans; "
+            "`interval` draws every `interval` seconds; `describe` draws one tile per "
+            "described window, beside its text; `scenes` draws one per detected cut. "
+            "Scenes is opt-in because its yield is "
             "uncorrelated with anything the caller knows — 0 cuts on a 29s b-roll "
             "loop, 17 in 60s of gameplay — and it decodes the whole clip."
         ),
         "interval": (
-            "Seconds between tiles in `auto` mode. It is `describe`'s own window "
+            "Seconds between tiles when drawing by interval (`interval`, or `auto` on a "
+            "clip with no descriptions). It is `describe`'s own window "
             "length, so a tile lines up with a description."
         ),
     },
@@ -1636,6 +1751,43 @@ def _has_description(annotation: Any) -> bool:
     return any(getattr(meta, "description", None) for meta in get_args(annotation)[1:])
 
 
+def _context_param(fn: Callable[..., Any]) -> str | None:
+    """The argument the SDK fills with its `Context`, which is not advertised
+    and so needs no description. The SDK's own finder, so the two agree."""
+    from mcp.server.mcpserver.utilities.context_injection import find_context_parameter
+
+    return find_context_parameter(fn)
+
+
+def _reporter(ctx: Context) -> progress.Reporter:
+    """Turn `progress.report` calls into `notifications/progress` on `ctx`.
+
+    The tool body runs on an anyio worker thread and a report can come from a
+    subprocess reader thread under it, so the loop token is captured here, on
+    the worker, and handed to `from_thread.run` from wherever the report is
+    made. The spec wants each value higher than the last, and a tool with
+    phases (a synth, then its whisper readback) restarts from 0, so a phase
+    that goes backwards is stacked on top of what was already sent.
+    """
+    # Asked of the loop itself: `from_thread.current_token()` wants a running
+    # loop in *this* thread, which a worker thread has not got.
+    token = anyio.from_thread.run_sync(anyio.lowlevel.current_token)
+    state = {"base": 0.0, "raw": 0.0, "sent": -1.0}
+
+    def send(current: float, total: float | None, message: str | None) -> None:
+        if current < state["raw"]:
+            state["base"] = max(state["sent"], 0.0)
+        state["raw"] = current
+        value = state["base"] + current
+        if value <= state["sent"]:
+            return
+        state["sent"] = value
+        scaled_total = None if total is None else state["base"] + total
+        anyio.from_thread.run(ctx.report_progress, value, scaled_total, message, token=token)
+
+    return send
+
+
 def _describe_params(fn: Callable[..., Any]) -> None:
     """Hang `_PARAM_DOCS`'s text on the function's own annotations.
 
@@ -1667,7 +1819,7 @@ def _describe_params(fn: Callable[..., Any]) -> None:
 
     for name in parameters:
         annotation = hints.get(name)
-        if annotation is None or _has_description(annotation):
+        if annotation is None or _has_description(annotation) or name == _context_param(fn):
             continue
         text = documented.get(name)
         if text is None:
@@ -1679,7 +1831,20 @@ def _describe_params(fn: Callable[..., Any]) -> None:
         fn.__annotations__[name] = Annotated[annotation, Field(description=text)]
 
 
-def _tool(*selectors: str, projectless: bool = False) -> Callable[[F], F]:
+#: The `_meta` key that makes Claude Code load a tool's definition upfront
+#: rather than defer it behind `ToolSearch`. Every tool so marked is context on
+#: every turn of every session, plugin users included, so none is — until a
+#: trial shows an agent searching for the same tool on every brief.
+#: docs/plans/MCP.md § Step 4.
+ALWAYS_LOAD_META = "anthropic/alwaysLoad"
+
+
+def _tool(
+    *selectors: str,
+    projectless: bool = False,
+    always_load: bool = False,
+    max_result_chars: int | None = None,
+) -> Callable[[F], F]:
     """Register a tool, routing its project-selector arguments through `_confine`.
 
     A decorator rather than a line in each body because the confinement has
@@ -1700,6 +1865,10 @@ def _tool(*selectors: str, projectless: bool = False) -> Callable[[F], F]:
     "no project, proofcut's default" rather than "which project", so an omitted
     `path` there stays `None` — not confined, not defaulted — in every bind
     state, exactly as it always has.
+
+    `always_load=True` sets `ALWAYS_LOAD_META`; read that constant's comment
+    before reaching for it. `max_result_chars` sets `MAX_RESULT_META`, for a
+    reply that cannot be windowed and is legitimately large.
     """
     names = selectors or ("path",)
 
@@ -1710,10 +1879,16 @@ def _tool(*selectors: str, projectless: bool = False) -> Callable[[F], F]:
                 "(read, add, set or edit) before registering it"
             )
         _describe_params(fn)
-        register = mcp.tool(annotations=_ANNOTATIONS[fn.__name__])
+        meta: dict[str, Any] = {}
+        if always_load:
+            meta[ALWAYS_LOAD_META] = True
+        if max_result_chars is not None:
+            meta[MAX_RESULT_META] = max_result_chars
+        register = mcp.tool(annotations=_ANNOTATIONS[fn.__name__], meta=meta or None)
         signature = inspect.signature(fn)
         present = [name for name in names if name in signature.parameters]
-        if not present:
+        context_param = _context_param(fn)
+        if not present and context_param is None:
             return register(fn)
 
         @functools.wraps(fn)
@@ -1728,12 +1903,21 @@ def _tool(*selectors: str, projectless: bool = False) -> Callable[[F], F]:
                 if projectless and bound.arguments[name] is None:
                     continue
                 bound.arguments[name] = _confine(bound.arguments[name])
+            # A long tool takes the SDK's `Context` only so its reports can
+            # reach the client; the body never sees it, and nothing under the
+            # body needs to know a client exists (`progress`). A progress
+            # message is also what keeps a client from aborting a call that
+            # has been silent for 30 minutes. docs/plans/MCP.md § Step 6.
+            ctx = bound.arguments.get(context_param) if context_param else None
+            reporter = _reporter(ctx) if ctx is not None else None
             # A project folder too deep for a stock Windows arrives as the
             # CLI's one line rather than `[WinError 206]` and a filename —
             # every tool that addresses a project passes through here, and
             # the few that address none (`ping`, `fonts`' default) write
             # nothing under one.
-            with refusing_path_too_long():
+            with refusing_path_too_long(), progress.reporting(reporter):
+                if reporter is not None:
+                    progress.report(0, None, fn.__name__)
                 return fn(*bound.args, **bound.kwargs)
 
         return register(wrapper)
@@ -1757,8 +1941,9 @@ ProjectPath = Annotated[
     Field(
         description=(
             "The project directory to act on. Omit it — the usual case — when this "
-            "server was started as `proofcut -C DIR mcp`: it then resolves to that "
-            "one bound project, a relative path resolves against it, and a path "
+            "server is bound to a project (started as `proofcut -C DIR mcp`, or "
+            "inside a project; `ping` says which): it then resolves to that one "
+            "bound project, a relative path resolves against it, and a path "
             "outside it is refused by name. Unbound, `path` is the whole address "
             "and omitting it refuses rather than guessing."
         )
@@ -1766,9 +1951,26 @@ ProjectPath = Annotated[
 ]
 
 @_tool()
-def ping() -> dict[str, str]:
-    """Check that the proofcut MCP server is alive, and report its version."""
-    return {"status": "ok", "server": "proofcut", "version": __version__}
+def ping() -> dict[str, Any]:
+    """Check that the proofcut MCP server is alive, and report its version.
+
+    `project` is the project every tool addresses when `path` is omitted, and
+    `bound_by` says how it was chosen: `-C` at startup, or `cwd` because the
+    server was started inside a project. Both are null when it is unbound.
+    """
+    return {
+        "status": "ok",
+        "server": "proofcut",
+        "version": __version__,
+        **_binding(),
+    }
+
+
+def _binding() -> dict[str, Any]:
+    return {
+        "project": None if _BOUND_ROOT is None else str(_BOUND_ROOT),
+        "bound_by": _BOUND_BY,
+    }
 
 
 @_tool()
@@ -1784,8 +1986,11 @@ def doctor() -> dict[str, Any]:
     Every failing entry carries the fix, not just the ✗ — where melt actually
     lives, why PyPI's auto-editor is the wrong program, what to set on a box
     with no display.
+
+    `server` says which project this server is bound to and how (`ping`'s own
+    answer), since that decides which `path` a call may name.
     """
-    return ops.doctor()
+    return {**ops.doctor(), "server": _binding()}
 
 
 @_tool()
@@ -1939,7 +2144,11 @@ def attach_transcript(path: ProjectPath = None,
 @_tool()
 def transcribe(
     path: ProjectPath = None,
-    *, clip_id: str, model: str = "turbo", language: str | None = None
+    *,
+    clip_id: str,
+    model: str = "turbo",
+    language: str | None = None,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Transcribe a clip's own media with whisper, and attach the result.
 
@@ -2005,14 +2214,21 @@ def get_transcript(
     first: int | None = None,
     last: int | None = None,
     search: str | None = None,
+    limit: int = TRANSCRIPT_WORDS,
 ) -> dict[str, Any]:
     """Read a clip's transcript.
 
     With `search`, returns each match as a word range ready to hand to
     cut_by_transcript — prefer this to reading the whole transcript. With
     `first`/`last`, returns that window of words. Indices are inclusive.
+
+    At most `limit` words come back per call. `total_words` is the whole
+    transcript, `last_word` where this reply stopped, and `next_first` — only
+    present when words were left out — is the `first` to ask for next.
     """
-    return ops.get_transcript(path, clip_id, first=first, last=last, search=search)
+    return ops.get_transcript(
+        path, clip_id, first=first, last=last, search=search, limit=limit
+    )
 
 
 @_tool()
@@ -2121,6 +2337,7 @@ def describe(
     window: float = 10.0,
     force: bool = False,
     plan: bool = False,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Describe footage in fixed windows, so b-roll can be found by what is in it.
 
@@ -2183,14 +2400,17 @@ def describe_ls(
 
 
 @_tool()
-def card_templates() -> dict[str, Any]:
+def card_templates(name: str | None = None) -> dict[str, Any]:
     """The card templates proofcut ships, and the slots each one takes.
 
     Read this before card_new: each slot says what it is for, whether it is
     required, and what it defaults to. The palette and font stacks are slots
     too, so a card can be restyled without authoring an SVG by hand.
+
+    Call it with no `name` to choose one, then with `name` to read only that
+    template's slots — the whole table is long.
     """
-    return ops.card_templates()
+    return ops.card_templates(name)
 
 
 @_tool(projectless=True)
@@ -2940,9 +3160,14 @@ def timeline_status(path: ProjectPath = None) -> dict[str, Any]:
     return ops.status(path)
 
 
-@_tool()
-def timeline_view(path: ProjectPath = None,
-    *, clip_id: str | None = None) -> dict[str, Any]:
+@_tool(max_result_chars=VIEW_RESULT_CHARS)
+def timeline_view(
+    path: ProjectPath = None,
+    *,
+    clip_id: str | None = None,
+    first: int = 0,
+    limit: int = VIEW_WORDS,
+) -> dict[str, Any]:
     """The whole edit at once: segments, cut seams, and every word's fate.
 
     timeline_status counts things; this says what they are. Each segment
@@ -2969,8 +3194,12 @@ def timeline_view(path: ProjectPath = None,
     configured — see `head`'s own docstring for the two-clock rule.
     `head_seconds` is the offset a render-time reader needs (0.0 with none);
     `head` is the stored config plus its resolved frame count.
+
+    `words` is a window of `limit` from `first` (`words_total`, `words_next`);
+    the lanes are always whole. `get_transcript` with `search=` finds a word
+    faster than paging here.
     """
-    return ops.timeline_view(path, clip_id=clip_id)
+    return ops.timeline_view(path, clip_id=clip_id, first=first, limit=limit)
 
 
 @_tool()
@@ -3058,43 +3287,27 @@ def export(
     resolution: Sequence[int] | None = None,
     loudness: float | None = None,
     true_peak: float = -1.0,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
-    """Export the timeline, or render it.
+    """Export the timeline as an NLE project, or render it.
 
-    "kdenlive" writes an MLT project that Kdenlive opens and melt renders —
-    the handoff that works on Linux. Pass export_format=null to render media
-    instead. Other auto-editor targets (shotcut, premiere, resolve, final-cut-pro)
-    pass straight through.
+    The default writes an MLT project Kdenlive opens; `export_format=null`
+    renders media. The writer is chosen **from the project**, never from an
+    argument: a single-source timeline goes through auto-editor, and a
+    multi-source one — a cue table, a second clip, a canvas, a bed, a tail —
+    is written as MLT by proofcut and rendered by melt, because auto-editor
+    renders a second source at 720x576 while exiting 0. The reply names the
+    writer, and a melt render reports resolution and frame count measured off
+    the finished file.
 
-    A **multi-source** timeline — one with a cue table, or with two clips on
-    it — is written by proofcut itself as MLT ("kdenlive" or "mlt") and rendered
-    by melt, because auto-editor refuses to export a second source and renders
-    it at 720x576 while exiting 0. The reply says which writer ran
-    ("auto-editor", "mlt" or "melt"), and a melt render reports the resolution
-    and frame count measured off the finished file rather than melt's exit code.
+    `preset` bundles quality for a render; `tiktok-reels` **checks** 9:16 and
+    never sets the shape — use `canvas` first. `loudness` masters to a LUFS
+    target and refuses, leaving the render as it was, if it misses by more
+    than 1 LU.
 
-    `fps` sets the NLE timeline's frame rate; it defaults to the picture's rate,
-    or 30 for an audio-only project. It sets the render's frame rate too on the
-    multi-source path, where proofcut owns the profile; it is ignored when
-    auto-editor renders a single-source timeline.
-
-    `preset` is one of "youtube", "web", "tiktok-reels", or "custom" (which
-    requires `resolution`) — a named quality bundle, only meaningful together
-    with `export_format=null` (an NLE project file has no bitrate).
-    "tiktok-reels" additionally **checks** that the project renders 9:16 and
-    refuses otherwise: it never sets the shape, because a preset that reshaped
-    a project would be an export argument rewriting project state. Set the
-    shape with `canvas` first. `resolution` is `[width, height]`; it
-    **letterboxes** the existing frame on the single-source render path — it
-    does not crop or reframe it — and is refused outright on a multi-source
-    (melt) project, where widening the hardcoded consumer to accept it has not
-    been re-proven memory-safe (HISTORY.md § 4). The reply's `canvas` is the
-    shape the render was built at, on either road.
-
-    `loudness` (render only) masters the file to that many LUFS integrated
-    under a `true_peak` dBTP ceiling (default -1): two-pass, measured before
-    and after, and refused — leaving the render as it was — if the result
-    misses by more than 1 LU. The reply's `loudness` carries both measurements.
+    Captions are not burned by this — `add_captions` is its own step. Then
+    check the file against the timeline with `check_frames` and `verify`;
+    a render that exists is not a render that is right.
     """
     return ops.export(
         path,
@@ -3152,8 +3365,13 @@ def add_captions(
 
 
 @_tool()
-def caption_view(path: ProjectPath = None,
-    *, clip_id: str | None = None) -> dict[str, Any]:
+def caption_view(
+    path: ProjectPath = None,
+    *,
+    clip_id: str | None = None,
+    first: int = 0,
+    limit: int = CAPTION_CUES,
+) -> dict[str, Any]:
     """The captions this timeline would produce, and the style in force.
 
     add_captions without writing a file: the same cues, in timeline seconds,
@@ -3164,8 +3382,12 @@ def caption_view(path: ProjectPath = None,
     Reports rather than refuses: a project with no transcript, or one whose
     every word has been cut, comes back with an empty `cues` and a
     `cues_error` saying which. Read-only.
+
+    `cues` is a window of `limit` from `first`; `cues_total` is how many the
+    film has and `cues_next`, when present, where to continue. Use `locate` to
+    find the cue at a moment rather than paging to it.
     """
-    return ops.caption_view(path, clip_id=clip_id)
+    return ops.caption_view(path, clip_id=clip_id, first=first, limit=limit)
 
 
 @_tool()
@@ -3385,48 +3607,24 @@ def music(
 ) -> dict[str, Any]:
     """Read or change the A2 music bed this project mixes under its edit.
 
-    The cue stores word indices and an asset, never a length: the bed starts
-    where `word_index_start` of `clip_id` lands on the timeline and runs to
-    where `word_index_end` ends — or, with no end word, to the end of the
-    timeline (the single-pass hold). Duration is derived at build time
-    through the edit, so a cut before either boundary moves both
-    automatically; a stored length was measured drifting onto live material
-    (PLAN.md § The A2 music lane — the design note).
+    Call with no arguments to read what is in force. The bed stores word
+    indices and an asset, never a length: it starts where `word_index_start`
+    of `clip_id` (the VO transcript) lands on the timeline and runs to where
+    `word_index_end` ends — or to the end of the edit — so a cut before either
+    boundary moves both. Duration is derived at build time.
 
-    `phrase_start`/`phrase_end` resolve against `clip_id`'s transcript
-    instead of a raw index — the start binds a phrase's first word, the end
-    its last, each independent (a call can set one by phrase and the other by
-    index). The resolved phrase is stored beside the word index it resolved
-    to, so `cue_reresolve` can re-derive it after a re-record; setting a
-    field by plain index instead clears whatever phrase was stored for it.
+    The first set needs `asset`, `clip_id` and a start (`word_index_start` or
+    `phrase_start`) together; after that each field updates on its own. A
+    field set by phrase stores the phrase beside the index it resolved to, so
+    `cue_reresolve` can re-derive it; set by plain index, the stored phrase is
+    cleared. Both boundaries are echoed with their resolved words and
+    neighbours — check them.
 
-    `asset` is a registered clip_id, never `card:name` — a held frame has no
-    sound to mix. It plays from its own head; shorter than its span pads out
-    with real silence, longer is trimmed. Call with no arguments to read what
-    is in force; first set needs `asset`, `clip_id` and `word_index_start` (or
-    `phrase_start`) together, either alone after that updates its own field.
-    `clear_end` drops the end word back to "to the end"; `reset` drops the
-    bed entirely. `fade_in`/`fade_out` are seconds of fade drawn over the
-    bed's audible span — a fade-out ends where the music actually ends, and a
-    pair that outgrows the bed refuses at build time. `plan` resolves and
-    validates without writing. Both word indices are echoed with their
-    resolved words and neighbours — check them.
-
-    A bed can be several passages: `passages` replaces the list after the
-    bed's own asset, each `{asset, word_index_start | phrase_start, src_in?,
-    crossfade?, rotate?}` — starting at its word, from `src_in` seconds into
-    its asset, with the passage before overlapping it by `crossfade`. `rotate`
-    plays further assets in turn when one runs out, overlapping by the bed's
-    `crossfade`. `src_in` is where the bed's own asset starts. `under` levels
-    the whole bed that many LU below the VO, measured; `clear_under` returns
-    every asset to its own level. `passages=[]` / `rotate=[]` clear them.
-    `passage_words` echoes each passage's resolved start word.
-
-    `duck` pulls the bed that many dB down while the voice is speaking and
-    lets it back up in the pauses — keyed off the timeline's own audio at
-    export, never the transcript's word timings — under the level `under`
-    set; `clear_duck` returns it to one level. `export`'s `music.duck` says
-    what the render carries: the threshold, the seconds ducked, the keys.
+    Beyond one asset from its head: `passages` (more pieces, each from its own
+    word), `rotate` (assets in turn), `crossfade`, `src_in`; `under` levels the
+    bed below the voice, `duck` dips it while the voice speaks, keyed off the
+    edit's own audio at export. `export`'s `music` field says what the render
+    carried. `clear_*` and `reset` undo each; `plan` validates without writing.
     """
     return ops.music(
         path,
@@ -3468,45 +3666,23 @@ def vo_extend(
 ) -> dict[str, Any]:
     """Open a gap in `clip_id`'s track for material the recording never had.
 
-    The one item authorized to bend `Edit`'s subtractive invariant (PLAN.md
-    § `vo_extend` — the design note) — a real hold in the VO, e.g. to let a
-    line the film's own footage carries play under it, or manufactured
-    mid-film silence for the same reason. Not the tail (`tail`, downstream of
-    `Edit`), and not `restore` (which only ever walks the invariant backward).
+    The one tool allowed to grow the edit rather than cut it: a real hold in
+    the VO, e.g. to let a line the footage carries play under it. Not the
+    end card (`tail`), and not `restore`, which only brings back cut source.
 
-    `word_index` names the last word *before* the gap; the hold opens
-    immediately after that word's own end. The word must currently be on the
-    timeline — an index naming cut material is refused rather than guessed
-    at. `seconds` is the hold's length, an editorial call this makes no
-    attempt to derive.
+    Addressed by `word_index` **or** `phrase` — the last word *before* the
+    gap, which must be on the timeline — for `seconds`. The stretch is a real
+    silent WAV, registered like any clip; a second call at the same `seconds`
+    reuses it.
 
-    Addressed by `word_index` **or** `phrase` — a phrase binds to its
-    **last** word, this tool's own meaning ("the last word before the gap").
-    `after`/`occurrence` disambiguate a phrase matching more than once.
+    **Read `covered_by`.** `build_shots` runs each shot to the next cue, so
+    whatever picture was playing freezes across the hold by default, with
+    `shots_error`, `verify` and `check_frames` all staying clean. It names
+    every shot the gap now overlaps (`[]` with no cue table at all).
 
-    The manufactured stretch is a real silent WAV, imported and registered
-    like any other clip (never a clip_id widened past its registered
-    duration, which is unreadable — melt would be asked for frames the file
-    does not have). A second call at the same `seconds` reuses the same
-    registered clip.
-
-    **`covered_by` is the reason this needs its own design note.**
-    `build_shots` runs each shot to the next cue, so whichever picture was
-    already playing auto-extends across a hold by default — a silent
-    success, with `shots_error`/`verify`/`check_frames` all staying clean.
-    `covered_by` names every shot the opened gap now overlaps, so a stale
-    freeze is visible instead of invisible; `[]` with no cue table at all,
-    truthfully, since there is no picture layer to freeze.
-
-    Two consequences ride along for free once a hold lands: `restore`
-    refuses the moment `clip_id`'s segments stop being contiguous (its own
-    existing check), and export permanently switches to the MLT writer
-    (`_is_layered`'s existing multi-clip test) — there is no path back to
-    auto-editor for a project that has ever been extended.
-
-    `plan=True` resolves and reports `covered_by` without writing the
-    manifest or the timeline; its `hold_clip_id` is a placeholder, since
-    nothing was actually registered.
+    Two consequences are permanent once a hold lands: `restore` refuses across
+    the seam, and export always goes through the MLT writer. `plan=True`
+    reports `covered_by` without writing; its `hold_clip_id` is a placeholder.
     """
     return ops.vo_extend(
         path, clip_id, word_index, seconds, plan=plan, phrase=phrase, after=after, occurrence=occurrence
@@ -3529,43 +3705,30 @@ def vo_synth(
     lexicon: str | None = None,
     flat_floor: float = 4.5,
     flat_weight: float = 0.002,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
-    """Say `text` in a cloned voice — render several seeds, rank by likeness less flatness, read the winner back.
+    """Say `text` in a cloned voice — render several seeds, rank them, read the winner back.
 
-    The backend is zero-shot Qwen3-TTS with a ≈19 s reference clip (`tts.py`
-    — measured in local-llm's voice-clone note to beat every fine-tune on the
-    model's own speaker-encoder likeness). `voice` is a directory holding
-    `ref.wav` + `ref.txt`; unset, `$PROOFCUT_TTS_VOICE`. There is no built-in voice.
+    Zero-shot Qwen3-TTS from a ≈19s reference clip (`voice`); there is no
+    built-in voice. Seeds `seed .. seed+candidates-1` render in one process,
+    each with `sim` (speaker-embedding likeness to the reference — a real take
+    ≈0.99, a 3-semitone shift ≈0.96) and `spread` (voiced pitch movement).
+    `chosen` is the best `sim` less a flatness penalty, since likeness alone
+    keeps the flattest read. A render that hit `max_seconds` is `capped` and
+    never wins while an uncapped one exists.
 
-    Seeds `seed .. seed+candidates-1` render in one process; each comes back
-    with `sim` (cosine of its speaker embedding against the reference — a real
-    take of the same speaker ≈0.99, a 3-semitone shift ≈0.96) and `spread`
-    (voiced pitch movement, semitones). `chosen` is the highest `sim` less
-    `flat_weight` per semitone of `spread` under `flat_floor` — likeness alone
-    keeps the flattest read, because sims in one pool differ by thousandths
-    while spread differs by semitones (`ops.SYNTH_FLAT_FLOOR`'s comment is the
-    measurement; `flat_weight=0` restores likeness-only). A render that hit
-    `max_seconds` is `capped` and never wins while an uncapped one exists.
     The winner is read back through whisper and `heard`/`wer` reported — a
     clone that sounds right and says the wrong words is the failure nothing
-    else sees; `readback=False` skips it. `lexicon` (default: the project's
-    own `lexicon.json`, if present) is `{"say": {written: respelling},
-    "hear": {variant: canonical}}` — `say` respells what the model is given
-    (the fix for a mispronounced name), `hear` folds whisper's spelling back
-    to the script's before the WER is scored.
+    else sees. A report, never a gate.
 
-    Renders are cached under `cache/synth/` per (voice, text, cap), so a repeat
-    call spends no GPU and a new `seed` range renders only what it lacks. The
-    *splice* is not cached: calling again with the same `clip_id` +
-    `word_index` opens a second gap and splices a second time, so undo or
-    check the timeline rather than re-calling to "make sure". With
-    `clip_id` + `word_index` the winner is registered and spliced into that
-    clip's track right after the word, through `vo_extend`'s own mechanism —
-    same one-way consequences (melt routing, `restore` refusing across the
-    seam) and the same `covered_by` report. `plan=True` resolves everything
-    and, if the seeds are already rendered, reports the ranking and the splice
-    preview without writing; with nothing cached it says `rendered: False`
-    rather than spending the GPU.
+    Renders are cached under `cache/synth/`, so a repeat spends no GPU. **The
+    splice is not cached**: with `clip_id` + `word_index` the winner is
+    registered and spliced in after that word through `vo_extend`'s mechanism
+    (melt routing, `restore` refusing across the seam, a `covered_by`
+    report), and calling again splices a second time — check the timeline or
+    `undo` rather than re-calling. `plan=True` reports the ranking and splice
+    preview from cached renders only, and says `rendered: False` rather than
+    spending the GPU.
     """
     return ops.vo_synth(
         path,
@@ -3838,42 +4001,24 @@ def reel(
 ) -> dict[str, Any]:
     """Derive a new project at `dest` holding `[start, end)` of this timeline.
 
-    `start` and `end` are the seconds *an export plays at* — the same numbers
-    cut_by_time takes, read off a watch — and they name the span to **keep**,
-    which is the opposite direction from every other tool here. The head and
-    the tail are what get cut, through cut_by_time.
+    `start`/`end` are render seconds naming the span to **keep** — the
+    opposite direction from every other tool; the head and tail are cut
+    through `cut_by_time`. Reach for this before setting a vertical `canvas`
+    on a film: the canvas is project state, so pass the reel's shape here and
+    it lands on the copy only.
 
-    Reach for this before setting a vertical `canvas` on a film. The canvas is
-    project state, so reshaping the film to take one reel would leave it
-    reshaped afterwards; deriving is what keeps the film alone. Pass the reel's
-    shape as `canvas` here (e.g. "1080x1920") and it is set on the copy only.
+    Media is linked, not copied. Descriptions and reframes carry over. Cues
+    carry over only where the reel keeps their word — read `cues_dropped`
+    **head-first**, since one pruned just outside the kept span opens the reel
+    on no picture. Survivors are pinned to the film's in-points
+    (`cues_pinned`, or `pins_error`). Cards are re-authored at the new canvas
+    (`cards_unrecorded` names any that cannot be); `over_platform_cap` says if
+    it still runs long for a vertical feed.
 
-    Media is linked, not copied, so this costs a manifest rather than the
-    footage. Descriptions and reframes come across unchanged and stay valid,
-    because neither stores a timeline position. Cues come across only where
-    the reel still has the word they hang on — read `cues_dropped`, which is
-    one entry per picture the reel will not have, and read it head-first: one
-    pruned just outside the kept span opens the reel on no picture at all.
-    Every surviving cue is **pinned** to the in-point the film gave it, since
-    dropping the others would otherwise make each one replay its asset from
-    the head — a different film with nothing reporting it. `cues_pinned` names
-    those, `pins_error` says why there are none. Cards are
-    re-authored at the new canvas; read `cards_unrecorded` in the result,
-    which names any that cannot be, and `over_platform_cap`, which says
-    whether the result still runs longer than a vertical feed will take.
-
-    A configured `tail` (an end card, a bumper) is never inherited — the
-    derived project gets none, and `tail_dropped` reports what the film had,
-    if anything. A teaser cut from an essay should not silently end on the
-    essay's own end card.
-
-    Refused if either kept edge lands on a word with a suspect duration — one
-    that likely hides a retake, so the reel would open or close on the wrong
-    take — unless `confirm_suspect=True`. Read `suspect_edges` in the result;
-    it is about the reel's own two edges, not everything being cut away.
-
-    `plan=True` resolves the spans and the clips it would link, and creates
-    nothing.
+    Nothing after the film is inherited: `tail_dropped` and `music_dropped`
+    name what the film had. An edge on a suspect-duration word — likely a
+    hidden retake — refuses unless `confirm_suspect`; read `suspect_edges`.
+    `plan=True` creates nothing.
     """
     return ops.reel(
         path,
@@ -3901,44 +4046,23 @@ def reframe(
 ) -> dict[str, Any]:
     """Read or set which part of each clip survives into the frame.
 
-    What makes a swapped canvas fill the frame instead of pillarboxing it.
-    A rect is "X,Y,W,H" in that clip's own source pixels — the region kept —
-    and the default is a centre crop, which is **wrong whenever the subject
-    is not centred**. Call it with no `clip_id` to read the crops in force for
-    every clip, including how much of each is kept.
+    What makes a swapped canvas fill the frame instead of pillarboxing it. The
+    default is a centre crop, which is **wrong whenever the subject is not
+    centred**. Call with no `clip_id` to read the crops in force for every
+    clip; `clips[].windows` is each clip's whole series.
 
-    An override is a floor rather than a frame: a rect that is not already
-    the canvas's shape is grown to it, so nothing named is pushed off screen,
-    and the reply gives both `asked` and the `crop` it became. It is stored
-    as asked and refit whenever the canvas moves.
+    A `rect` is a floor rather than a frame: grown to the canvas's shape, never
+    shrunk into it, stored as asked and refit whenever the canvas moves; the
+    reply gives both `asked` and the `crop` it became. `src_start` makes it a
+    per-**shot** window, addressed on the source's own clock, so every
+    placement of the clip picks it up. `pane` makes that window a stacked
+    split for a shot one crop cannot hold; `interp` slides into it rather than
+    stepping.
 
-    `src_start` frames a **shot** rather than a clip: seconds into that clip's
-    own source, the rect in force from there until the next window. One clip
-    holds as many windows as it has camera shots, and because the address is
-    the source's own clock, a clip used seven times picks up the right window
-    at each placement with nothing said seven times. Omitted, it is the window
-    from the head of the file — which is what a per-clip crop always was.
-    `clips[].windows` in the reply is the whole series per clip.
-
-    `pane` makes that window a **stacked split**: two half-height panes, `rect`
-    on top and `pane` below, each cropping about twice the width one 9:16
-    window gets. It is for the shot one window cannot frame — a two-hander,
-    where every face is a true positive and only one of them is the shot, so
-    picking between them loses one. Both rects are grown to the pane's shape
-    rather than the canvas's, and a source too tall to carry it is refused.
-
-    `interp` makes that window **slide in** from whatever governed before it,
-    instead of stepping to it: MLT keeps drawing the frame in motion across
-    the two windows rather than cutting between them. It flags the
-    destination window, needs `src_start` after 0 (there is nothing before
-    the head of the source to slide from), and cannot be combined with
-    `pane` — a split's lower half has no interpolation of its own.
-
-    `clip_id` with `reset` drops that clip's overrides — with `src_start`,
-    only the window there — `reset` alone drops every one, and `plan` resolves
-    without writing. Nothing *here* analyses the picture: `reframe_detect` is
-    the tool that proposes crops, and it writes through this one rather than
-    framing anything itself.
+    `reset` drops overrides (one clip, one window, or all); `plan` resolves
+    without writing. Nothing here analyses the picture — `reframe_detect`
+    proposes crops and writes through this tool. Judge a window on
+    `reframe_sheet`, never on a watch: a wrong one reads as framing in motion.
     """
     return ops.reframe(
         path,
@@ -3961,41 +4085,29 @@ def reframe_detect(
     frames: int = ops.DETECT_FRAMES,
     apply: bool = False,
     split: bool = True,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Propose a framing window per camera shot, from where the faces are.
 
-    The first pass at the framing `reframe` refuses to guess. Every placement
-    is split at its own camera cuts, each window is sampled at three moments,
-    and the window is centred on the faces found there. Measured against the
-    fifteen hand-framed windows that were watched and approved, it beats the
-    centre crop it replaces on every column — 0.755 mean overlap against 0.568,
-    112px displacement against 199px — and never leaves an approved subject
-    entirely outside the frame, which the centre crop does on one shot.
+    Every placement is split at its camera cuts, each window sampled at a few
+    moments and centred on the faces found. Against fifteen hand-framed,
+    approved windows it beats the centre crop on every measure (0.755 mean
+    overlap against 0.568).
 
-    **It proposes; it does not frame.** `apply` is off by default, the opposite
-    of most `plan` flags here and deliberately: the pass is still 24% of a
-    window's width out on average, and 2 of the 15 hand windows were wrong in a
-    way no watch showed. Call `reframe_sheet` and look before applying.
-    Applying writes through `reframe` and **never over a window that is already
-    an override** — that window is someone's decision.
+    **It proposes; it does not frame.** `apply` is off by default: the pass is
+    still about a quarter of a window's width out on average, and a wrong
+    window reads as framing in motion. Look at `reframe_sheet` before
+    applying. Applying writes through `reframe` and never over an existing
+    override.
 
-    **A window with no face is named, never guessed at**, and comes back with
-    `refused` saying so: a silent fallback is indistinguishable in the output
-    from a framing decision. Expect roughly one window in seven. Read
-    `falls_back_to` with it — nothing is written for a refused window, so
-    whatever window is already in force carries over, which at the head of a
-    clip is the centre crop and anywhere else is the **previous shot's**
-    framing. Nothing here chooses the *subject* either — in a two-hander every
-    face is a true positive and only one of them is the shot.
+    **A window with no face is `refused`, never guessed at** — expect about
+    one in seven — and nothing is written for it, so read `falls_back_to`: at
+    a clip's head that is the centre crop, anywhere else the **previous
+    shot's** framing. Nothing here chooses the subject either.
 
-    **A window one crop cannot hold comes back as a stacked split**: `rect` and
-    `pane`, two half-height panes holding both subjects at twice the width.
-    That is the answer to the two-hander above, and `split=False` turns the
-    offer off. The rule is strict on purpose — every sampled frame must hold
-    two or three faces that one window cannot — which on the film is 3 windows
-    of 59. `subjects` is the per-frame count, and the one to read: `faces` sums
-    detections over the sampled frames, so it calls one face 3 and a room
-    watching a television 33.
+    A window one crop cannot hold comes back as a stacked split (`rect` and
+    `pane`). Read `subjects` (per frame), not `faces`, which sums detections
+    across samples and calls one face three. Needs `PROOFCUT_FACE`.
     """
     return ops.reframe_detect(
         path, clip_id=clip_id, threshold=threshold, frames=frames, apply=apply, split=split
@@ -4008,43 +4120,29 @@ def reframe_coverage(
     *,
     clip_id: str | None = None,
     threshold: float = ops.SCENE_THRESHOLD,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Which placed seconds are framed by a window chosen for an earlier shot.
 
-    **The question `reframe_detect` cannot answer**, because that one is about
-    a proposal and this is about the project as it stands. A detect run names
-    `falls_back_to` for the windows it refuses that call and then throws it
-    away; nothing is written for a refusal, so a project on disk cannot say
-    that a stretch of it is held by a rect chosen for a shot that ended long
-    before. On the film that was 13.6s of one clip across four camera setups,
-    with the manifest, `status` and `reframe_sheet` all reporting clean.
+    **The question `reframe_detect` cannot answer**: that one is about a
+    proposal, this is about the project on disk. A refused proposal writes
+    nothing, so a stretch can sit under a rect chosen for a shot that ended
+    long before — 13.6s of one clip across four camera setups on the film,
+    with the manifest, `status` and `reframe_sheet` all clean.
 
-    Every placement is walked against its own source's scene cuts. A cut with
-    no window boundary within a frame of it opens a stale stretch, running to
-    the next boundary or the placement's end. Two mechanisms reach that state —
-    a refused proposal writes nothing, and a cut under `threshold` is never
-    offered a window at all — and they are deliberately not separated, because
-    the render cannot tell them apart either.
+    Every placement is walked against its source's scene cuts. A cut with no
+    window boundary within a frame of it opens a stale stretch. Read
+    `stale_seconds` — an **override** held across a cut, which looks
+    deliberate — not `default_seconds` (the centre crop, only the default
+    doing what it always did). Each stretch carries `timeline_start`; the fix
+    is `reframe_sheet` to look, then `reframe_detect` on the clip.
 
-    Read `stale_seconds`, not the stretch count: it is an **override** held
-    across a cut, which is worse than the default because a stale window looks
-    deliberate. `default_seconds` beside it is the centre crop walking through
-    a cut, which is only the default doing what it always did. Each stretch
-    carries `timeline_start`, where it plays in the film, since the fix is to
-    go and look — `reframe_sheet` for that, then `reframe_detect` on the clip.
+    **`steps` is the mirror, and the one a viewer notices**: a window boundary
+    with no cut, where the frame slides sideways mid-take and reads as an edit
+    that is not there. Each carries `shift` and `nearest_cut`.
 
-    **`steps` is the mirror, and it is the one a viewer notices.** The walk
-    above asks which cuts have no window; this asks which windows have no cut —
-    a boundary *inside* one placement, where the frame travels sideways and the
-    picture does not change. It reads as an edit that is not there, and
-    coverage answers clean over it because nothing was held across anything.
-    Each carries `shift` (how far the frame moves, in source pixels) and
-    `nearest_cut`, which says whether the boundary missed a real cut narrowly
-    or sits in the middle of a take. Boundaries are scored against every
-    detected cut rather than the ones over `threshold`: a cut too weak to
-    demand a window still explains one.
-
-    Needs no face detector, reads and never writes.
+    Needs no face detector, reads and never writes — but it decodes placed
+    footage, so it is seconds, not free.
     """
     return ops.reframe_coverage(path, clip_id=clip_id, threshold=threshold)
 
@@ -4156,53 +4254,25 @@ def reframe_sheet(
 
     **A framing decision is unreviewable without this.** The hand-framed
     teaser had 2 of its 15 windows wrong and neither was visible in motion —
-    a badly-placed window reads as framing, because nothing in the frame says
-    otherwise. Drawn on the whole source frame, the material the window is
-    leaving out sits right beside it.
+    a badly-placed window reads as framing. Drawn on the whole source frame,
+    what the window leaves out sits right beside it.
 
-    Every placement the render shows — the picture lane's shots, or the edit's
-    own segments where there is no lane — walked window by window, the window
-    in force drawn in red and labelled with its rect. Placements and not clips:
-    one clip used seven times reads seven stretches of itself.
+    Every placement the render shows is walked window by window, the window in
+    force drawn in red and labelled with its rect. **A row is a window shown,
+    not a placement**: each placement is split at the boundaries it crosses,
+    so a window covering a small slice of a long placement still gets a row.
+    `window` on a row is the source address `reframe --src-start` takes;
+    `windows` is how many the whole placement crosses. Stills come back under
+    `skipped` — a card is re-authored, never cropped.
 
-    **A row is a window shown, not a placement.** Three fixed fractions of each
-    placement missed 14 of the vertical cut's 55 windows, eight of them
-    hand-approved, because a window covering a small slice of a long placement
-    is one no round fraction lands in. Each placement is split at the
-    boundaries it crosses and each stretch sampled inside itself, so `moments`
-    are fractions of the window's own stretch.
+    **A tile is evidence about an instant, not an approval of the span.** A
+    static rect over a moving subject has a best moment and a sample can land
+    on it; `extremes` draws where the subject is leftmost, median and
+    rightmost instead, worst first, with `worst_offset` on the row to sort by.
 
-    Returns the montage's path (under `cache/sheets/`, or `out`) and the table
-    behind it: `window` is the source address the rect is stored at — what
-    `reframe --src-start` takes to change it — and `windows` is how many the
-    whole placement crosses. Stills come back under `skipped`: a card is
-    authored at the canvas and never cropped, so it has no window to review.
-
-    **A tile is evidence about an instant, not an approval of the span**, and
-    `extremes` is what answers that. A static rect over a moving subject has a
-    best moment and a sample can land on it — the teaser's opening window was
-    184px out at its median while the one tile inside it landed 122px out and
-    read as fine. Under `extremes` each stretch is probed with the face
-    detector and drawn where the subject is leftmost, median and rightmost;
-    since the rect does not move inside a stretch, the worst moment is one of
-    those ends. Worst tile first, each labelled with the subject's offset from
-    the middle of the crop, and `worst_offset` on the row is what to sort by. A
-    stretch with no face in any probe says so rather than reporting extremes it
-    does not have. It costs the detector and minutes of decoding, so it is off
-    by default, and it is refused alongside `moments`.
-
-    **A page of rows comes back as an image, like `shot_sheet`.** Six windows
-    at a time by default, drawn to the width vision reads back verbatim; the
-    whole project in one montage is `per_page: null`, which returns a PNG's
-    *path* for a person to open and is unreadable here. `row` keeps its
-    project-wide number on every page, so it is the same window `reframe
-    --src-start` addresses. Under `extremes` the detector only probes the page
-    you asked for.
-
-    `out` is the one thing here that writes where you say: the montage lands
-    at that path, **replacing whatever file is there**. Without it a page is
-    written into the project's own sheet cache, which nothing reads back as
-    authored state.
+    **A page of rows comes back as an image**, six windows by default, at a
+    width vision reads verbatim; `row` keeps its project-wide number on every
+    page. `per_page: null` is the whole project as a PNG path, for a person.
     """
     report = ops.reframe_sheet(
         path, out=out, moments=moments, extremes=extremes, page=page, per_page=per_page
@@ -4282,46 +4352,26 @@ def footage_sheet(
     page: int = 0,
     per_page: int = ops.SHOT_SHEET_PER_PAGE,
     out: str | None = None,
+    ctx: Context | None = None,
 ) -> Any:
     """Look at a clip's own footage — one labelled tile per moment, as an image.
 
-    **This is the tool to call to see what is *in* some footage**, as opposed
-    to `shot_sheet`, which shows the picture track of an edit that already
-    exists. Use it on material with no dialogue to search — recordings,
-    gameplay, event coverage, b-roll — where `describe`/`describe-ls` can find
-    a moment by text but cannot show you one. Like `shot_sheet`, the bytes
-    come back in the reply, so you can actually see it.
+    **The tool to see what is *in* some footage**, as opposed to
+    `shot_sheet`, which shows an existing edit's picture track. It needs no
+    edit, cues or transcript, so it is the first look at b-roll, recordings
+    and gameplay — material `describe` can search by text but cannot show.
+    The bytes come back in the reply.
 
-    `mode` picks which instants get drawn:
+    `mode` picks the instants: `auto` (described windows if the clip has any,
+    else the interval), `interval`, `describe` (each tile beside its window's
+    sentence), or `scenes` (one per detected cut — opt-in, since a continuous
+    take has none and a scan decodes the whole clip). `page` walks a long
+    recording. A tile with nothing in it is marked `[blank]` on the picture,
+    so a black square is never mistaken for a frame that failed to extract.
 
-    - `auto` (default) — describe windows if the clip has any, otherwise the
-      interval. Never scans for cuts.
-    - `interval` — every `interval` seconds. The robust default: it needs no
-      describe run and no scan, and it yields the same tiles per minute on a
-      continuous take and on a trailer.
-    - `describe` — one tile per described window, each row carrying the
-      window's own `text`. This is the pairing worth having: the tile and the
-      sentence are about the same ten seconds.
-    - `scenes` — one tile per detected cut. **Opt-in on purpose.** Measured on
-      real unedited footage it either returns nothing (a continuous take has
-      no cuts, which is a correct answer and an empty sheet) or fires on
-      things that are not shots at all; it also decodes the whole clip, which
-      costs seconds a page does not.
-
-    `page` walks a long recording — a 1070s clip at the default interval is
-    107 tiles. Each row carries `luma`, and a tile with nothing in it is
-    marked `[blank]` on the picture itself, so a black square is never
-    mistaken for a frame that failed to extract.
-
-    **What you see here is a hypothesis, not a check** — and this is the sheet
-    where that matters most, because it is read in order to *choose* footage.
-    `synopsis` is where a person says what a clip is; a tile shows what the
-    camera saw, which is a different fact.
-
-    `out` is the one thing here that writes where you say: the montage lands
-    at that path, **replacing whatever file is there**. Without it a page is
-    written into the project's own sheet cache, which nothing reads back as
-    authored state.
+    **What you see is a hypothesis, not a check** — and this sheet is read to
+    *choose* footage. `synopsis` is where a person says what a clip is; a tile
+    shows what the camera saw, which is a different fact.
     """
     report = ops.footage_sheet(
         path, clip_id, mode=mode, interval=interval, page=page, per_page=per_page, out=out
@@ -4826,6 +4876,124 @@ def review_list(path: ProjectPath = None) -> dict[str, Any]:
     return ops.review_list(path)
 
 
+# ---------------------------------------------------------------- prompts
+#
+# The briefs the trials measured, shipped as prompts (docs/plans/MCP.md § Step
+# 7): `/mcp__proofcut__film` in Claude Code, `prompts/get` anywhere else. The
+# text is `proofcut.briefs`, which `scripts/agent_trial.py` composes from too.
+# Every argument is a string because MCP prompt arguments are, and every one
+# but the material is optional. A bound server names its own project, so the
+# brief does not have to ask.
+
+_MEDIA = Annotated[str, Field(description="The folder holding the recordings and footage to work from.")]
+_OUTPUT = Annotated[
+    str | None,
+    Field(description="Where to write the finished file. Unset, the project's renders/ folder."),
+]
+_LENGTH = Annotated[
+    str | None, Field(description="How long the result should run, e.g. `90s` or `3 minutes`.")
+]
+_PROJECT = Annotated[
+    str | None,
+    Field(
+        description=(
+            "The proofcut project directory. Unset, the one this server is bound to, "
+            "or a new one beside the material."
+        )
+    ),
+]
+
+
+def _prompt_project(project: str | None) -> str | None:
+    return project or (str(_BOUND_ROOT) if _BOUND_ROOT is not None else None)
+
+
+@mcp.prompt(name="cut", title="Cut a video")
+def _cut_prompt(
+    media: _MEDIA, output: _OUTPUT = None, length: _LENGTH = None, project: _PROJECT = None
+) -> str:
+    """Cut recordings into a finished video: retakes out, b-roll under the lines it
+    belongs to, captions burned in, rendered and checked against the timeline."""
+    return briefs.cut(media, output=output, length=length, project=_prompt_project(project))
+
+
+@mcp.prompt(name="film", title="Make a film")
+def _film_prompt(
+    media: _MEDIA,
+    output: _OUTPUT = None,
+    length: _LENGTH = None,
+    end_card: Annotated[
+        str | None, Field(description="What the end card after the last line reads.")
+    ] = None,
+    loudness: Annotated[
+        str | None,
+        Field(description="The master's level in LUFS integrated. Unset, -16."),
+    ] = None,
+    project: _PROJECT = None,
+) -> str:
+    """Make a finished film ready to upload: the cut, b-roll, music under the
+    narration, an end card, captions, a loudness master, and the checks."""
+    return briefs.film(
+        media,
+        output=output,
+        length=length,
+        end_card=end_card,
+        loudness=loudness,
+        project=_prompt_project(project),
+    )
+
+
+@mcp.prompt(name="review", title="Review a finished film")
+def _review_prompt(
+    render: Annotated[
+        str | None,
+        Field(description="The rendered file to check. Unset, the project's latest render."),
+    ] = None,
+    project: _PROJECT = None,
+) -> str:
+    """Check a finished project before it is uploaded, changing nothing: whether the
+    render is the timeline, every word is heard, and the picture, captions, music
+    and level are what the project says."""
+    return briefs.review(render=render, project=_prompt_project(project))
+
+
+def _trim_schema(node: Any) -> None:
+    """Drop what pydantic generates and a schema reader does not need.
+
+    Two shapes, 13% of the advertised input schema between them: a `title`
+    restating each argument's own name, and `anyOf: [{type: X}, {type:
+    null}]` for every optional one, which `type: [X, "null"]` says in a
+    third of the bytes. Only the advertised dict changes — a call is still
+    validated by the tool's own pydantic model, which is why
+    `tests/test_server_stdio.py` checks the two schemas accept the same
+    arguments rather than trusting the rewrite. docs/plans/MCP.md § Step 11.
+    """
+    if isinstance(node, list):
+        for item in node:
+            _trim_schema(item)
+        return
+    if not isinstance(node, dict):
+        return
+    if isinstance(node.get("title"), str):
+        del node["title"]
+    options = node.get("anyOf")
+    if isinstance(options, list) and len(options) == 2 and {"type": "null"} in options:
+        (other,) = [option for option in options if option != {"type": "null"}]
+        if isinstance(other.get("type"), str) and not set(other) & (set(node) - {"anyOf"}):
+            del node["anyOf"]
+            node.update(other)
+            node["type"] = [other["type"], "null"]
+    for key in ("properties", "$defs"):
+        for child in (node.get(key) or {}).values():
+            _trim_schema(child)
+    for key in ("items", "anyOf", "additionalProperties"):
+        _trim_schema(node.get(key))
+
+
+for _registered in mcp._tool_manager.list_tools():
+    _trim_schema(_registered.parameters)
+
+
 def serve(
     root: str | Path | None = None,
     *,
@@ -4844,17 +5012,27 @@ def serve(
     that is checked: `init` under a bound root is legitimate, so requiring
     the root to already be a proofcut project would refuse a real workflow.
 
+    With no `root`, a server started **inside a project** — a directory holding
+    `proofcut.json` — binds to it, exactly as `-C .` would. Claude Code spawns a
+    stdio server in the directory it was launched from, so a plugin user
+    working in a project stops passing `path` on every call; started anywhere
+    else, the server is the unbound one it always was. A `lucid.json`-only
+    directory is not a project until `migrate`, so it does not bind.
+    docs/plans/MCP.md § Step 8.
+
     `transport` is `"stdio"` (the default — every existing client spawns the
     server this way, so changing the default would break them silently) or
     `"http"`. `host`, `port`, `allow_remote` and `allow_remote_hosts` are
     ignored for stdio.
     """
-    global _BOUND_ROOT
+    global _BOUND_ROOT, _BOUND_BY
     if root is not None:
         resolved = Path(root).resolve()
         if not resolved.is_dir():
             raise ProjectError(f"cannot bind the MCP server to {root!r}: not a directory")
-        _BOUND_ROOT = resolved
+        _BOUND_ROOT, _BOUND_BY = resolved, "-C"
+    elif (Path.cwd() / MANIFEST_NAME).is_file():
+        _BOUND_ROOT, _BOUND_BY = Path.cwd().resolve(), "cwd"
 
     if transport == "stdio":
         mcp.run(transport="stdio")

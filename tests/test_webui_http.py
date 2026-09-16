@@ -1832,11 +1832,13 @@ def test_agent_prompt_spawns_with_the_allowlist_and_streams_the_canned_event(
     # without it (errors and exits 0 with nothing on stdout) — see
     # PLAN.md § The agent panel, in mechanism.
     assert "--verbose" in argv
-    # --tools '': the allow/disallow lists alone do not gate built-in tools
+    # --tools: the allow/disallow lists alone do not gate built-in tools
     # absent from both — this is what actually confines the agent to proofcut's
-    # MCP tools and nothing else. Same PLAN.md section.
+    # MCP tools and nothing else. Same PLAN.md section. Its one survivor is
+    # ToolSearch, which defers the MCP definitions (docs/plans/MCP.md § Step 1)
+    # and reads no file — nothing else may ride along.
     assert "--tools" in argv
-    assert argv[argv.index("--tools") + 1] == ""
+    assert argv[argv.index("--tools") + 1] == "ToolSearch"
 
 
 def test_the_agents_mcp_config_spawns_this_interpreter_not_a_path_lookup(
@@ -3159,6 +3161,43 @@ def test_a_second_transcribe_while_one_is_running_is_refused(
         assert "already running" in payload["error"]
     finally:
         gate.set()
+
+
+def test_a_transcription_job_says_how_far_it_has_got(
+    server: str, project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The job hands `ops.transcribe` a reporter, and each report reaches the
+    page as a `progress` event on the job's own topic, before `done` — the
+    same reports the MCP server sends a client. docs/plans/MCP.md § Step 6."""
+    from proofcut import progress
+
+    clip_id = _clip_id(project)
+
+    def _stub(path: str, clip: str, **kwargs: Any) -> dict[str, Any]:
+        progress.report(5.0, 10.0, f"transcribing {clip}")
+        return {"clip_id": clip, "words": 0, "language": "en"}
+
+    monkeypatch.setattr(ops, "transcribe", _stub)
+    host, port = _host_and_port(server)
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    try:
+        conn.request("GET", "/api/events")
+        events = _sse_events(conn.getresponse())
+        next(events)
+        status, _ = _post(f"{server}/api/transcribe", {"clip_id": clip_id})
+        assert status == 202
+        seen = []
+        for event, data in events:
+            if event != "transcribe":
+                continue
+            seen.append(data["status"])
+            if data["status"] == "progress":
+                assert (data["progress"], data["total"], data["clip_id"]) == (5.0, 10.0, clip_id)
+            if data["status"] in {"done", "error"}:
+                break
+    finally:
+        conn.close()
+    assert seen == ["running", "progress", "done"]
 
 
 def test_transcript_attach_round_trips_over_http(

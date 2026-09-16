@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -30,6 +31,8 @@ import wave
 from collections import Counter
 from pathlib import Path
 from typing import Any
+
+from proofcut import progress
 
 FFMPEG = "ffmpeg"
 
@@ -89,13 +92,47 @@ def whisper_binary() -> Path:
     )
 
 
+#: whisper's verbose segment line: `[00:12.340 --> 00:15.000]  text`, with an
+#: hours field once the media passes an hour.
+_SEGMENT_LINE = re.compile(r"^\[(?:\d+:)?\d+:\d+\.\d+ --> (?:(\d+):)?(\d+):(\d+\.\d+)\]")
+
+
+def _run_reporting(cmd: list[str], name: str, duration: float | None) -> None:
+    """Run whisper with its segment lines reported as progress, raising as
+    `subprocess.run(check=True)` would."""
+
+    def on_line(line: str) -> None:
+        match = _SEGMENT_LINE.match(line.strip())
+        if match:
+            hours, minutes, seconds = match.groups()
+            at = int(hours or 0) * 3600 + int(minutes) * 60 + float(seconds)
+            total = duration if duration and duration > 0 else None
+            progress.report(min(at, total) if total else at, total, f"transcribing {name}")
+
+    # Unbuffered, or a piped Python child holds its lines until exit.
+    env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
+    progress.report(0, duration or None, f"transcribing {name}")
+    completed = progress.run(cmd, on_stdout=on_line, env=env)
+    if completed.returncode != 0:
+        raise subprocess.CalledProcessError(
+            completed.returncode, cmd, completed.stdout, completed.stderr
+        )
+    if duration and duration > 0:
+        progress.report(duration, duration, f"transcribed {name}")
+
+
 def transcribe(
     media: Path | str,
     *,
     model: str = DEFAULT_MODEL,
     language: str | None = None,
+    duration: float | None = None,
 ) -> dict[str, Any]:
     """Transcribe `media` with word timestamps, returning whisper's JSON.
+
+    With a `progress` reporter installed, whisper's own segment lines are read
+    as they print and reported against `duration` (seconds of media). Nothing
+    else changes: without one it is the same `subprocess.run` it always was.
 
     The output lands in a temporary directory and is read back rather than
     written beside the media: callers decide where a transcript belongs, and
@@ -134,7 +171,10 @@ def transcribe(
             cmd += ["--language", language]
 
         try:
-            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            if progress.active():
+                _run_reporting(cmd, source.name, duration)
+            else:
+                subprocess.run(cmd, capture_output=True, text=True, check=True)
         except FileNotFoundError as exc:
             raise ASRError(f"{binary} is not executable") from exc
         except subprocess.CalledProcessError as exc:

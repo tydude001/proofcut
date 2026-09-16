@@ -24,7 +24,7 @@
  * section's own comment for the specific measurement or trap it answers.
  */
 
-import { $, fmt, debounce } from "./dom.js";
+import { $, fmt, debounce, progressText } from "./dom.js";
 import { api, connectEvents } from "./api.js";
 import * as player from "./player.js";
 import * as transcript from "./transcript.js";
@@ -294,13 +294,17 @@ $("export").addEventListener("click", async () => {
 // natural follow-up once agent.js is back in scope.
 on("render", (data) => {
   if (!data || typeof data !== "object") return;
+  // A stage event reports a pipeline step, not the chip's state.
+  if (data.status === "stage") return;
   const chip = $("export-status");
   chip.hidden = false;
-  chip.dataset.status = data.status;
+  // `progress` is a running render that has said how far it has got.
+  chip.dataset.status = data.status === "progress" ? "running" : data.status;
   chip.dataset.jobId = data.job_id ?? "";
+  const done = data.status === "progress" ? progressText(data) : "";
   chip.textContent =
-    data.status === "running"
-      ? "rendering…"
+    data.status === "running" || data.status === "progress"
+      ? `rendering…${done ? ` ${done}` : ""}`
       : data.status === "done"
         ? "render done"
         : data.status === "cancelled"

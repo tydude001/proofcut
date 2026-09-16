@@ -50,6 +50,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from proofcut import progress
+
 #: RetinaFace, via insightface's model zoo. The weights are already on this box
 #: under `~/.insightface/models/`; nothing here downloads them, because a
 #: framing pass that silently reaches for the network on first run is a framing
@@ -157,7 +159,11 @@ def detect(windows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         cmd = [str(python), str(_WORKER), str(job_path), str(out_path)]
         # `check=False`: a non-zero exit is reported through `_worker_failure`,
         # which carries the tail of stderr. CalledProcessError would drop it.
-        completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        completed = (
+            progress.run_worker(cmd, "finding faces")
+            if progress.active()
+            else subprocess.run(cmd, capture_output=True, text=True, check=False)
+        )
         if completed.returncode != 0 or not out_path.exists():
             raise FaceError(_worker_failure(python, completed))
         payload = json.loads(out_path.read_text(encoding="utf-8"))

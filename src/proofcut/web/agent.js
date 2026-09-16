@@ -50,7 +50,7 @@
  * cannot style.
  */
 
-import { $, el, fmt } from "./dom.js";
+import { $, el, fmt, progressText } from "./dom.js";
 
 let ctx = null;
 let busy = false;
@@ -619,14 +619,23 @@ function buildCompletionCard(data) {
 function handleRenderEvent(data) {
   if (!data || typeof data !== "object") return;
   const wrap = slotFor(data.job_id);
+  // A progress event rewrites only the label: rebuilding the card would
+  // remove the Stop button from under a click in progress, and Chrome then
+  // drops that click silently (CLAUDE.md § redraw only the node a gesture owns).
+  if (data.status === "progress") {
+    const label = wrap.querySelector(".render-progress");
+    if (label) {
+      const done = progressText(data);
+      label.textContent = `${label.dataset.base}${done ? ` ${done}` : ""}`;
+    }
+    return;
+  }
   wrap.textContent = "";
   switch (data.status) {
     case "running": {
-      const label = el(
-        "span",
-        null,
-        `Rendering${data.preset ? ` · preset ${data.preset}` : ""}…`,
-      );
+      const base = `Rendering${data.preset ? ` · preset ${data.preset}` : ""}…`;
+      const label = el("span", "render-progress", base);
+      label.dataset.base = base;
       wrap.append(label, stopRenderButton());
       break;
     }

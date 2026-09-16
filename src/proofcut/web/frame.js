@@ -44,7 +44,7 @@
  * says so rather than drawing a blank chip.
  */
 
-import { $, el, secs, clampFloating } from "./dom.js";
+import { $, el, secs, clampFloating, progressText } from "./dom.js";
 
 let ctx = null;
 
@@ -268,6 +268,9 @@ function onSheetEvent(data) {
   if (data.status === "running") {
     sheetBusy = true;
     setButtonBusy(btn, "generating sheet…", "Build sheet");
+  } else if (data.status === "progress") {
+    const done = progressText(data);
+    if (done) setButtonBusy(btn, `generating sheet… ${done}`, "Build sheet");
   } else if (data.status === "done") {
     sheetBusy = false;
     setButtonBusy(btn, null, "Build sheet");
@@ -313,6 +316,9 @@ function onDetectEvent(data) {
     detectBusy = true;
     setButtonBusy(btn, "detecting gaps…", "Detect gaps");
     setDetectError("");
+  } else if (data.status === "progress") {
+    const done = progressText(data);
+    if (done) setButtonBusy(btn, `detecting gaps… ${done}`, "Detect gaps");
   } else if (data.status === "done") {
     detectBusy = false;
     setButtonBusy(btn, null, "Detect gaps");

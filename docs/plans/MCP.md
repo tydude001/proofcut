@@ -104,6 +104,8 @@ tool body.
 
 ### Step 1 — let the confined agent search
 
+Built 2026-09-16: HISTORY.md § The MCP surface, rebuilt for deferred loading.
+
 The `--tools` value in `webui.AgentSession._spawn` becomes `"ToolSearch"`
 instead of `""`, and gets a name beside `_AGENT_ALLOWED_TOOLS` — because
 `scripts/agent_trial.py` restates the literal `""` at its own spawn today
@@ -127,6 +129,8 @@ $1.31 + $6.94 + $2.27 on Opus 5.
 
 ### Step 2 — `instructions` becomes the map
 
+Built 2026-09-16: HISTORY.md § The MCP surface, rebuilt for deferred loading.
+
 With deferral, `instructions` is the one thing about proofcut the model reads
 before it decides to search, and Claude Code's own guidance for it is a
 skill's: what category of task, when to search, what the key capabilities
@@ -144,6 +148,8 @@ client's and the truncation is silent.
 
 ### Step 3 — no description over the client's cap
 
+Built 2026-09-16: HISTORY.md § The MCP surface, rebuilt for deferred loading.
+
 Ten descriptions are over 2 KB and lose their tails in Claude Code. The
 tail is usually the most operational paragraph — `export`'s loudness
 refusal band, `reel`'s pinning rule — and truncation reports nothing. Each
@@ -154,6 +160,8 @@ every description at or under 2,048 bytes, beside the existing one holding
 every argument documented.
 
 ### Step 4 — decide which tools are always loaded, by measurement
+
+Built 2026-09-16: HISTORY.md § The MCP surface, rebuilt for deferred loading.
 
 `_meta["anthropic/alwaysLoad"]` on a tool loads its definition upfront under
 deferral; `_tool()` gains a way to set it. The candidates are the tools every
@@ -167,6 +175,8 @@ the run shows the agent searching for on every brief; each always-loaded
 tool is context on every turn of every session, plugin users included.
 
 ### Step 5 — replies that grow with the film get a bound
+
+Built 2026-09-16: HISTORY.md § The MCP surface, rebuilt for deferred loading.
 
 `get_transcript` with no window returns the whole transcript, and on
 anything longer than the Scream VO that is over the client's 25K-token limit
@@ -184,6 +194,8 @@ under 25K tokens' worth of bytes; the number is the client's, and it is
 written once in `server.py` beside the reason.
 
 ### Step 6 — progress from the long tools
+
+Built 2026-09-16: HISTORY.md § The MCP surface, rebuilt for deferred loading.
 
 `transcribe`, `export`, `vo_synth`, `describe`, `reframe_detect`,
 `reframe_coverage` and `footage_sheet` take the SDK's `Context` and call
@@ -204,6 +216,8 @@ is watched once, by hand, for the frame count reaching the total.
 
 ### Step 7 — the briefs become prompts
 
+Built 2026-09-16: HISTORY.md § The MCP surface, rebuilt for deferred loading.
+
 Claude Code asks `prompts/list` at every start and answers empty. The three
 briefs the trials passed with — a cut to length with b-roll and captions, a
 whole film with score, card and master, and a check of a finished project —
@@ -218,6 +232,8 @@ drift. A new callable thing is a minor bump (CLAUDE.md's rule).
 
 ### Step 8 — an unbound server binds to a project it is standing in
 
+Built 2026-09-16: HISTORY.md § The MCP surface, rebuilt for deferred loading.
+
 The plugin runs `proofcut mcp` unbound, so a Claude Code user working inside
 a project passes `path` on every call — the ceremony the trial's first queue
 item removed for the panel. Measured today: Claude Code spawns a stdio
@@ -230,6 +246,8 @@ already holds one schema for both states; a test starts the server in a
 project directory with no `-C` and calls `timeline_status` with no `path`.
 
 ### Step 9 — what the directories read at `initialize`
+
+Built 2026-09-16: HISTORY.md § The MCP surface, rebuilt for deferred loading.
 
 `MCPServer` takes `title`, `website_url` and `icons`; `server.json` already
 states the first two for the registry and the handshake states neither.
@@ -247,6 +265,8 @@ through tools, and no run has wanted a resource. Deferred: revisit when a
 stranger's install asks, or when the `@` mention is what a demo needs.
 
 ### Step 11 — trim the generated schema
+
+Built 2026-09-16: HISTORY.md § The MCP surface, rebuilt for deferred loading.
 
 13% of the input schema is `title: "Clip Id"` and `anyOf: [{type: string},
 {type: null}]` that `type: ["string", "null"]` says shorter. Under deferral

@@ -1395,3 +1395,20 @@ def test_the_missing_transcript_refusal_names_commands_that_parse(tmp_path: Path
     for command in commands:
         argv = shlex.split(re.sub(r"<[^>]*>", "X", command))[1:]
         _build_parser().parse_args(argv)
+
+
+def test_brief_prints_the_prompt_the_server_ships(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The prompts' CLI twin prints the text itself, and `-C` fills the
+    project the way a bound server does. docs/plans/MCP.md § Step 7."""
+    from proofcut import briefs
+
+    assert main(["brief", "cut", "/footage", "--length", "90s"]) == 0
+    assert capsys.readouterr().out == briefs.cut("/footage", length="90s")
+
+    assert main(["-C", str(tmp_path), "brief", "review"]) == 0
+    assert capsys.readouterr().out == briefs.review(project=str(tmp_path.resolve()))
+
+    assert main(["brief", "film"]) == 1
+    assert "material folder" in capsys.readouterr().err

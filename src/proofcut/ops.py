@@ -41,6 +41,7 @@ from proofcut import (
     media,
     mlt,
     picture,
+    progress,
     renderlog,
     tts,
 )
@@ -364,7 +365,9 @@ def transcribe(
     project = Project.open(path)
     clip = media.get_clip(project, clip_id)
     source = media.media_path(project, clip)
-    payload = asr.transcribe(source, model=model, language=language)
+    payload = asr.transcribe(
+        source, model=model, language=language, duration=clip.get("duration")
+    )
     # Whisper returns an empty `segments` list rather than failing when it
     # hears no speech, and parse_whisper would then blame the missing word
     # timestamps — which were requested. Say what actually happened (verify
@@ -607,8 +610,17 @@ def get_transcript(
     first: int | None = None,
     last: int | None = None,
     search: str | None = None,
+    limit: int | None = None,
 ) -> dict[str, Any]:
-    """Read the transcript: a window of it, or the hits for a phrase."""
+    """Read the transcript: a window of it, or the hits for a phrase.
+
+    `limit` caps the words one call returns, counted from `first`, and the
+    reply says where it stopped: `next_first` is the index to ask for next,
+    present only when words were left out. A whole transcript is 94 KB on a
+    5.6-minute VO, past what an MCP client will put in context
+    (docs/plans/MCP.md § Step 5), so the MCP tool sets one by default; the CLI
+    does not.
+    """
     project = Project.open(path)
     parsed = _transcript(project, clip_id)
 
@@ -616,16 +628,44 @@ def get_transcript(
         return {"clip_id": clip_id, "search": search, "matches": parsed.find(search)}
 
     lo = 0 if first is None else first
-    hi = (len(parsed) - 1) if last is None else last
+    end = len(parsed) - 1 if last is None else min(last, len(parsed) - 1)
+    hi = end if limit is None else min(end, lo + max(limit, 1) - 1)
     words = parsed.window(lo, hi)
-    return {
+    result: dict[str, Any] = {
         "clip_id": clip_id,
         "total_words": len(parsed),
         "first_word": lo,
-        "last_word": min(hi, len(parsed) - 1),
+        "last_word": hi,
         "text": " ".join(w.text for w in words),
         "words": [w.as_dict() for w in words],
     }
+    if hi < end:
+        result["next_first"] = hi + 1
+    return result
+
+
+def window_list(
+    report: dict[str, Any], key: str, first: int | None, limit: int | None
+) -> dict[str, Any]:
+    """Cut `report[key]` to `limit` items from `first`, and say so beside it.
+
+    The one shape every bounded list in a reply takes: `<key>_total`, the
+    `<key>_first`/`<key>_last` indices kept, and `<key>_next` only when items
+    were left out. Unset `first` and `limit` leave the report exactly as it
+    was, so the window and every caller that never asked are unaffected.
+    """
+    items = report.get(key)
+    if not isinstance(items, list) or (first is None and limit is None):
+        return report
+    lo = max(first or 0, 0)
+    hi = len(items) if limit is None else min(len(items), lo + max(limit, 1))
+    report[key] = items[lo:hi]
+    report[f"{key}_total"] = len(items)
+    report[f"{key}_first"] = lo
+    report[f"{key}_last"] = hi - 1
+    if hi < len(items):
+        report[f"{key}_next"] = hi
+    return report
 
 
 def transcript_checks(path: Path | str, clip_id: str | None = None) -> dict[str, Any]:
@@ -1259,12 +1299,28 @@ def _cards_on_disk(project: Project) -> list[str]:
     return sorted({p.stem for p in project.cards_dir.iterdir() if p.suffix in (".svg", ".png")})
 
 
-def card_templates() -> dict[str, Any]:
+def card_templates(name: str | None = None) -> dict[str, Any]:
     """Every card template proofcut ships, with the slots each one takes.
 
     Takes no project: a template is package data, the same for every one.
+    `name` returns that one template's full entry and every other one's name
+    and description only — the whole table is 12.6 KB, and an agent that has
+    chosen a template reads one slot list.
     """
-    return {"templates": graphics.templates()}
+    templates = graphics.templates()
+    if name is None:
+        return {"templates": templates}
+    if name not in {t["template"] for t in templates}:
+        raise ProjectError(
+            f"no card template {name!r}; there are "
+            f"{', '.join(t['template'] for t in templates)}"
+        )
+    return {
+        "templates": [
+            t if t["template"] == name else {"template": t["template"], "description": t["description"]}
+            for t in templates
+        ]
+    }
 
 
 def fonts(path: Path | str | None = None, *, install: bool = False) -> dict[str, Any]:
@@ -4010,8 +4066,17 @@ def _seams(edit: tl.Edit, clip_id: str, placements: list[dict[str, Any]]) -> lis
     return seams
 
 
-def timeline_view(path: Path | str, clip_id: str | None = None) -> dict[str, Any]:
+def timeline_view(
+    path: Path | str,
+    clip_id: str | None = None,
+    *,
+    first: int | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
     """The whole edit in one payload: segments, seams, and every word's fate.
+
+    `first`/`limit` window the `words` list only (`window_list`); the lanes
+    are always whole. The window never passes them.
 
     The read model behind `proofcut web` (HISTORY.md § The preview/timeline web UI). It exists as an op
     rather than inside the server because a view that computed word survival
@@ -4291,7 +4356,7 @@ def timeline_view(path: Path | str, clip_id: str | None = None) -> dict[str, Any
         result["transcript_missing"] = True
     else:
         result["words"] = placements
-    return result
+    return window_list(result, "words", first, limit)
 
 
 def _default_clip_id(project: Project, clips: dict[str, dict[str, Any]]) -> str | None:
@@ -5213,6 +5278,7 @@ def footage_sheet(
     # (CLAUDE.md).
     source = media.media_path(project, clip)
 
+    progress.report(0, None, f"choosing moments in {clip_id}")
     used, marks, notes = _footage_marks(
         project, clip, source, mode=mode, interval=float(interval)
     )
@@ -5224,6 +5290,7 @@ def footage_sheet(
     drawn: list[Path] = []
     dest_dir = project.root / FOOTAGE_SHEET_DIR / re.sub(r"[^A-Za-z0-9._-]", "_", clip_id)
     for offset, mark in enumerate(window):
+        progress.report(offset, len(window), f"drawing {clip_id}")
         index = page * per_page + offset
         at = float(mark["at"])
         label = f"{clip_id} src={at:.1f}s"
@@ -8581,7 +8648,9 @@ def reframe_detect(
     # a 730s cold open the film uses 71.8s of has no reason to be walked to the
     # end, and the decode is the whole cost of this half.
     scans: dict[str, list[dict[str, float]]] = {}
-    for asset in {p["asset"] for p in placements}:
+    assets = sorted({p["asset"] for p in placements})
+    for done, asset in enumerate(assets):
+        progress.report(done, len(assets), f"scanning {asset} for cuts")
         used = [p for p in placements if p["asset"] == asset]
         scans[asset] = media.scene_cuts(
             used[0]["path"], until=max(p["src_start"] + p["duration"] for p in used)
@@ -8872,7 +8941,9 @@ def reframe_coverage(
     # whole cost, and a 730s clip the film reads 71.8s of has no reason to be
     # walked to the end.
     scans: dict[str, list[dict[str, float]]] = {}
-    for asset in {p["asset"] for p in placements}:
+    assets = sorted({p["asset"] for p in placements})
+    for done, asset in enumerate(assets):
+        progress.report(done, len(assets), f"scanning {asset} for cuts")
         used = [p for p in placements if p["asset"] == asset]
         scans[asset] = media.scene_cuts(
             used[0]["path"], until=max(p["src_start"] + p["duration"] for p in used)
@@ -14071,8 +14142,17 @@ def _unspoken_proposal(
     }
 
 
-def caption_view(path: Path | str, clip_id: str | None = None) -> dict[str, Any]:
+def caption_view(
+    path: Path | str,
+    clip_id: str | None = None,
+    *,
+    first: int | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
     """The captions this timeline would produce, with the style in force.
+
+    `first`/`limit` window the `cues` list (`window_list`); `words` stays the
+    whole count.
 
     `add_captions` without the writing — the read model behind the preview
     overlay and the window's CC lane, and the way to see a restyle before
@@ -14112,7 +14192,7 @@ def caption_view(path: Path | str, clip_id: str | None = None) -> dict[str, Any]
     result["words_cut"] = cut
     if not cues:
         result["cues_error"] = "no transcribed word survives on the timeline"
-    return result
+    return window_list(result, "cues", first, limit)
 
 
 def add_captions(

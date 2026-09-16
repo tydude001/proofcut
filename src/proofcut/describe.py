@@ -48,6 +48,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from proofcut import progress
+
 #: What `_vlm_worker.py` loads, as a Hugging Face id — fetched into the
 #: interpreter's own HF cache on first use, and 4-bit quantised at load.
 MODEL = "Qwen/Qwen2.5-VL-7B-Instruct"
@@ -241,7 +243,11 @@ def describe_windows(
         cmd = [str(python), str(_WORKER), str(job_path), str(out_path)]
         # `check=False`: a non-zero exit is reported through `_worker_failure`,
         # which carries the tail of stderr. CalledProcessError would drop it.
-        completed = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        completed = (
+            progress.run_worker(cmd, "describing footage")
+            if progress.active()
+            else subprocess.run(cmd, capture_output=True, text=True, check=False)
+        )
         if completed.returncode != 0 or not out_path.exists():
             raise DescribeError(_worker_failure(python, completed))
         payload = json.loads(out_path.read_text(encoding="utf-8"))

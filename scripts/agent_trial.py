@@ -9,12 +9,13 @@ than a test because the thing under measurement costs real money and minutes
 and its result is evidence, not a pass/fail gate.
 
 It runs the same client the agent panel runs, with the same confinement:
-`claude -p` against a generated one-server MCP config, `--tools ""` so the
-built-in set is gone and proofcut's tools are the agent's *only* reach (CLAUDE.md
-— the allow/disallow flags do not gate built-ins, `--tools ""` does), and the
+`claude -p` against a generated one-server MCP config, `--tools ToolSearch` so
+the built-in set is gone but for tool search, and proofcut's tools are the
+agent's *only* reach (CLAUDE.md — the allow/disallow flags do not gate
+built-ins, `--tools` does; docs/plans/MCP.md § Step 1), and the
 command in that config is this interpreter with `-m proofcut.cli`, never the name
 `proofcut`, which is absent from PATH for every launch that skips an activated
-venv. Those three facts are imported from `webui.py` rather than restated, so
+venv. Those facts are imported from `webui.py` rather than restated, so
 the trial cannot silently measure a different client than the one that ships.
 
     python scripts/agent_trial.py ~/proofcut-work/spikes/agent-trial              # prepare, run, score
@@ -92,7 +93,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import make_demo
 import trial_check
 
-from proofcut import finish, ops, webui
+from proofcut import briefs, finish, ops, webui
 from proofcut import media as proofcut_media
 from proofcut.project import LEGACY_MANIFEST_NAME, MANIFEST_NAME, TIMELINE_NAME, Project
 
@@ -101,79 +102,17 @@ class TrialError(RuntimeError):
     """A precondition failed, or the run could not be started."""
 
 
-#: The brief, as data rather than prose in a string, for `make_demo.SCRIPT`'s
-#: own reason: a reader has to be able to see exactly what the agent was told
-#: before reading what it did. `{media}` and `{output}` are the only
-#: substitutions — absolute paths, because the agent has no shell to resolve a
-#: relative one with and no Read tool to look around with.
-DEMO_BRIEF = """\
-You are editing a short video, and proofcut's tools are the only thing you have —
-there is no shell, no file browser, and no way to read a file except through a
-proofcut tool.
-
-The raw material is three files in {media}:
-
-  vo.wav            a voiceover, one speaker, with a fluffed take in it: the
-                    narrator starts a sentence, gives up, and says it again
-  broll-blue.mp4    b-roll
-  broll-rust.mp4    b-roll
-
-The project is already initialised at {project}, and every tool takes it as
-`path`. The server is bound to that one project and will refuse any other.
-
-Deliver a finished cut:
-
-  * the fluffed take gone, and nothing else that the narrator meant to say;
-  * b-roll on screen under the lines it belongs to, rather than over all of it
-    or none of it;
-  * captions burned into the picture;
-  * rendered to {output};
-  * and the render checked against the timeline, not merely produced.
-
-When you are done, report in plain prose what you cut, what picture you hung
-where, and what every check you ran said — including anything that disagreed
-with what you expected.
-"""
-
-#: `--film`'s brief: the demo brief's material plus the score, and a finished
-#: film's delivery list. Still a goal, never the steps — it names a level in
-#: LUFS because a delivery spec does, and no command.
-FILM_BRIEF = """\
-You are making a short film, and proofcut's tools are the only thing you have —
-there is no shell, no file browser, and no way to read a file except through a
-proofcut tool.
-
-The raw material is four files in {media}:
-
-  vo.wav            a voiceover, one speaker, with a fluffed take in it: the
-                    narrator starts a sentence, gives up, and says it again
-  broll-blue.mp4    b-roll
-  broll-rust.mp4    b-roll
-  music.wav         a piece of music for the film
-
-The project is already initialised at {project}, and every tool takes it as
-`path`. The server is bound to that one project and will refuse any other.
-
-Deliver a finished film, ready to upload:
-
-  * the fluffed take gone, and nothing else that the narrator meant to say;
-  * b-roll on screen under the lines it belongs to, rather than over all of it
-    or none of it;
-  * the music under the narration from its first word, low enough that every
-    word is still clear;
-  * an end card after the last line, reading "proofcut";
-  * captions burned into the picture;
-  * mastered to -16 LUFS integrated;
-  * rendered to {output};
-  * and the render checked against the timeline, not merely produced.
-
-When you are done, report in plain prose what you cut, what picture you hung
-where, what you did with the music, the end card and the level, and what every
-check you ran said — including anything that disagreed with what you expected.
-"""
+#: The briefs live in `proofcut.briefs`, which the MCP server's prompts compose
+#: from too, so the brief a run measured and the one that ships cannot drift
+#: apart (docs/plans/MCP.md § Step 7). `{media}`, `{project}` and `{output}`
+#: are absolute paths, because the agent has no shell to resolve a relative
+#: one with and no Read tool to look around with. `tests/test_briefs.py` holds
+#: both renderings to the text the recorded runs were given.
+DEMO_BRIEF = briefs.trial_cut
+FILM_BRIEF = briefs.trial_film
 
 #: What the film brief asks the master to measure, and `finish`'s own band.
-FILM_LOUDNESS = -16.0
+FILM_LOUDNESS = briefs.FILM_LOUDNESS
 FILM_LOUDNESS_TOLERANCE = finish.MASTER_LU_TOLERANCE
 #: A frame is ink rather than black above this 8-bit YMAX. Black is 16, and
 #: CLAUDE.md's measured floor for a real frame is 127 (`SHEET_BLANK_MAX`'s rule).
@@ -410,7 +349,7 @@ def run_agent(
         str(_mcp_config(project, run_dir / "mcp-config.json")),
         "--strict-mcp-config",
         "--tools",
-        "",
+        webui._AGENT_TOOLS,
         "--allowedTools",
         webui._AGENT_ALLOWED_TOOLS,
         "--disallowedTools",
@@ -1319,7 +1258,7 @@ def main(argv: list[str] | None = None) -> int:
         brief = (
             Path(args.brief_file).expanduser().read_text(encoding="utf-8")
             if args.brief_file
-            else (FILM_BRIEF if args.film else DEMO_BRIEF).format(media=media, project=project, output=output)
+            else (FILM_BRIEF if args.film else DEMO_BRIEF)(media=media, project=project, output=output)
         )
 
         phrases = (

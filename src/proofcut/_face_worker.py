@@ -76,7 +76,7 @@ def main() -> int:
     app.prepare(ctx_id=-1, det_size=(job["det_size"], job["det_size"]))
 
     results = []
-    for window in job["windows"]:
+    for done, window in enumerate(job["windows"], 1):
         try:
             frames = []
             for ts in window["timestamps"]:
@@ -96,6 +96,10 @@ def main() -> int:
             results.append({"index": window["index"], "frames": frames})
         except Exception as exc:  # noqa: BLE001 — reported per window, not fatal
             results.append({"index": window["index"], "error": f"{type(exc).__name__}: {exc}"})
+        # `proofcut.progress.MARKER`'s line, restated: this interpreter imports
+        # nothing from proofcut.
+        sys.stderr.write(f"proofcut-progress {done} {len(job['windows'])}\n")
+        sys.stderr.flush()
 
     destination.write_text(json.dumps({"results": results}), encoding="utf-8")
     return 0

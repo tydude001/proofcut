@@ -28,6 +28,20 @@ export function fmt(t) {
   return `${sign}${m}:${s.toFixed(1).padStart(4, "0")}`;
 }
 
+/**
+ * How far a job's `progress` event says it has got, as `42%`, or "" when the
+ * op could not say. Always a percentage: the total is seconds for one op and
+ * frames or windows for another, and JSON cannot tell `4.0` from `4`. A job's
+ * `progress` events are the reports `proofcut.progress` makes — the same the
+ * MCP server sends a client — so this is the one place they are worded.
+ */
+export function progressText(data) {
+  if (!data || typeof data.progress !== "number") return "";
+  const { progress, total } = data;
+  if (typeof total !== "number" || !(total > 0)) return "";
+  return `${Math.min(100, Math.floor((100 * progress) / total))}%`;
+}
+
 /** `12.345s` — the source-second format quoted in tooltips and echoes. */
 export function secs(t) {
   return t === null || t === undefined ? "–" : `${t.toFixed(3)}s`;

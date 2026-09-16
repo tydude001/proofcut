@@ -73,7 +73,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from proofcut import captions, media, ops, renderlog
+from proofcut import captions, media, ops, progress, renderlog
 from proofcut.asr import ASRError
 from proofcut.autoeditor import AutoEditorError
 from proofcut.energy import EnergyError
@@ -354,6 +354,14 @@ AGENT_BIN_ENV = "PROOFCUT_AGENT_BIN"
 #: agent gets proofcut's MCP tools and nothing else" true. `_AGENT_DISALLOWED_TOOLS`
 #: stays as defense in depth, not because it does the job on its own.
 _AGENT_ALLOWED_TOOLS = "mcp__proofcut__*"
+#: The built-ins `--tools` leaves on: `ToolSearch` alone. `""` stripped it with
+#: the rest, and it is what defers MCP tool definitions — without it every one
+#: of proofcut's ~92 definitions loaded on every turn (92,266 turn-1 tokens
+#: against 9,359 for a `ping`, $1.87 against $0.19). It only answers "which
+#: tool"; it reads no file and runs nothing, so the confinement above holds.
+#: Named so `scripts/agent_trial.py` moves with the panel. docs/plans/MCP.md
+#: § Step 1.
+_AGENT_TOOLS = "ToolSearch"
 _AGENT_DISALLOWED_TOOLS = ("Bash", "Write", "Edit", "WebFetch", "WebSearch")
 
 
@@ -907,7 +915,7 @@ class AgentSession:
             str(self._mcp_config()),
             "--strict-mcp-config",
             "--tools",
-            "",
+            _AGENT_TOOLS,
             "--allowedTools",
             _AGENT_ALLOWED_TOOLS,
             "--disallowedTools",
@@ -1160,6 +1168,29 @@ def _run_checks(project_root: Path, output: Path, has_video: bool) -> dict[str, 
     return checks
 
 
+def _job_progress(bus: EventBus, topic: str, job_id: str, **extra: Any) -> progress.Reporter:
+    """A job's `progress` reporter: each report becomes a `progress` event on
+    the job's own topic, beside `running`/`done`/`error`, so a pane can draw
+    how far along it is where it used to draw only that it was running. The
+    same reports the MCP server sends as `notifications/progress`.
+    docs/plans/MCP.md § Step 6."""
+
+    def publish(current: float, total: float | None, message: str | None) -> None:
+        bus.publish(
+            topic,
+            {
+                "job_id": job_id,
+                "status": "progress",
+                "progress": current,
+                "total": total,
+                "message": message,
+                **extra,
+            },
+        )
+
+    return publish
+
+
 class RenderJob:
     """One render at a time per server (PLAN.md § Finishing, docs/plans/STUDIO.md § Step 01).
 
@@ -1358,7 +1389,9 @@ class RenderJob:
             # writers). Letting them also log would leave `renderlog.last`
             # reading a prefix of this run — an export with no burn stage —
             # instead of the run.
-            with refusing_path_too_long():
+            with refusing_path_too_long(), progress.reporting(
+                _job_progress(self.bus, "render", job_id)
+            ):
                 ops.export(
                     str(self.project_root), str(output), export_format=None, log=False,
                     **export_kwargs,
@@ -1601,7 +1634,9 @@ class ReframeSheetJob:
         self.bus.publish("reframe-sheet", {"job_id": job_id, "status": "running"})
         try:
             try:
-                with refusing_path_too_long():
+                with refusing_path_too_long(), progress.reporting(
+                    _job_progress(self.bus, "reframe-sheet", job_id)
+                ):
                     result = ops.reframe_sheet(
                         str(self.project_root), out=out, moments=moments, extremes=extremes
                     )
@@ -1675,7 +1710,9 @@ class ReframeDetectJob:
         self.bus.publish("reframe-detect", {"job_id": job_id, "status": "running"})
         try:
             try:
-                with refusing_path_too_long():
+                with refusing_path_too_long(), progress.reporting(
+                    _job_progress(self.bus, "reframe-detect", job_id)
+                ):
                     result = ops.reframe_detect(
                         str(self.project_root),
                         clip_id=clip_id,
@@ -1893,7 +1930,9 @@ class TranscribeJob:
                 kwargs: dict[str, Any] = {"language": language}
                 if model is not None:
                     kwargs["model"] = model
-                with refusing_path_too_long():
+                with refusing_path_too_long(), progress.reporting(
+                    _job_progress(self.bus, "transcribe", job_id, clip_id=clip_id)
+                ):
                     result = ops.transcribe(str(self.project_root), clip_id, **kwargs)
             except EXPECTED as exc:
                 self.bus.publish(

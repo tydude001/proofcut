@@ -44,7 +44,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
-from proofcut import media
+from proofcut import media, progress
 
 #: Suffixes routed to `melt` rather than to ffprobe. `.xml` is here because
 #: that is what a bare MLT document is called; auto-editor writes `.kdenlive`.
@@ -733,6 +733,37 @@ def render_problems(
     return problems
 
 
+#: melt's `-progress` line, redrawn in place with a carriage return.
+_MELT_FRAME = re.compile(r"Current Frame:\s*(\d+)")
+
+
+def _render_reporting(
+    command: list[str],
+    env: dict[str, str],
+    timeout: int,
+    frames: int | None,
+    name: str,
+) -> subprocess.CompletedProcess[str]:
+    """`render`'s melt call with its frame counter reported as progress.
+
+    Same stdin rule as the plain call. The counter is the frame index melt is
+    on, so the last frame reads `frames - 1`; the render is only reported done
+    by `render` itself, after the file has been checked.
+    """
+    message = f"rendering {name}"
+
+    def on_line(line: str) -> None:
+        match = _MELT_FRAME.search(line)
+        if match:
+            at = int(match.group(1))
+            progress.report(min(at, frames - 1) if frames else at, frames, message)
+
+    progress.report(0, frames, message)
+    return progress.run(
+        command, on_stderr=on_line, env=env, timeout=timeout, stdin=subprocess.DEVNULL
+    )
+
+
 def render(
     project: Path | str,
     output: Path | str,
@@ -812,7 +843,17 @@ def render(
     work = scratch("render-")
     staged = work / (destination.name or "render.mp4")
     melt = melt_command()
-    command = [*melt, str(path), "-consumer", f"avformat:{staged}", *consumer_args]
+    # `-progress` is a melt option, not a consumer property, so the measured-safe
+    # consumer key set above is untouched; asked only when someone listens.
+    reporting = progress.active()
+    command = [
+        *melt,
+        *(["-progress"] if reporting else []),
+        str(path),
+        "-consumer",
+        f"avformat:{staged}",
+        *consumer_args,
+    ]
     has_systemd_run = shutil.which("systemd-run") is not None
     capped = bool(max_memory) and has_systemd_run and user_bus(env)
     if capped:
@@ -831,15 +872,18 @@ def render(
     # exited too. CI's runner has no console, so it never showed there.
     # HISTORY.md § The render that never exited.
     try:
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=timeout,
-            check=False,
-            stdin=subprocess.DEVNULL,
-        )
+        if reporting:
+            completed = _render_reporting(command, env, timeout, expect_frames, destination.name)
+        else:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=timeout,
+                check=False,
+                stdin=subprocess.DEVNULL,
+            )
     except FileNotFoundError as exc:
         raise PictureError(f"could not run melt: {' '.join(command)}") from exc
     except subprocess.TimeoutExpired as exc:
@@ -885,6 +929,10 @@ def render(
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(staged, destination)
     shutil.rmtree(work, ignore_errors=True)
+    if reporting and measured["frames"]:
+        # Done means checked and copied into place, never melt's last frame
+        # index — which is one short of the total by construction.
+        progress.report(measured["frames"], measured["frames"], f"rendered {destination.name}")
 
     notes: list[str] = []
     if measured["frames"] is None:

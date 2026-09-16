@@ -60,7 +60,7 @@
  * summary line survives a `load()` and did not survive the reload.
  */
 
-import { $, el, secs } from "./dom.js";
+import { $, el, progressText, secs } from "./dom.js";
 
 let ctx = null;
 let lastView = null;
@@ -519,6 +519,9 @@ function onTranscribeEvent(data) {
     transcribingClipId = data.clip_id;
     setTranscribeStatusLine("running", `transcribing ${data.clip_id}… (minutes, not seconds)`);
     render();
+  } else if (data.status === "progress") {
+    const done = progressText(data);
+    if (done) setTranscribeStatusLine("running", `transcribing ${data.clip_id}… ${done}`);
   } else if (data.status === "done") {
     transcribeBusy = false;
     transcribingClipId = null;

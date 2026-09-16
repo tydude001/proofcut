@@ -69,7 +69,7 @@ def main() -> int:
 
     out_dir = Path(job["out_dir"])
     candidates = []
-    for seed in job["seeds"]:
+    for done, seed in enumerate(job["seeds"], 1):
         try:
             torch.manual_seed(int(seed))
             torch.cuda.manual_seed_all(int(seed))
@@ -95,6 +95,10 @@ def main() -> int:
             )
         except Exception as exc:  # noqa: BLE001 — reported per seed, not fatal
             candidates.append({"seed": int(seed), "error": f"{type(exc).__name__}: {exc}"})
+        # `proofcut.progress.MARKER`'s line, restated: this interpreter imports
+        # nothing from proofcut.
+        sys.stderr.write(f"proofcut-progress {done} {len(job['seeds'])}\n")
+        sys.stderr.flush()
 
     destination.write_text(json.dumps({"model": job["model"], "candidates": candidates}), encoding="utf-8")
     return 0

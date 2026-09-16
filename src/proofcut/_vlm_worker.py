@@ -129,7 +129,7 @@ def main() -> int:
     model, processor = _load(job["model"], device)
 
     results = []
-    for window in job["windows"]:
+    for done, window in enumerate(job["windows"], 1):
         try:
             frames = _frames(window["media"], window["timestamps"], job["frame_size"])
             text = _generate(
@@ -147,9 +147,17 @@ def main() -> int:
         # worth rather than the run's. This box has 11.5 GiB usable and an
         # always-on llama-server holding 3.5 of it.
         _empty_cache()
+        _progress(done, len(job["windows"]))
 
     destination.write_text(json.dumps({"results": results}), encoding="utf-8")
     return 0
+
+
+def _progress(done: int, total: int) -> None:
+    """`proofcut.progress.MARKER`'s line, restated: this runs under another
+    interpreter and imports nothing from proofcut."""
+    sys.stderr.write(f"proofcut-progress {done} {total}\n")
+    sys.stderr.flush()
 
 
 def _empty_cache() -> None:

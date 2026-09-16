@@ -170,6 +170,16 @@ async def _with_server(body: Any, server: StdioServerParameters = SERVER) -> Any
         return await body(session)
 
 
+async def _with_raw_session(body: Any, server: StdioServerParameters = SERVER) -> Any:
+    """`_with_server` without the handshake, for a test that reads what
+    `initialize` itself answered."""
+    async with (
+        stdio_client(server) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        return await body(session)
+
+
 def _make_wav(path: Path, *, tones: list[tuple[float, float]], duration: float = 12.0) -> None:
     """A wav with tone bursts at `tones` and silence elsewhere."""
     rate = 22050
@@ -639,6 +649,8 @@ CLI_ONLY = {
     # over — PLAN.md § Read-model additions
     "preview",  # answers "will a *browser* play this", and an agent has no
     # <video> element; no render path consults the verdict either
+    "brief",  # the CLI twin of the `cut`/`film`/`review` MCP *prompts*, not a
+    # tool — `test_the_briefs_ship_as_prompts` holds the two to one text
 }
 
 
@@ -2315,6 +2327,72 @@ def test_transcribe_runs_whisper_and_attaches_the_result(tmp_path: Path) -> None
     assert Path(out["transcribed"]["cached"]).exists()
     assert out["found"]["text"] == "hello from the stub"
     assert out["transcribed"]["hallucinated_words"] == 0
+
+
+@needs_ffprobe
+def test_transcribe_reports_progress_before_it_replies(tmp_path: Path) -> None:
+    """A stdio call silent for 30 minutes is aborted by Claude Code, and a
+    progress notification is what resets that clock — so a long tool has to
+    send them while it works, not only a reply at the end. The stand-in prints
+    whisper's own verbose segment lines, a second apart so the throttle lets
+    them through, and the notifications have to arrive before the result,
+    carry the media's duration as the total, and only ever rise.
+    docs/plans/MCP.md § Step 6."""
+    audio = tmp_path / "vo.wav"
+    _make_wav(audio, tones=[(0.0, 2.0)], duration=4.0)
+    project = tmp_path / "proj"
+    stub = write_stub(
+        tmp_path / "talking-whisper",
+        "import argparse, json, time\n"
+        "from pathlib import Path\n"
+        "p = argparse.ArgumentParser()\n"
+        "p.add_argument('media')\n"
+        "for flag in ('--model', '--output_format', '--word_timestamps', '--output_dir', '--language'):\n"
+        "    p.add_argument(flag, default=None)\n"
+        "args = p.parse_args()\n"
+        "for start, end, text in ((0, 1.5, 'hello from'), (1.5, 3.0, 'the stub')):\n"
+        "    time.sleep(1.2)\n"
+        "    print(f'[00:{start:06.3f} --> 00:{end:06.3f}]  {text}')\n"
+        "words = [{'word': w, 'start': i * 0.5, 'end': i * 0.5 + 0.4}"
+        " for i, w in enumerate('hello from the stub'.split())]\n"
+        "out = Path(args.output_dir) / f'{Path(args.media).stem}.json'\n"
+        "out.write_text(json.dumps({'language': 'en', 'words': words}))\n",
+    )
+    server = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "proofcut.cli", "mcp"],
+        env={"PROOFCUT_WHISPER": str(stub)},
+    )
+    events: list[tuple[str, Any]] = []
+
+    async def on_progress(value: float, total: float | None, message: str | None) -> None:
+        events.append(("progress", (value, total, message)))
+
+    async def body(session: ClientSession) -> Any:
+        client = Client(session)
+        await client.call("init", path=str(project))
+        clip = await client.call("import_media", path=str(project), source=str(audio))
+        result = await session.call_tool(
+            "transcribe",
+            {"path": str(project), "clip_id": clip["clip_id"]},
+            progress_callback=on_progress,
+        )
+        events.append(("result", result))
+        return result
+
+    result = anyio.run(lambda: _with_server(body, server))
+    assert not result.is_error, result.content[0].text
+    kinds = [kind for kind, _ in events]
+    assert kinds[-1] == "result"
+    reports = [payload for kind, payload in events if kind == "progress"]
+    values = [value for value, _, _ in reports]
+    assert values == sorted(set(values)), values
+    heard = [(value, total) for value, total, message in reports if message and "transcribing" in message]
+    assert heard, reports
+    assert max(value for value, _ in heard) >= 1.5
+    assert all(total == pytest.approx(4.0, abs=0.1) for _, total in heard if total is not None)
+    assert reports[-1][2] == "transcribed vo.wav"
+    assert reports[-1][0] == reports[-1][1]
 
 
 def _fake_whisper_runaway(path: Path) -> Path:
@@ -7902,6 +7980,189 @@ def test_no_tool_advertises_an_argument_with_nothing_said_about_it() -> None:
     assert {name: missing for name, missing in gaps.items() if missing} == {}
 
 
+def test_no_description_is_long_enough_to_be_cut_by_the_client() -> None:
+    """Claude Code truncates a tool description past 2 KB and reports nothing,
+    and the tail is usually the most operational paragraph. Bytes, read off
+    the wire — the em-dashes count three each. docs/plans/MCP.md § Step 3."""
+    from proofcut import server
+
+    async def body(session: ClientSession) -> Any:
+        return await session.list_tools()
+
+    over = {
+        tool.name: len((tool.description or "").encode("utf-8"))
+        for tool in anyio.run(_with_server, body).tools
+        if len((tool.description or "").encode("utf-8")) > server.DESCRIPTION_CAP
+    }
+    assert over == {}
+
+
+def test_the_instructions_fit_the_client_and_name_only_real_tools() -> None:
+    """Under deferred tool loading the `instructions` are the one text a client
+    reads before choosing what to search for, so they are capped like a
+    description — and every tool they send an agent looking for has to exist,
+    or the map points at nothing. docs/plans/MCP.md § Step 2."""
+    import re
+
+    from proofcut import server
+
+    async def body(session: ClientSession) -> Any:
+        init = await session.initialize()
+        return init.instructions
+
+    instructions = anyio.run(_with_raw_session, body)
+    assert instructions == server.INSTRUCTIONS
+    assert len(instructions.encode("utf-8")) <= server.INSTRUCTIONS_CAP
+    named = set(re.findall(r"\b[a-z]+(?:_[a-z]+)+\b", instructions)) - {"export_format"}
+    named |= {"init", "restore", "locate", "canvas", "reframe", "music", "head", "tail", "export", "verify", "undo"}
+    assert named <= EXPECTED_TOOLS, named - EXPECTED_TOOLS
+    for first in ("timeline_status", "finish_report", "list_media"):
+        assert first in instructions
+
+
+def test_the_handshake_says_what_the_registry_listing_says() -> None:
+    """`initialize` states the title and website the registry already has, off
+    the same strings — `server.json` is not in the wheel, so they are restated
+    in `server.py` and this is what keeps the two copies one fact."""
+    listing = json.loads((Path(__file__).resolve().parent.parent / "server.json").read_text(encoding="utf-8"))
+
+    async def body(session: ClientSession) -> Any:
+        return (await session.initialize()).server_info
+
+    info = anyio.run(_with_raw_session, body)
+    assert info.name == "proofcut"
+    assert info.title == listing["title"]
+    assert info.description == listing["description"]
+    assert info.website_url == listing["websiteUrl"]
+    assert info.icons and info.icons[0].src.startswith("data:image/svg+xml;base64,")
+
+
+def test_no_tool_is_always_loaded_until_a_trial_says_so() -> None:
+    """Each always-loaded definition is context on every turn of every client
+    session, so the starting set is empty (docs/plans/MCP.md § Step 4). A tool
+    that gains the flag changes this test on purpose, with the run that
+    justified it named beside the change."""
+    from proofcut import server
+
+    async def body(session: ClientSession) -> Any:
+        return await session.list_tools()
+
+    marked = {
+        tool.name
+        for tool in anyio.run(_with_server, body).tools
+        if (tool.meta or {}).get(server.ALWAYS_LOAD_META)
+    }
+    assert marked == set()
+
+
+def test_an_always_loaded_tool_says_so_on_the_wire() -> None:
+    """The hook itself, registered on a scratch tool: the flag has to reach
+    `_meta` under the key Claude Code reads, or setting it does nothing."""
+    from proofcut import server
+
+    def check_loaded() -> dict[str, Any]:
+        return {}
+
+    server._ANNOTATIONS[check_loaded.__name__] = server._READ
+    try:
+        server._tool(always_load=True)(check_loaded)
+        (listed,) = [t for t in anyio.run(server.mcp.list_tools) if t.name == "check_loaded"]
+        assert listed.meta == {server.ALWAYS_LOAD_META: True}
+    finally:
+        if server.mcp._tool_manager.get_tool(check_loaded.__name__):
+            server.mcp.remove_tool(check_loaded.__name__)
+        del server._ANNOTATIONS[check_loaded.__name__]
+
+
+def test_the_trimmed_schema_accepts_exactly_what_the_generated_one_did() -> None:
+    """The advertised input schema drops pydantic's titles and collapses
+    `anyOf … null`; a call is still validated by the tool's own model, so the
+    only risk is a client being told something different. Each argument of
+    every tool is tried with one value of every JSON type against both the
+    wire schema and pydantic's own, and they must agree on every one."""
+    import jsonschema
+
+    from proofcut import server
+
+    async def body(session: ClientSession) -> Any:
+        return await session.list_tools()
+
+    wire = {tool.name: tool.input_schema for tool in anyio.run(_with_server, body).tools}
+    samples: list[Any] = [None, "x", 3, 2.5, True, [1], ["a"], [1.5], [[1, 2]], [{"a": 1}], {"a": 1}]
+    checked = 0
+    for name, trimmed in wire.items():
+        generated = server.mcp._tool_manager.get_tool(name).fn_metadata.arg_model.model_json_schema(by_alias=True)
+        assert "title" not in trimmed, name
+        assert all("title" not in field for field in trimmed.get("properties", {}).values()), name
+        for argument in generated.get("properties", {}):
+            for value in samples:
+                instance = {argument: value}
+                before = jsonschema.Draft202012Validator(generated).is_valid(instance)
+                after = jsonschema.Draft202012Validator(trimmed).is_valid(instance)
+                assert before == after, (name, argument, value)
+                checked += 1
+    assert checked > 4000
+
+
+@needs_ffprobe
+@needs_ffmpeg
+def test_a_long_films_replies_fit_what_the_client_will_read(tmp_path: Path) -> None:
+    """A reply over the client's 25K-token limit becomes a file path, which the
+    agent panel cannot open. So the three replies that grow with the film are
+    windowed by default, and on a transcript three times the Scream VO's
+    length each default call stays under `REPLY_CAP_BYTES` of the text the SDK
+    actually sends — except `timeline_view`, whose unwindowed lanes are what
+    its raised `maxResultSizeChars` is for, and which has to fit that instead.
+    Paging is proven too: `next_first` walks the whole transcript and nothing
+    is skipped or repeated. docs/plans/MCP.md § Step 5."""
+    from proofcut import server
+
+    seconds, per_second = 1200, 3
+    audio = tmp_path / "long.wav"
+    with wave.open(str(audio), "w") as out:
+        out.setnchannels(1)
+        out.setsampwidth(1)
+        out.setframerate(8000)
+        out.writeframes(b"\x80" * (8000 * seconds))
+    words = [
+        {"word": f"word{i}", "start": i / per_second, "end": i / per_second + 0.25}
+        for i in range(seconds * per_second)
+    ]
+    transcript = tmp_path / "long.json"
+    _write_words(transcript, words)
+    project = tmp_path / "proj"
+
+    async def body(session: ClientSession) -> Any:
+        client = Client(session)
+        clip = await _seeded(client, project, audio, transcript)
+        sizes: dict[str, int] = {}
+        for tool, arguments in (
+            ("get_transcript", {"clip_id": clip}),
+            ("caption_view", {}),
+            ("timeline_view", {}),
+        ):
+            result = await session.call_tool(tool, {"path": str(project), **arguments})
+            assert not result.is_error, result.content[0].text
+            sizes[tool] = len(result.content[0].text.encode("utf-8"))
+        seen: list[int] = []
+        first: int | None = 0
+        while first is not None:
+            page = await client.call("get_transcript", path=str(project), clip_id=clip, first=first)
+            seen += [word["index"] for word in page["words"]]
+            first = page.get("next_first")
+        templates = await client.call("card_templates", name="endcard")
+        return sizes, seen, templates
+
+    sizes, seen, templates = anyio.run(_with_server, body)
+    assert sizes["get_transcript"] <= server.REPLY_CAP_BYTES
+    assert sizes["caption_view"] <= server.REPLY_CAP_BYTES
+    assert sizes["timeline_view"] <= server.VIEW_RESULT_CHARS
+    assert seen == list(range(len(words)))
+    full = [t for t in templates["templates"] if "slots" in t]
+    assert [t["template"] for t in full] == ["endcard"]
+    assert len(templates["templates"]) > 1
+
+
 def test_an_argument_with_no_description_refuses_to_register() -> None:
     """The coverage above is only a contract if a new argument cannot skip
     it — the same shape as the hint table's own refusal. Registered here
@@ -7937,6 +8198,80 @@ def test_the_parameter_table_cannot_describe_an_argument_that_is_gone() -> None:
     finally:
         del server._ANNOTATIONS[check_something_else.__name__]
         del server._PARAM_DOCS[check_something_else.__name__]
+
+
+def test_a_server_started_inside_a_project_binds_to_it(tmp_path: Path) -> None:
+    """Claude Code spawns a stdio server in the directory it was launched
+    from, and the plugin passes no `-C` — so started inside a project, the
+    server binds to it and `path` can be left out, the same as under `-C`.
+    `ping` says how it was bound, and a second project is refused by the
+    reason rather than by a bare mismatch. docs/plans/MCP.md § Step 8."""
+    project, other = _two_projects(tmp_path)
+    in_project = StdioServerParameters(
+        command=sys.executable, args=["-m", "proofcut.cli", "mcp"], cwd=str(project)
+    )
+
+    async def body(session: ClientSession) -> Any:
+        client = Client(session)
+        pinged = await client.call("ping")
+        listed = await client.call("cue_ls")
+        refusal = await _refused(session, "cue_ls", path=str(other))
+        return pinged, listed, refusal
+
+    pinged, listed, refusal = anyio.run(_with_server, body, in_project)
+    assert pinged["project"] == str(project.resolve())
+    assert pinged["bound_by"] == "cwd"
+    assert listed["count"] == 0
+    assert "started inside that project" in refusal
+
+
+def test_a_server_started_anywhere_else_stays_unbound(tmp_path: Path) -> None:
+    """A directory that is not a project — including one that only holds a
+    pre-rename `lucid.json` — binds nothing, and the server is the unbound one
+    every general client has always had."""
+    (tmp_path / "lucid.json").write_text("{}", encoding="utf-8")
+    elsewhere = StdioServerParameters(
+        command=sys.executable, args=["-m", "proofcut.cli", "mcp"], cwd=str(tmp_path)
+    )
+
+    async def body(session: ClientSession) -> Any:
+        pinged = await Client(session).call("ping")
+        refusal = await _refused(session, "cue_ls")
+        return pinged, refusal
+
+    pinged, refusal = anyio.run(_with_server, body, elsewhere)
+    assert pinged["project"] is None and pinged["bound_by"] is None
+    assert "not bound to a project" in refusal
+
+
+def test_the_briefs_ship_as_prompts() -> None:
+    """The three briefs are listed and rendered over the wire, with every
+    argument described, and the rendered text is `proofcut.briefs`' own — the
+    module the trial composes from — so the prompt is the measured brief.
+    docs/plans/MCP.md § Step 7."""
+    from proofcut import briefs
+
+    async def body(session: ClientSession) -> Any:
+        listed = await session.list_prompts()
+        cut = await session.get_prompt("cut", {"media": "/footage", "length": "90s"})
+        film = await session.get_prompt("film", {"media": "/footage", "end_card": "the end"})
+        review = await session.get_prompt("review", {"project": "/proj"})
+        return listed, cut, film, review
+
+    listed, cut, film, review = anyio.run(_with_server, body)
+    prompts = {prompt.name: prompt for prompt in listed.prompts}
+    assert set(prompts) == {"cut", "film", "review"}
+    for prompt in prompts.values():
+        assert prompt.description
+        assert all(argument.description for argument in prompt.arguments or [])
+    assert [a.name for a in prompts["cut"].arguments if a.required] == ["media"]
+    assert [a.name for a in prompts["review"].arguments if a.required] == []
+
+    assert cut.messages[0].content.text == briefs.cut("/footage", length="90s")
+    assert "about 90s long" in cut.messages[0].content.text
+    assert film.messages[0].content.text == briefs.film("/footage", end_card="the end")
+    assert "/proj" in review.messages[0].content.text
+    assert "change nothing" in review.messages[0].content.text
 
 
 def test_binding_to_a_directory_that_is_not_there_fails_at_startup() -> None:
