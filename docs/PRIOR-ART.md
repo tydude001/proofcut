@@ -498,8 +498,8 @@ were read from their sites.
 the rendered file for duration against the timeline (tolerance max(0.25 s,
 2 frames)), resolution, fps (±0.5), missing streams, black and frozen spans,
 long silences and clipping peaks, and it draws a contact sheet around edit
-points. So "checks its
-own render" is no longer something only proofcut does. What is still
+points. So "checks its own render" is no longer something only proofcut
+does. What is still
 proofcut's alone: **transcribing the render and diffing its words against
 the cut** (`verify`), which nothing found does, and an **exact** frame count
 against the timeline (`check_frames`), where OpenChatCut's check is a
@@ -531,8 +531,8 @@ added MCP or a render check, and none was archived.
 - **[diffusionstudio/editor](https://github.com/diffusionstudio/editor)**
   · 2,795★ · MPL-2.0 · TypeScript · created 2026-07-07. The nearest
   substantial neighbour. A browser canvas editor whose project is a
-  folder of JSX, with a real `dapi` CLI and an MCP server. It had a Show HN
-  in 2026-08. Its `check` tool (`packages/dapi/src/tools/check.ts`) is
+  folder of JSX, with a real `dapi` CLI and an MCP server. It was covered on
+  HN and elsewhere in 2026-08. Its `check` tool (`packages/dapi/src/tools/check.ts`) is
   structural and says so: "without rendering … a scheduled clip can still
   render black … confirm suspicious spans visually." Its transcription
   (`media-transcribe.ts`) is for reading and captions. Edits address nodes
@@ -541,7 +541,8 @@ added MCP or a render check, and none was archived.
   server with 88 tools, read from press coverage, not source. It is a GUI
   with an MCP front end, and no coverage mentions a render check. A major
   NLE now has agent hooks out of the box.
-- **Cardboard** (YC W26, closed, browser-rendered): a natural-language
+- **Cardboard** (YC W26, closed, browser-rendered, [Launch
+  HN](https://news.ycombinator.com/item?id=47170174)): a natural-language
   timeline editor with NLE XML export. It has no source to read, so it is
   Daydream's case again.
 - **[ihuzaifashoukat/splicedeck](https://github.com/ihuzaifashoukat/splicedeck)**
@@ -555,6 +556,33 @@ added MCP or a render check, and none was archived.
   CLI+MCP, needs a cloud LLM key), burningion/video-editing-mcp (288★,
   2024, a client for a cloud service), krusemediallc/video-editor-agent (a
   skill pack whose QA is "pixels and dB, not intentions").
+- Too new or thin to judge; look again next sweep: codeaashu/Rescript (11★,
+  unrelated to wassgha's), RychagovSergey/intelligent-video-editor (1★, local
+  VLM plus MCP), sstani-bgv/ai-montage (0★, three days old),
+  awaismirza/yusaf-cut (2★, Mac GUI), danielbaldwin47/resolve-mcp (1★, pitched
+  against Resolve's native server). A farm of near-identical 0-commit repos
+  (`ai-capcut-pro`, `cupcat-video-editor` and five more) was skipped.
+- Not editors: guimatheus92/mcp-video-analyzer (transcripts and OCR from
+  URLs), and every `search=video` hit in the MCP registry (generation,
+  download and marketing tools).
+
+Stars that day, for the next re-check to diff against: OpenChatCut 1,865
+(~915 commits), video-use 24,975, openshorts 4,749, FireRed-OpenStoryline
+3,417, davinci-resolve-mcp 2,862, Diffusion Studio 2,795, OpenTimelineIO
+1,982, rescript 892, FableCut 669, open-edit 658, burningion 288, CutScript
+249, OpenCut-AI 222, oh-my-cassette 155, kinocut 151, video-audio-mcp 86,
+auto-editor 5,228.
+
+How the sweep searched, so the next one can repeat it: `gh search repos` for
+"ai video editor agent", "video editing mcp", "edit video by transcript",
+"claude code video editor", "text-based video editing", "video agent mcp",
+"headless video editor agent", "whisper video editor agent" and "video render
+verify", by stars and by recency (`--created ">2026-07-01"`);
+`registry.modelcontextprotocol.io/v0/servers?search=video`;
+awesome-mcp-servers' Multimedia section; Glama's `video editing` search; and
+web searches for Show HN and Product Hunt launches. **A filtered `grep`
+dropped two of kinocut's 201 `@mcp.tool(` lines** and counted 199, so every
+count and every absence above was re-run around the shell's output filter.
 
 ## Stateless-ffmpeg MCP servers
 
