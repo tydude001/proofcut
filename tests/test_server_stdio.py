@@ -7853,6 +7853,92 @@ def test_path_is_never_a_required_field_in_the_advertised_schema() -> None:
             assert "path" not in required, f"{tool.name} still requires path"
 
 
+def test_every_advertised_path_says_what_it_means() -> None:
+    """`path` is the one argument every tool takes, and the schema alone says
+    only `string | null` about it. Read off the wire, because a description
+    hung on the parameter in `server.py` that never reached `tools/list` is
+    exactly the failure this pins: the two tools whose `path` means *no
+    project* (`fonts`, `pack_show`) have to say their own thing, and the
+    other 87 share `ProjectPath`'s sentence."""
+
+    async def body(session: ClientSession) -> Any:
+        return await session.list_tools()
+
+    projectless = {"fonts", "pack_show"}
+    seen = 0
+    for tool in anyio.run(_with_server, body).tools:
+        field = tool.input_schema.get("properties", {}).get("path")
+        if field is None:
+            continue
+        seen += 1
+        description = field.get("description", "")
+        assert description, f"{tool.name} advertises an undocumented path"
+        if tool.name in projectless:
+            assert "no project" in description, tool.name
+        else:
+            assert "bound project" in description, tool.name
+    assert seen == 89
+
+
+def test_no_tool_advertises_an_argument_with_nothing_said_about_it() -> None:
+    """Every argument of every tool carries a description in the schema a
+    client actually receives. `_PARAM_DOCS` is what fills them in and
+    `_describe_params` refuses a tool with a gap, so this passing in-process
+    is not the claim — the claim is that the text survives registration,
+    `functools.wraps` and the SDK's own schema build and arrives on the
+    wire, which is the only place it is any use to a caller."""
+
+    async def body(session: ClientSession) -> Any:
+        return await session.list_tools()
+
+    gaps = {
+        tool.name: [
+            name
+            for name, field in tool.input_schema.get("properties", {}).items()
+            if not field.get("description")
+        ]
+        for tool in anyio.run(_with_server, body).tools
+    }
+    assert {name: missing for name, missing in gaps.items() if missing} == {}
+
+
+def test_an_argument_with_no_description_refuses_to_register() -> None:
+    """The coverage above is only a contract if a new argument cannot skip
+    it — the same shape as the hint table's own refusal. Registered here
+    rather than asserted over the table, because the gap that matters is
+    between a signature and the docs, not inside either."""
+    from proofcut import server
+
+    def check_something(path: str | None = None, *, undocumented: str = "") -> dict[str, Any]:
+        return {}
+
+    server._ANNOTATIONS[check_something.__name__] = server._READ
+    try:
+        with pytest.raises(RuntimeError, match="_PARAM_DOCS"):
+            server._tool()(check_something)
+    finally:
+        del server._ANNOTATIONS[check_something.__name__]
+
+
+def test_the_parameter_table_cannot_describe_an_argument_that_is_gone() -> None:
+    """The other direction: a renamed argument leaves the table describing
+    one the tool no longer takes, while the one that replaced it advertises
+    nothing. Silent in every check that only walks the signature."""
+    from proofcut import server
+
+    def check_something_else(path: str | None = None) -> dict[str, Any]:
+        return {}
+
+    server._ANNOTATIONS[check_something_else.__name__] = server._READ
+    server._PARAM_DOCS[check_something_else.__name__] = {"renamed_away": "gone"}
+    try:
+        with pytest.raises(RuntimeError, match="does not take"):
+            server._tool()(check_something_else)
+    finally:
+        del server._ANNOTATIONS[check_something_else.__name__]
+        del server._PARAM_DOCS[check_something_else.__name__]
+
+
 def test_binding_to_a_directory_that_is_not_there_fails_at_startup() -> None:
     """A bad root is caught when the server starts rather than on every call,
     which would blame the client's argument for the server's own start-up."""

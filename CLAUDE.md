@@ -374,6 +374,20 @@ configured — face detection, say — at exit 0. HISTORY.md § `lucid doctor`.
     when it *writes* (`apply`/`plan`/`out` included), and claim
     `destructive_hint=False` only for an op read to refuse rather than replace.
     HISTORY.md § Every tool says what it does to the project.
+    - **And it refuses an argument missing from `server._PARAM_DOCS`** — the
+      table beside the hint table holding what every argument *means*, never
+      an `Annotated[...]` block inline. It refuses a row naming an argument
+      the tool does not take too, which is what catches a rename.
+      `_COMMON_PARAMS` is only for names meaning the same thing everywhere,
+      so **`clip_id` and `phrase` are deliberately out of it**: `clip_id` is
+      the addressing transcript on a cue and the footage on `thumbnail`, and
+      `phrase` binds its first word on `cue_add` and its last on `vo_extend`.
+      The text is hung on `fn.__annotations__` and never the wrapper
+      (`functools.wraps` sets `__wrapped__`, which `inspect.signature`
+      follows), so **judge it by reading `tools/list`**. `uvx tdqs lint`
+      scores the surface offline — and read what you wrote back: it called
+      100% coverage clean over three false claims. HISTORY.md § The tool
+      definitions were graded, and `path` was the gap.
   - **`path` is optional everywhere (`str | None = None`) and defaults to
     the bound project** — under `-C` it is ceremony with one accepted value,
     and an agent measured on the real trial passed it on every one of 29

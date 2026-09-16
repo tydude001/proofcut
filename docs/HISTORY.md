@@ -15242,10 +15242,14 @@ outside it).
   `glama.ai/mcp/servers/tydude001/proofcut` serves the README in full under
   Multimedia / Audio / Image & Video Processing, and the badge at
   `…/proofcut/badges/score.svg` — the exact URL the drafted awesome-list line
-  already carried — resolves with **`rated A`** in its own `<title>`.
+  already carried — resolves with **`rated A`** in its own `<title>`. That
+  was a partial score: the tool-definition half landed at 23:15Z the same day
+  and the badge has said `rated B` since — § The tool definitions were graded,
+  and `path` was the gap.
 - **What it unblocks:** the awesome-mcp-servers PR was waiting on that badge,
   with a badgeless fallback dated 2026-09-20 (LAUNCH.md step 4, wiki row
-  `lucid-publish`). **The fallback is not needed**; the line carries an A.
+  `lucid-publish`). **The fallback is not needed**; the line carries a badge,
+  and its grade is whatever the badge says on the day the maintainer looks.
 - Everything else in LAUNCH.md step 3 was verified live the same day:
   description and the eight topics, private vulnerability reporting on,
   `v0.23.0` latest, Ko-fi in `fundingLinks`, issues #1 and #2 pinned.
@@ -15284,3 +15288,132 @@ rather than a per-version note (there is no `CHANGELOG.md`, deliberately).
   mirror is Gitea-side), so every `gh` subcommand that infers a repo from the
   working copy fails with "none of the git remotes … point to a known GitHub
   host" rather than acting on the wrong one.
+
+## The tool definitions were graded, and `path` was the gap — 2026-09-15
+
+§ Glama takes a submission read the badge the awesome-list line carries and
+recorded `rated A` off its own `<title>`. That reading was hours old when the
+full evaluation landed: scored again at 23:15Z the same badge says **`rated B`
+— "tool definitions rated B, 92 tools, maintenance rated A"**, and the listing
+page's own tags are `maintenance_grade:a`, `quality_grade:b`,
+`license_grade:f`. The A was a partial score, not a score that fell. The F is
+PolyForm Shield and stays (§ The licence, chosen); the B is about the thing
+this repo can actually fix, which is what every tool says about itself.
+
+**The grader is an open specification, and half of it runs offline.** Glama
+scores with TDQS (`tdqs.dev`, spec v1.2): six weighted per-tool dimensions and
+four per-server ones, a model judging only what a description adds *beyond*
+the schema and annotations. `uvx tdqs lint` runs the deterministic stages with
+no model and no key — it is the control this pass was measured with, against
+the real stdio server rather than the source.
+
+- **Schema coverage was 0%.** 92 tools, **475 parameters, not one of them
+  carrying a `description`** — `server.py` had never imported pydantic's
+  `Field`. Glama's per-tool justifications named the consequence tool after
+  tool: *"The only parameter left unexplained is the optional `path`, which
+  prevents a perfect score"*, and, where a description had to carry the whole
+  load, *"Schema coverage is 0%, so the description must document
+  parameters."*
+- **The fix is a type alias, not 89 paragraphs.** `ProjectPath` is
+  `Annotated[str | None, Field(description=…)]` stating the two bind states
+  `_confine` implements, and it rides the advertised `tools/list` schema,
+  which is where a client and a directory both look. `fonts` and `pack_show`
+  carry their own text because their `path=None` means *no project* rather
+  than the bound one (`projectless=True`), and `reel`'s `dest` gains one
+  because it is the second project selector. 90 of 475 parameters documented.
+  `test_every_advertised_path_says_what_it_means` reads it **off the wire**,
+  the same discipline as the hint table's own test: a description hung on a
+  parameter in `server.py` that never reached `tools/list` would pass any
+  in-process check.
+
+**The other flag was `Annotation Contradiction`** — TDQS's own wording is "the
+description contradicts the declared MCP annotations", and its rubric forces
+Behavioral Transparency to 1 when it fires, whatever else the description
+does. It fired on descriptions that read read-only on a tool annotated
+destructive, and on descriptions that promised a repeat was free on a tool
+annotated non-idempotent. What each needed was a true sentence it had never
+been given:
+
+- `transcribe` **replaces** the transcript already attached, and it is the one
+  mutation `undo` cannot reach — a transcript is its own file, so the op
+  writes neither the manifest nor `project.otio` and nothing is snapshotted.
+  The same fact CLAUDE.md records as "a job that writes only a transcript file
+  trips neither watch", now said where a caller reads it.
+- `seed_timeline` replaces any timeline already there, cuts included. Its
+  whole description had been two sentences about `edit_expr`.
+- `continuity_reject` and `hold_under_rm` were one line each, naming what they
+  address and never what they remove or what a second call does.
+- `cut_by_time`: a second call resolves against the timeline the first one
+  leaves, so the same timestamps name different material.
+- `review_add` re-registering a name replaces that entry **while its verdict
+  stays attached**, which is yesterday's answer against today's bytes.
+- `vo_synth`'s "a repeat call is free" was true of the render cache and false
+  of the splice — calling again with the same `clip_id` opens a second gap.
+- The three sheets never said that `out` writes where it is told, which is the
+  only reason they are classified `_SET` at all.
+
+**One of them was the annotation, not the description.** `attenuate_noises`
+was `_EDIT` — destructive and non-idempotent — while its own docstring said
+"repeated calls never compound gain", because it always re-reads the clip's
+*original* media and rewrites one derived copy plus one key on the clip
+record. A repeat at the same `db` lands the same bytes and the same record,
+which is `_SET`'s definition. Moved, with the reason at the call site. Where a
+description and a hint disagree, the description is not automatically the one
+that is wrong.
+
+**Then the rest of the parameters, the same day.** The linter's own two
+thresholds are what made it worth finishing rather than stopping at `path`:
+below 50% coverage "the description must document the rest itself, or
+Parameter Semantics pays for the gap", and at 80% "the schema does the work
+and lifts the Parameter Semantics baseline to 3 on its own". At one documented
+argument in five, every tool sat in the first band.
+
+- **`_PARAM_DOCS`, a table beside `_ANNOTATIONS`, not 386 `Annotated[...]`
+  blocks inline.** A signature is read to see the shape of a call, and a
+  paragraph per argument buried in one hides the shape; the table is also
+  where a second reader can see every argument's text at once and notice that
+  two tools describe the same word differently. `_describe_params` hangs it on
+  the function's own `__annotations__` — on `fn` and never the wrapper,
+  because `functools.wraps` sets `__wrapped__` and `inspect.signature` follows
+  it, so a description attached to the wrapper is invisible in `tools/list`.
+- **`_COMMON_PARAMS` holds only the names that mean the *same thing*
+  everywhere.** `plan`, `after`, `occurrence`, `confirm_suspect`, `out`,
+  `page`, `per_page`. `clip_id` is deliberately not among them — in a cue it
+  is the transcript the index addresses and in `thumbnail` it is the footage,
+  which is the trap § The assets, properties and filmstrip backend already
+  paid for — and neither is `phrase`, which binds its **first** word on
+  `cue_add` and its **last** on `vo_extend`. A per-tool entry always wins.
+- **Coverage is a contract now, both directions.** `_describe_params` refuses
+  a tool with an argument missing from the table, the way `_tool()` already
+  refuses one missing a hint row, *and* refuses a table entry naming an
+  argument the tool does not take — which is what catches a rename, where the
+  table goes on describing the old name while the new one advertises nothing.
+  Both have tests, and the coverage itself is asserted **off the wire**.
+- **Reading the finished table back caught three of its own claims wrong**,
+  which is the reason to read a thing you just wrote rather than the linter's
+  verdict on it — `tdqs lint` was already clean at 100% coverage with all
+  three in place, because coverage is not accuracy. `occurrence` was written
+  0-based and `Transcript.resolve` is 1-based; `speech_overlap`'s `cap` was
+  called an energy cap and is a *duration-trust* multiple (3x the median, the
+  same multiple a suspect duration is flagged at); and `music`'s `duck` said
+  word-timing ducking "scored worse than no duck at all" when the measurement
+  runs the other way — 3.39 dB off against no duck's 3.62, with the audio gate
+  best at 2.72. A fourth was a mismatch rather than an error: `music`,
+  `hold_add` and `hold_under` take `after`/`occurrence` and have no bare
+  `phrase` argument, so the shared text named one they do not have.
+- **The overlap with the docstrings is deliberate, not duplication to clean
+  up.** A tool's description says what the tool is *for* and what it does to
+  the project; the table says what one argument *means*. Where a trap belongs
+  to an argument — that a phrase binds its first word here and its last there,
+  that `audio_stream` is an ffmpeg ordinal and not a stream index — it is
+  stated in both, because a caller reading a description and a caller reading
+  a schema are the same caller at different moments, and the one that gets it
+  wrong is the one that never saw it.
+- **475 of 475 arguments documented**, and the linter's 86 findings are 5:
+  `no-output-schema` on `reframe_sheet`, `shot_sheet`, `footage_sheet`,
+  `contact_sheet` and `spot_frames`. **Those five are a deliberate decline,
+  not a gap** — they are exactly the tools annotated `-> Any`, and CLAUDE.md
+  records why: a concrete return type makes the SDK build an output schema and
+  validate an `Image` against it, so the tool answers `is_error` from a
+  correct body and the picture never arrives. An output schema would cost the
+  thing these tools exist to do.

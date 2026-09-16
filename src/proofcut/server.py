@@ -24,11 +24,12 @@ import inspect
 import socket
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Annotated, Any, TypeVar, get_args, get_origin, get_type_hints
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.utilities.types import Image
 from mcp.types import ToolAnnotations
+from pydantic import Field
 from starlette.datastructures import Headers
 from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -277,6 +278,13 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "import_edit", "review_verdict",
             # Replaces the entry at its address.
             "hold_under",
+            # Moved here from EDIT on 2026-09-15: it always re-reads the clip's
+            # *original* media and rewrites one derived copy plus one key on the
+            # clip record, so a repeat at the same `db` lands the same bytes and
+            # the same record — SET's own definition, and what the tool's own
+            # docstring ("repeated calls never compound gain") already said
+            # while the hint beside it declared the opposite.
+            "attenuate_noises",
         ],
         _SET,
     ),
@@ -284,12 +292,1391 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
         [
             "clip_rm", "transcribe", "cue_rm", "unspoken_rm", "unspoken_detect",
             "cut_by_transcript", "cut_by_time", "undo", "vo_extend", "vo_synth",
-            "hold_add", "hold_rm", "hold_under_rm", "reel", "continuity_reject", "attenuate_noises",
+            "hold_add", "hold_rm", "hold_under_rm", "reel", "continuity_reject",
             "review_add",
         ],
         _EDIT,
     ),
 }
+
+
+#: What each argument means, hung on the advertised JSON schema as the
+#: parameter's own `description`. A table beside `_ANNOTATIONS` rather than 386
+#: `Annotated[...]` blocks inline, for the reason that one is a table: a
+#: signature is read to see the shape of a call, and a paragraph per argument
+#: buried in it hides the shape. `_tool()` applies these, and **refuses a tool
+#: with an argument missing from here** the same way it refuses one missing a
+#: hint row — coverage is a contract, not a housekeeping task that decays.
+#:
+#: Why it is worth the words: the schema alone says `string | null`, and an
+#: agent picks arguments from what the definition tells it. Measured — 92
+#: tools, 475 arguments, not one description — by `uvx tdqs lint` against the
+#: real server, which is the offline half of the score Glama publishes.
+#: HISTORY.md § The tool definitions were graded, and `path` was the gap.
+#:
+#: `_COMMON_PARAMS` holds only the names whose meaning is *identical*
+#: everywhere they appear. `clip_id` is deliberately not among them — in a cue
+#: it is the transcript the index addresses, and in `thumbnail` it is the
+#: footage — and neither is `phrase`, which binds its first word on one tool
+#: and its last on another. A per-tool entry always wins.
+_COMMON_PARAMS: dict[str, str] = {
+    "plan": (
+        "Resolve the whole call and report what it would do, writing nothing. "
+        "Prefer it over doing the thing and undoing it."
+    ),
+    "after": (
+        "A forward cursor over a phrase's matches: any match at or before this "
+        "word index is skipped. -1, the default, means from the start."
+    ),
+    "occurrence": (
+        "Disambiguate a phrase by count when it matches more than once, "
+        "**1-based** in transcript order among the matches after `after`: 1 is "
+        "the first, 2 the second. Unset, an ambiguous phrase is refused — "
+        "listing every candidate's range and text — rather than guessed at."
+    ),
+    "confirm_suspect": (
+        "Go ahead even though a boundary word claims a suspect duration. Read "
+        "the echoed words first — a suspect duration usually means whisper hid "
+        "a retake inside that word, so the edge is not where it reads."
+    ),
+    "out": (
+        "Write the image to this path as well, replacing whatever file is "
+        "there. Unset, it goes to the project's own sheet cache and only the "
+        "bytes come back."
+    ),
+    "page": "Which page of rows to draw, from 1. Unset, the first.",
+    "per_page": (
+        "Rows per page. `null` draws the whole project in one montage, which "
+        "returns a path rather than readable bytes — for a person to open, not "
+        "for an agent to read."
+    ),
+}
+
+_PARAM_DOCS: dict[str, dict[str, str]] = {
+    "init": {
+        "name": (
+            "A name for the project, recorded in the manifest. Unset, the directory's "
+            "own name is used."
+        ),
+    },
+    "import_media": {
+        "source": (
+            "The media file to register. A file argument rather than a project "
+            "selector, so it is deliberately left unconfined — footage usually lives "
+            "outside the project."
+        ),
+        "clip_id": (
+            "The id every later tool addresses this clip by. Unset, one is derived from "
+            "the filename. Keep it short: it becomes part of cache paths, and a stock "
+            "Windows measures those against 248 characters."
+        ),
+        "copy": (
+            "Copy the media into the project instead of referencing it where it sits. "
+            "Off by default — a reference costs no disk, and it is also the fallback "
+            "where symlinks are rejected."
+        ),
+        "mix": (
+            "Sum a container's audio streams into one track, for two mics on one "
+            "performance. It writes a derived copy every later op reads without knowing "
+            "it."
+        ),
+        "audio_stream": (
+            "Keep one of a container's audio streams and drop the rest, numbered from 0 "
+            "in ffmpeg's own audio ordering — not the container's absolute stream "
+            "index, which is a different number once there is video."
+        ),
+        "sheet": (
+            "Draw a contact sheet of the clip's first ten seconds onto the returned "
+            "record. On by default, because a first look that has to be asked for is "
+            "one nobody takes."
+        ),
+    },
+    "list_media": {
+        "source_dir": (
+            "The directory to list. It names where footage lives rather than which "
+            "project, so it is deliberately not confined to the bound project."
+        ),
+        "recursive": "Walk subdirectories too. On by default.",
+    },
+    "clip_role": {
+        "clip_id": "The clip to read or set.",
+        "role": (
+            "`voiceover` or `footage`. Omit it and `reset` to read what is stored. It "
+            "is the assets pane's grouping and nothing else: neither "
+            "transcribe/describe nor any render path reads it."
+        ),
+        "reset": "Clear the role back to undeclared.",
+    },
+    "clip_rm": {
+        "clip_id": "The clip to un-register. Its media on disk is never touched.",
+    },
+    "attach_transcript": {
+        "clip_id": (
+            "The clip this transcript belongs to. Its words become `(clip_id, "
+            "word_index)`, which is how every cue, mark and caption addresses them "
+            "afterwards."
+        ),
+        "transcript_path": (
+            "The whisper JSON to ingest. It has to carry word-level timings — proofcut "
+            "addresses words, not segments."
+        ),
+    },
+    "transcribe": {
+        "clip_id": "The clip whose own media whisper transcribes.",
+        "model": (
+            "The whisper model to run, e.g. `small.en`. Larger is slower, and there is "
+            "no timeout."
+        ),
+        "language": (
+            "Force a language code, e.g. `en`. Unset, whisper detects it, which it gets "
+            "wrong on short or noisy clips."
+        ),
+    },
+    "hear": {
+        "clip_id": "The clip whose source audio to listen to.",
+        "start": (
+            "Where to start listening, in that clip's own **source** seconds — never "
+            "timeline seconds and never a word index."
+        ),
+        "end": (
+            "Where to stop, in the same source seconds. Past the end of the clip it is "
+            "refused rather than clamped."
+        ),
+        "model": "The whisper model for this windowed pass.",
+        "language": "Force a language code, e.g. `en`. Unset, whisper detects it.",
+        "window": "Length of each window, in seconds.",
+        "overlap": (
+            "How far each window overlaps the one before it, in seconds. The overlap is "
+            "what stops a word straddling a boundary from being lost between two "
+            "windows."
+        ),
+    },
+    "get_transcript": {
+        "clip_id": "The clip to read.",
+        "first": "First word index to return, inclusive.",
+        "last": "Last word index to return, inclusive.",
+        "search": (
+            "Return each match as a word range ready to hand to `cut_by_transcript`, "
+            "instead of the whole transcript. Prefer it: a transcript is a lot of words "
+            "to read to find two."
+        ),
+    },
+    "resolve_phrase": {
+        "clip_id": "The transcript to resolve against.",
+        "phrase": "The words to find, as they were spoken.",
+        "fuzzy": (
+            "Fall back to a fuzzy match when nothing matches exactly. A fuzzy hit sets "
+            "`ratio` and is never reported as an exact one; `false` refuses instead."
+        ),
+    },
+    "transcript_checks": {
+        "clip_id": "One clip to re-check. Omit it for every clip that has a transcript.",
+    },
+    "describe_ls": {
+        "clip_id": "List only this clip's windows.",
+        "contains": (
+            "Keep only windows whose text holds every whitespace-separated term, "
+            "case-insensitively — so `\"kitchen knife\"` matches \"a knife on the "
+            "kitchen counter\"."
+        ),
+    },
+    "attribute_speakers": {
+        "clip_id": (
+            "The co-hosted clip: one container, one mic per speaker, one transcript "
+            "already attached."
+        ),
+        "streams": (
+            "Which audio streams the speakers are on, as ffmpeg audio ordinals (`[0, "
+            "1]`). Unset, the container's readable audio streams in order."
+        ),
+        "labels": (
+            "What to call each stream, in the same order — one per stream. Unset, "
+            "`speaker1`, `speaker2`."
+        ),
+        "margin_db": (
+            "How much louder one mic has to be to be believed, in dB. It reports a "
+            "default and is not a threshold to trust: on words spoken over each other "
+            "the rule is at chance, and anything under this margin comes back in "
+            "`ambiguous_spans` to go and listen to."
+        ),
+        "apply": (
+            "Write the labels onto the words. Off by default — it reports first, and "
+            "applying keeps any label already on a word this refuses to call."
+        ),
+        "limit": (
+            "How many ambiguous spans to return; the reply also says how many there are "
+            "in total."
+        ),
+    },
+    "describe": {
+        "clip_id": (
+            "One clip to describe. Omit it for every video clip not described yet; "
+            "audio-only clips are refused, since their words are what `transcribe` "
+            "indexes."
+        ),
+        "window": (
+            "Seconds of footage per description. Do not widen it to save time: a single "
+            "pass over a whole clip describes six frames as six people, fluently, with "
+            "nothing saying it is wrong."
+        ),
+        "force": (
+            "Describe clips that already have descriptions, replacing them. Without it "
+            "they are skipped."
+        ),
+    },
+    "fonts": {
+        "install": (
+            "Copy the vendored face where this OS's font system looks (fontconfig, "
+            "CoreText or DirectWrite). Off by default, because it writes into the home "
+            "directory."
+        ),
+    },
+    "card_new": {
+        "name": (
+            "The `<name>` in `card:<name>` — the key a cue points at. The SVG and the "
+            "PNG are both written under `assets/cards/`."
+        ),
+        "template": (
+            "Which template to fill; `card_templates` lists them with their slots. A "
+            "per-aspect variant file is resolved from the canvas, never named here."
+        ),
+        "slots": (
+            "The template's slots filled in, as text. A newline is a line break where "
+            "the template takes several lines; ratings are numbers out of five, to the "
+            "nearest half."
+        ),
+        "width": (
+            "Render width. **Leave it unset unless you mean something other than this "
+            "film** — it defaults to the project's canvas, which is what stops a card "
+            "pillarboxing inside the frame it was made for. Given at all, `height` must "
+            "be too."
+        ),
+        "height": "Render height, given together with `width` or not at all.",
+        "overwrite": (
+            "Redraw a card of this name that already exists. Refused without it, since "
+            "a cue may already point at that card."
+        ),
+    },
+    "card_render": {
+        "name": (
+            "The card to rasterise: `assets/cards/<name>.svg` becomes the PNG that "
+            "`card:<name>` resolves to."
+        ),
+        "width": (
+            "Render width. The document is *drawn* at this scale rather than resampled, "
+            "so text stays sharp, and it fits rather than distorts. Given together with "
+            "`height` or not at all; omitted, the document renders at its own declared "
+            "size."
+        ),
+        "height": "Render height, given together with `width` or not at all.",
+    },
+    "card_reauthor": {
+        "name": (
+            "One card to redraw, whatever its canvas. Omit it to sweep every recorded "
+            "card the canvas has left behind, plus any whose files have gone missing."
+        ),
+    },
+    "card_safe_zones": {
+        "card": (
+            "The card to measure, read from its already-rendered PNG rather than from "
+            "the recorded slots — so the ink measured is the ink on disk."
+        ),
+        "platform": (
+            "Whose reserved band to measure against: one of proofcut's own zones "
+            "(`tiktok-organic`, `tiktok-ads`, `reels`, `shorts`, `worst-case`) or one "
+            "an applied pack's active variant declares. `pack_show` lists both."
+        ),
+    },
+    "pack_apply": {
+        "pack_path": (
+            "The pack file to load. An external file, never confined to the project — a "
+            "pack usually lives in a separate branding repo — and nothing after this "
+            "call depends on it staying reachable."
+        ),
+        "variant": (
+            "Which resolved variant to activate. Every declared variant is snapshotted "
+            "regardless, so `pack_activate` can switch later with no file re-read."
+        ),
+        "allow_fallback": (
+            "Accept a declared CSS fallback for a font family that does not actually "
+            "draw on this machine, recording which was used. Without it, a family that "
+            "does not draw refuses the whole call."
+        ),
+        "install_fonts": (
+            "Vendor the pack's own `fonts/` directory, if it ships one. Off by default, "
+            "since it writes into `$HOME`."
+        ),
+    },
+    "pack_activate": {
+        "variant": (
+            "Which already-snapshotted variant to switch to. No file is re-read, and an "
+            "unknown name is refused by listing the ones that are available."
+        ),
+    },
+    "pack_apply_captions": {
+        "preset": (
+            "Which caption preset of the active variant to apply, through the ordinary "
+            "`caption_style` call. This is the only thing that restyles captions from a "
+            "pack; `pack_apply` never does it on its own."
+        ),
+    },
+    "pack_show": {
+        "pack_path": (
+            "Read and resolve this pack file fresh, needing no project. With `path` as "
+            "well, it compares what the file says now against what the project is still "
+            "running."
+        ),
+        "variant": "Report one variant rather than all of them.",
+    },
+    "cue_add": {
+        "clip_id": (
+            "The transcript the cue is addressed against — the VO on a voiceover "
+            "project, not the footage being shown. `asset` is what gets seen."
+        ),
+        "word_index": (
+            "The word the picture starts on, in `clip_id`'s transcript. Give this or "
+            "`phrase`, not both."
+        ),
+        "asset": (
+            "What to show from that word onward: a registered clip id, or "
+            "`card:<name>` for a card. An opaque key here, resolved by `build_shots` "
+            "rather than checked against disk now."
+        ),
+        "phrase": (
+            "Address the cue by what is said instead of by index. It binds to the "
+            "phrase's **first** word — \"from this word onward\"."
+        ),
+        "src_start": (
+            "Where inside `asset` the shot reads from, in that asset's own source "
+            "seconds — the number `describe_ls` reports for a window. An in-point and "
+            "never a range: unpinned, the shot reads from wherever the per-asset "
+            "cursor had got to, which is right for re-using a clip and wrong for "
+            "showing the thing you searched for. A card takes none."
+        ),
+    },
+    "cue_rm": {
+        "clip_id": "The transcript the cue was addressed against.",
+        "word_index": "The word the cue sits on. Give this or `phrase`.",
+        "phrase": (
+            "Address it by wording instead; it resolves to its first word, the way "
+            "`cue_add` placed it."
+        ),
+    },
+    "cue_ls": {
+        "clip_id": "List one clip's cues. Omit it for the whole table.",
+    },
+    "cue_reresolve": {
+        "clip_id": "Re-resolve one clip's entries. Omit it for every clip.",
+        "apply": (
+            "Rewrite `word_index` wherever the stored phrase still resolves to "
+            "exactly one match. Off by default: it reports first, and anything "
+            "ambiguous or unresolved is reported and left untouched either way."
+        ),
+    },
+    "unspoken_add": {
+        "clip_id": "The transcript holding the word.",
+        "word_index": "The word to mark. Give this or `phrase`.",
+        "phrase": (
+            "Address it by wording instead — but unlike `cue_add`, a phrase matching "
+            "more than one word is refused rather than bound to an edge: a mark "
+            "addresses exactly one word."
+        ),
+    },
+    "unspoken_rm": {
+        "clip_id": "The transcript holding the marked word.",
+        "word_index": "The marked word. Give this or `phrase`.",
+        "phrase": "Address it by wording instead; it has to resolve to exactly one word.",
+    },
+    "unspoken_detect": {
+        "render": (
+            "The rendered file to judge against — the witness. A word is proposed "
+            "only where the timeline holds more of it over a span than the render's "
+            "own transcription heard."
+        ),
+        "clip_id": "Limit the scan to one transcript.",
+        "transcript_path": (
+            "An existing transcription of `render`, which is what `verify` leaves in "
+            "`cache/verify/`. It is never found automatically: a re-render under the "
+            "same filename would otherwise be judged against the previous render's "
+            "audio."
+        ),
+        "model": (
+            "The whisper model to transcribe the render with, when no "
+            "`transcript_path` is given."
+        ),
+        "language": "Force a language code for that transcription.",
+        "pad": "Widen the window each candidate is counted in, in seconds.",
+        "apply": (
+            "Mark the proposals. Off by default, like `reframe_detect`: a wrong mark "
+            "deletes a real word from every check proofcut has, so read the echoes "
+            "first."
+        ),
+    },
+    "build_shots": {
+        "fps": (
+            "The frame grid to project onto. Unset, the project's timebase — which on "
+            "an audio-only project is milliseconds rather than frames. Pass the rate "
+            "`export` will use to see the frames the export actually cuts at."
+        ),
+    },
+    "seed_timeline": {
+        "clip_id": "The clip to lay down as the timeline.",
+        "remove_silences": (
+            "Silence-cut the clip on the way in, through auto-editor. On by default; "
+            "false lays the whole clip down untouched."
+        ),
+        "threshold": "auto-editor's audio loudness threshold, 0–1. Lower keeps quieter material.",
+        "margin": (
+            "How much to leave either side of kept audio, in auto-editor's own "
+            "notation (e.g. `0.2s`), so an edge lands in the silence rather than on "
+            "the breath."
+        ),
+        "edit_expr": (
+            "auto-editor's edit language, passed straight through — e.g. `(or "
+            "audio:0.03 motion:0.06)`. It replaces the threshold-based rule."
+        ),
+    },
+    "cut_by_transcript": {
+        "clip_id": "The transcript the word ranges address.",
+        "cut": (
+            "Inclusive word ranges to remove, e.g. `[[30, 45], [120, 131]]`. Pass "
+            "exactly one of `cut` or `keep`."
+        ),
+        "keep": (
+            "Inclusive word ranges to keep, everything else going. Pass exactly one "
+            "of `cut` or `keep`."
+        ),
+        "pad": (
+            "Widen each range on both sides, in seconds, so the cut lands in the "
+            "silence between words rather than on them. `pad_reach` names any "
+            "neighbour the padding eats."
+        ),
+        "through_pause": (
+            "Extend each cut's trailing edge through the pause after its last word, "
+            "wherever that gap was wide enough to draw a `[N.Ns]` marker — so cutting "
+            "a phrase also takes the dead air after it. A no-op when the gap is "
+            "short."
+        ),
+    },
+    "cut_by_time": {
+        "spans": (
+            "Half-open `[start, end)` spans in the seconds **an export plays at** — "
+            "what a person reports off a watch, not source time and not word indices. "
+            "Every span resolves against the current timeline before any is applied, "
+            "so a list of notes from one watch stays valid together; overlapping "
+            "spans are refused rather than double-applied."
+        ),
+        "pad": "Widen only the outer edges of each requested span, in seconds.",
+    },
+    "restore": {
+        "clip_id": "The clip whose cut material to bring back.",
+        "ranges": (
+            "Inclusive word ranges, the shape `cut_by_transcript` takes. Only the "
+            "part the edit says is actually absent comes back; material still present "
+            "is left alone."
+        ),
+        "pad": (
+            "Pass the same `pad` the original cut used to bring its padding sliver "
+            "back, not only the words."
+        ),
+    },
+    "locate": {
+        "clip_id": "The transcript, or the recording, the address belongs to.",
+        "first": (
+            "First word index, inclusive. Address it one way per call: "
+            "`first`/`last`, `source_start`/`source_end`, or `phrase`."
+        ),
+        "last": "Last word index, inclusive. Defaults to `first`.",
+        "source_start": (
+            "Seconds into the original recording. Omit `source_end` to locate an "
+            "instant."
+        ),
+        "source_end": "End of the source interval, in the recording's own seconds.",
+        "phrase": (
+            "Locate by wording. A phrase is naturally a range, so it resolves "
+            "straight to first and last with no edge to pick."
+        ),
+    },
+    "timeline_view": {
+        "clip_id": (
+            "The transcript whose words' fate to report. A clip that is registered "
+            "but not on the edit still answers — read `off_timeline`, or every word "
+            "reads `present: false` and looks cut."
+        ),
+    },
+    "properties": {
+        "clip_id": "Add this clip's assets entry, framing windows and cue table to the report.",
+        "word_index": (
+            "With `clip_id`, add the cue at that word — or, when there is none, the "
+            "word plus three either side. It needs `clip_id`."
+        ),
+    },
+    "finish_report": {
+        "framing": (
+            "Add stale-framing numbers. Off by default because it decodes placed "
+            "footage for a scene-cut scan (5.7s wall, 46s of CPU on the film, "
+            "uncached, every call). Off, `framing` is null, which means *not "
+            "measured* rather than nothing stale."
+        ),
+        "holds": (
+            "Add the per-hold seam and transcription report against the last render. "
+            "Off by default for the same reason: it decodes and transcribes render "
+            "spans. Null when not asked for, and also null when nothing has rendered "
+            "here yet."
+        ),
+        "continuity": (
+            "Add the continuity finding counts by kind and how many are accepted. Off "
+            "by default — its stub half pays the same scene-cut decode `framing` "
+            "does."
+        ),
+    },
+    "export": {
+        "output": (
+            "Where to write the project file or the render. A file argument, not a "
+            "project selector: it writes where you say."
+        ),
+        "export_format": (
+            "`kdenlive` (the default) writes an MLT project Kdenlive opens and melt "
+            "renders. Pass null to render media instead. Other auto-editor targets — "
+            "shotcut, premiere, resolve, final-cut-pro — pass straight through."
+        ),
+        "fps": (
+            "The NLE timeline's frame rate, defaulting to the picture's own (30 for "
+            "an audio-only project). It sets the render's rate too wherever proofcut "
+            "owns the profile, and is ignored when auto-editor renders a "
+            "single-source timeline."
+        ),
+        "preset": (
+            "A named quality bundle — `youtube`, `web`, `tiktok-reels`, or `custom` "
+            "(which needs `resolution`) — meaningful only with `export_format=null`, "
+            "since an NLE project file has no bitrate. `tiktok-reels` also **checks** "
+            "that the project renders 9:16 and refuses otherwise; it never sets the "
+            "shape. Use `canvas` for that."
+        ),
+        "resolution": (
+            "`[width, height]`. It **letterboxes** the existing frame on the "
+            "single-source render path rather than cropping or reframing it, and is "
+            "refused outright on a melt (multi-source) project."
+        ),
+        "loudness": (
+            "Master the render to this many LUFS integrated: one gain and a true-peak "
+            "limiter, measured before and after, and refused — leaving the render as "
+            "it was — if the result misses by more than 1 LU. Render only."
+        ),
+        "true_peak": "The dBTP ceiling the loudness pass limits under. -1.0 by default.",
+    },
+    "add_captions": {
+        "output": "Where to write the `.ass` sidecar, or the burned video under `burn`.",
+        "clip_id": "Caption one transcript's words rather than every clip's.",
+        "preset": (
+            "Override the project's base look for this one file — `clean`, `karaoke` "
+            "or `boxed`. Nothing here is written back to the project."
+        ),
+        "max_words": "Most words in one caption cue.",
+        "max_gap": "Start a new cue when the silence between two words exceeds this many seconds.",
+        "max_duration": "Longest a single cue stays on screen, in seconds.",
+        "hold": "How long a cue lingers after its last word, in seconds.",
+        "burn": (
+            "Burn the captions into this video with ffmpeg instead of writing a "
+            "sidecar. It must be a render of **this** timeline — against any other "
+            "video the timings will not line up. `export --render` does not burn "
+            "captions, and nothing else reports a render that was made without them."
+        ),
+        "burn_output": "Where the burned video goes. Unset, it is derived from `burn`'s own name.",
+    },
+    "caption_view": {
+        "clip_id": "Show one transcript's captions rather than every clip's.",
+    },
+    "caption_style": {
+        "preset": (
+            "The base look: `clean`, `karaoke` (per-word highlight) or `boxed`. "
+            "Everything else overrides one of its fields, and only the overrides are "
+            "stored."
+        ),
+        "font": (
+            "Family name to draw with. Whether it actually draws is a different "
+            "question from whether it is installed — `fonts` measures a render, and "
+            "libass substitutes silently at exit 0."
+        ),
+        "size": "Type size, against the project's canvas as the reference frame.",
+        "text": (
+            "The word's own colour: `#rrggbb`, `#rrggbbaa`, a name, or an ASS `&H…` "
+            "value. It comes back resolved, because ASS quotes colours backwards and "
+            "alpha-inverted."
+        ),
+        "highlight": "What a word turns as it is spoken. It only shows with `karaoke` on.",
+        "outline_colour": "Colour of the outline around the type.",
+        "box_colour": "Colour of the box behind the type, when `box` is on.",
+        "bold": "Draw bold.",
+        "box": (
+            "Draw an opaque box behind the words. It buys legibility over light "
+            "footage — white captions over the film's own light cards measure 1.10:1 "
+            "without one — and costs clean edges, since libass draws one box per "
+            "override block."
+        ),
+        "outline_width": (
+            "Outline thickness. With no box this is what holds the words apart from "
+            "the picture."
+        ),
+        "shadow": "Drop-shadow distance.",
+        "position": "Where captions sit, named: `bottom`, `top`, `top-right` and so on.",
+        "margin": "Distance from the frame edge, in canvas pixels.",
+        "karaoke": (
+            "Fill each word as it is spoken. The fill is left-to-right within a line "
+            "rather than a per-word step, which is what the grouping fields below "
+            "shape."
+        ),
+        "max_words": (
+            "Most words in one caption cue. Grouping is part of the look, which is "
+            "why it is stored with it."
+        ),
+        "max_gap": "Start a new cue when the silence between two words exceeds this many seconds.",
+        "max_duration": "Longest a single cue stays on screen, in seconds.",
+        "hold": "How long a cue lingers after its last word, in seconds.",
+        "reset": (
+            "Drop every override first. `reset` together with `preset` starts clean "
+            "from that preset."
+        ),
+    },
+    "canvas": {
+        "size": (
+            "`WIDTHxHEIGHT`, e.g. `1080x1920` for a vertical reel. Both edges must be "
+            "even. Omit it to read what is in force plus the footage-derived shape it "
+            "would fall back to."
+        ),
+        "reset": "Drop the override and return to the footage-derived shape.",
+    },
+    "head": {
+        "asset": (
+            "The footage the cold open plays, as a registered clip id — never "
+            "`card:name`. A cold open is real footage with real dialogue by "
+            "definition, and `verify` accounts for its words rather than forbidding "
+            "them."
+        ),
+        "src_start": (
+            "Where inside that asset the cold open reads from, in source seconds. 0.0 "
+            "on a first set."
+        ),
+        "seconds": (
+            "How long the cold open runs. Setting `asset` or `seconds` for the first "
+            "time needs both together; either alone afterwards updates just that "
+            "field."
+        ),
+        "fade_in": (
+            "Seconds of fade at the head. Unlike `tail`'s fade this is drawn, and it "
+            "is the whole reason the feature exists — a hard butt-join between room "
+            "tone and digital silence is exactly the seam a missing fade produces."
+        ),
+        "fade_out": "Seconds of fade where the cold open hands over to the film.",
+        "gain_db": (
+            "A flat level shift for the cold open, in dB, distinct from the fades. "
+            "0.0 is unity."
+        ),
+        "reset": "Drop the cold open entirely.",
+    },
+    "tail": {
+        "asset": (
+            "The end card or bumper, as `card:name` — never a clip id. `verify` diffs "
+            "the render's own transcription against the timeline's words, and a card "
+            "behind silence adds none of its own, which a media clip would."
+        ),
+        "seconds": (
+            "The tail's **whole** length, card included — not a hold with `fade` "
+            "added on top of it."
+        ),
+        "fade": (
+            "Recorded and echoed, not yet drawn: this build cuts to the card hard, at "
+            "`seconds`."
+        ),
+        "reset": (
+            "Drop the tail entirely. Note a derivation inherits none of it anyway and "
+            "reports `tail_dropped`."
+        ),
+    },
+    "music": {
+        "after": (
+            "A forward cursor over the matches of `phrase_start`/`phrase_end`: any "
+            "match at or before this word index is skipped. -1, the default, means "
+            "from the start."
+        ),
+        "occurrence": (
+            "Disambiguate `phrase_start`/`phrase_end` by count, **1-based**. Unset, "
+            "an ambiguous phrase is refused rather than guessed at."
+        ),
+        "asset": (
+            "The bed's own music, as a registered clip id — never `card:name`, since "
+            "a held frame has no sound. It plays from its own head; shorter than its "
+            "span pads with real silence, longer is trimmed."
+        ),
+        "clip_id": "The transcript the bed's word indices address — the VO, not the music.",
+        "word_index_start": (
+            "Where the bed comes in, as a word of `clip_id`. The bed stores words and "
+            "never a length, so a cut before either boundary moves it automatically."
+        ),
+        "word_index_end": (
+            "Where the bed goes out. Unset means *to the end of the edit*, so a tail "
+            "holds over silence."
+        ),
+        "phrase_start": (
+            "Set the in-point by wording instead; it binds the phrase's first word. "
+            "The resolved phrase is stored beside the index, so `cue_reresolve` can "
+            "re-derive it after a re-record."
+        ),
+        "phrase_end": (
+            "Set the out-point by wording instead; it binds the phrase's last word. "
+            "Each boundary is independent — one can be a phrase and the other an "
+            "index."
+        ),
+        "fade_in": (
+            "Seconds of fade at the bed's start. The fades ride the bed's own entry, "
+            "so a fade-out ends where the music audibly ends."
+        ),
+        "fade_out": (
+            "Seconds of fade at the bed's end. A fade pair the bed cannot hold "
+            "refuses at build time rather than being clamped."
+        ),
+        "clear_end": "Drop the end word, returning the bed to running to the end of the edit.",
+        "src_in": "Where inside the bed's own asset it starts, in seconds.",
+        "crossfade": (
+            "Seconds two pieces overlap by. A crossfade edge is equal-power rather "
+            "than the straight dB line an ordinary fade draws — two straight fades "
+            "crossing sum to a hole."
+        ),
+        "rotate": (
+            "Further assets to play in turn as each one runs out, overlapping by "
+            "`crossfade`. `[]` clears them."
+        ),
+        "passages": (
+            "Replace the list of passages after the bed's own asset: each `{asset, "
+            "word_index_start | phrase_start, src_in?, crossfade?, rotate?}`. `[]` "
+            "clears them."
+        ),
+        "under": (
+            "Level the whole bed this many LU below the voice, measured. It is a "
+            "fixed offset; `duck` is the moving one."
+        ),
+        "clear_under": "Return every asset to its own level.",
+        "duck": (
+            "Pull the bed this many dB down while the voice is speaking and let it "
+            "back up in the pauses. It is keyed off the timeline's own audio at "
+            "export rather than the transcript's word timings, which were measured "
+            "against a bed recovered from a real render and beaten: 2.72 dB off for "
+            "the audio gate against a word-span duck's 3.39."
+        ),
+        "clear_duck": "Return the bed to one level, with no ducking.",
+        "reset": "Drop the bed entirely.",
+    },
+    "vo_extend": {
+        "clip_id": "The track the gap opens in — the VO.",
+        "word_index": (
+            "The last word **before** the gap; the hold opens immediately after that "
+            "word's own end. It has to be on the timeline: an index naming cut "
+            "material is refused rather than guessed at."
+        ),
+        "seconds": "How long the hold runs. An editorial call this makes no attempt to derive.",
+        "phrase": (
+            "Address it by wording instead. A phrase binds to its **last** word here, "
+            "which is this tool's own meaning: the last word before the gap."
+        ),
+    },
+    "vo_synth": {
+        "text": (
+            "What the voice says. It is respelled first through the project's "
+            "`lexicon.json` `say` folds, if one exists — the fix for a mispronounced "
+            "name."
+        ),
+        "voice": (
+            "A directory holding `ref.wav` + `ref.txt`, the ≈19s reference the clone "
+            "is zero-shot from. Unset, `$PROOFCUT_TTS_VOICE`. There is no built-in "
+            "voice, and none ships in the repo: a voice is somebody's recorded "
+            "speech."
+        ),
+        "candidates": (
+            "How many seeds to render and rank. Seed moves a render more than the "
+            "reference does, which is why this ranks rather than renders once."
+        ),
+        "seed": (
+            "First seed of the range; seeds `seed .. seed+candidates-1` render in one "
+            "process. A new range renders only what the cache lacks."
+        ),
+        "max_seconds": (
+            "Length cap per render. One that hits it is reported `capped` and never "
+            "wins while an uncapped one exists — a 21s reference once ran every "
+            "render to 655s."
+        ),
+        "clip_id": (
+            "With `word_index`, the track to splice the winner into. Omitted, nothing "
+            "is spliced and the renders are just ranked."
+        ),
+        "word_index": (
+            "The word to splice the winner in right after, through `vo_extend`'s own "
+            "mechanism — so the same one-way consequences follow (melt routing, "
+            "`restore` refusing across the seam)."
+        ),
+        "readback": (
+            "Transcribe the winner with whisper and report `heard`/`wer`. On by "
+            "default: a clone that sounds right and says the wrong words is the "
+            "failure nothing else sees. The numbers are a report, never a gate."
+        ),
+        "lexicon": (
+            "A `{\"say\": {…}, \"hear\": {…}}` file: `say` respells what the model is "
+            "given, `hear` folds whisper's spelling back to the script's before the "
+            "WER is scored. Defaults to the project's own `lexicon.json` if it has "
+            "one."
+        ),
+        "flat_floor": (
+            "Below this much voiced pitch movement (semitones) a render starts paying "
+            "the flatness penalty. Likeness alone keeps the flattest read, because "
+            "sims in one pool differ by thousandths while spread differs by "
+            "semitones."
+        ),
+        "flat_weight": (
+            "How much likeness to subtract per semitone of flatness under the floor. "
+            "0 restores likeness-only ranking."
+        ),
+    },
+    "hold_add": {
+        "after": (
+            "A forward cursor over the matches of "
+            "`gap_phrase`/`cue_phrase`/`asset_phrase`: any match at or before this "
+            "word index is skipped. -1, the default, means from the start."
+        ),
+        "occurrence": (
+            "Disambiguate `gap_phrase`/`cue_phrase`/`asset_phrase` by count, "
+            "**1-based**. Unset, an ambiguous phrase is refused rather than guessed "
+            "at."
+        ),
+        "clip_id": "The VO track the gap opens in.",
+        "gap_word_index": (
+            "The word the gap opens right after. With `clip_id` it is the hold's "
+            "address, and a second `hold_add` at the same address is refused."
+        ),
+        "cue_word_index": "The word the picture cue for `asset` is placed on.",
+        "asset": "The film clip whose own audio plays in the gap, and whose picture the cue pins.",
+        "word_index_first": (
+            "First word of the line to play, in **`asset`'s own** transcript — not "
+            "the VO's."
+        ),
+        "word_index_last": (
+            "Last word of that line. With `word_index_first` it is one-way once "
+            "spliced: resizing means `hold_rm` then `hold_add`, or `undo`."
+        ),
+        "gap_phrase": (
+            "Address the gap by wording; it binds its **last** word, since the gap "
+            "opens right after it."
+        ),
+        "cue_phrase": "Address the cue by wording; it binds its **first** word.",
+        "asset_phrase": (
+            "The line to play, resolved against `asset`'s **own** transcript, binding "
+            "its first and last words together. One phrase is the source of truth for "
+            "both ends; hand-typed indices drift the moment a transcript changes "
+            "under them."
+        ),
+        "head_margin": (
+            "Seconds kept before the line, so it does not start on the word. "
+            "Re-settable on an already-spliced hold."
+        ),
+        "tail_margin": "Seconds kept after the line. Re-settable.",
+        "under": "How far below the VO the held audio sits, in LU. Re-settable.",
+        "fade_in": "Seconds of fade as the held audio comes in. Re-settable.",
+        "fade_out": "Seconds of fade as it goes out. Re-settable.",
+    },
+    "hold_rm": {
+        "clip_id": "The VO track the hold was spliced into.",
+        "gap_word_index": (
+            "The hold's address, with `clip_id`. The record and its owned cue go; the "
+            "spliced silence stays, since there is no clean un-splice — only `undo`."
+        ),
+    },
+    "hold_under": {
+        "after": (
+            "A forward cursor over the matches of `phrase_start`/`phrase_end`: any "
+            "match at or before this word index is skipped. -1, the default, means "
+            "from the start."
+        ),
+        "occurrence": (
+            "Disambiguate `phrase_start`/`phrase_end` by count, **1-based**. Unset, "
+            "an ambiguous phrase is refused rather than guessed at."
+        ),
+        "clip_id": "The VO track whose words the span is measured in.",
+        "asset": (
+            "The film clip whose audio plays under the voice. It has to be on screen "
+            "across the span — the audio reads from wherever the shot showing it has "
+            "got to — so cue it first."
+        ),
+        "word_index_start": (
+            "First VO word of the span. With `clip_id` it is the entry's address; a "
+            "second call at the same address replaces it."
+        ),
+        "word_index_end": "Last VO word of the span.",
+        "phrase_start": "Set the span's start by wording instead.",
+        "phrase_end": "Set the span's end by wording instead.",
+        "under": "How far below the VO the film audio sits, in LU. 13 by default.",
+        "fade_in": "Seconds of fade as the film audio comes in.",
+        "fade_out": "Seconds of fade as it goes out.",
+    },
+    "hold_under_rm": {
+        "clip_id": "The VO track the entry was addressed against.",
+        "word_index_start": "The span's first VO word — the entry's address, with `clip_id`.",
+    },
+    "hold_check": {
+        "render": (
+            "The rendered file to listen to. Each hold's span is resolved live "
+            "against the current edit and transcribed off this file."
+        ),
+    },
+    "finish_check": {
+        "final": (
+            "The delivered file to check — one an external mix pass produced, not a "
+            "proofcut render. Every position reported is in this file's own absolute "
+            "seconds."
+        ),
+        "holds": (
+            "The holds to expect in `final`, resolved and offset the same way the "
+            "stored ones are. Defaults to the project's own; pass a list (an empty "
+            "one included) to check against a different set."
+        ),
+        "prepend_seconds": (
+            "How much runs before the timeline's first frame in `final` — a cold open "
+            "concatenated on outside proofcut. Defaults to the project's stored head "
+            "length."
+        ),
+        "fps": (
+            "The frame grid the timeline's arithmetic is counted on. Defaults to the "
+            "rate `export` would have picked."
+        ),
+        "duration_tolerance": (
+            "How far `final`'s duration may sit from the timeline's own arithmetic "
+            "before it is a fault, in seconds."
+        ),
+        "pix_th": "blackdetect's pixel threshold: how dark a pixel counts as black.",
+        "black_min_duration": "Shortest black run to report, in seconds.",
+        "windowed_model": (
+            "The whisper model for the windowed transcription of `final`. A "
+            "deliberately small one is the default, since the windowed pass runs over "
+            "twice the audio."
+        ),
+        "window": "Length of each transcription window, in seconds.",
+        "overlap": "How far each window overlaps the one before, in seconds.",
+        "recheck_pad": (
+            "How much to pad a dropped run when re-cutting it for its own "
+            "transcription — the pass that separates a real miss from a false one at "
+            "a window stitch."
+        ),
+        "language": "Force a language code for the transcription.",
+        "clip_id": "Diff against one transcript's expected words rather than all of them.",
+        "transcript_path": (
+            "An existing transcription of `final`, to diff again without "
+            "re-transcribing."
+        ),
+    },
+    "reel": {
+        "start": (
+            "Where the reel begins, in the seconds **an export plays at** — the same "
+            "numbers `cut_by_time` takes, read off a watch."
+        ),
+        "end": (
+            "Where it ends, in those same render seconds. `start`/`end` name the span "
+            "to **keep**, the opposite direction from every other tool here."
+        ),
+        "canvas": (
+            "The shape to set on the derived project only, e.g. `1080x1920`. Setting "
+            "it on the film instead is what deriving exists to avoid — a canvas is "
+            "project state and would stay."
+        ),
+        "name": "A name for the derived project. Unset, it is derived from `dest`.",
+    },
+    "reframe": {
+        "clip_id": (
+            "The clip to read or frame. Omit it to read the crops in force for every "
+            "clip, including how much of each is kept."
+        ),
+        "rect": (
+            "`X,Y,W,H` in that clip's **own source pixels** — the region kept. An "
+            "override is a floor rather than a frame: a rect that is not the canvas's "
+            "shape is grown to it, so nothing named is pushed off screen, and the "
+            "reply gives both `asked` and the `crop` it became."
+        ),
+        "pane": (
+            "A second rect making this window a **stacked split**: `rect` on top, "
+            "`pane` below, each about twice the width one 9:16 window gets. For the "
+            "shot one window cannot frame. Both are grown to the full source height — "
+            "nothing masks a pane, so a shorter crop scales into the other half at "
+            "exit 0."
+        ),
+        "src_start": (
+            "Frame a **shot** rather than a clip: seconds into that clip's own "
+            "source, the rect holding from there until the next window. Because the "
+            "address is the source's own clock, a clip used seven times picks up the "
+            "right window at each placement. Omitted, it is the window from the head "
+            "of the file."
+        ),
+        "interp": (
+            "Slide into this window from whatever governed before it instead of "
+            "stepping to it. It needs `src_start` past 0 — there is nothing before "
+            "the head of the source to slide from — and cannot be combined with "
+            "`pane`."
+        ),
+        "reset": (
+            "With `clip_id`, drop that clip's overrides; with `src_start` as well, "
+            "only the window there. Alone, drop every override."
+        ),
+    },
+    "reframe_detect": {
+        "clip_id": "Propose windows for one clip. Omit it for every placed clip.",
+        "threshold": (
+            "How strong a scene change has to be to count as a camera cut, 0–1. 0.15 "
+            "is pinned by judging detections on real footage: every candidate from "
+            "0.141 to 0.244 was a real cut, and the first non-cut is 0.137."
+        ),
+        "frames": (
+            "How many moments to sample inside each window before centring it on the "
+            "faces found there."
+        ),
+        "apply": (
+            "Write the proposals through `reframe`. Off by default — the opposite of "
+            "`cut --plan` — because the pass runs 24% of a window's width out on "
+            "average. Call `reframe_sheet` and look first. It never writes over a "
+            "window that is already an override."
+        ),
+        "split": (
+            "Offer a stacked split where every sampled frame holds two or three faces "
+            "one window cannot hold. On by default; `false` turns the offer off."
+        ),
+    },
+    "reframe_coverage": {
+        "clip_id": "Walk one clip's placements. Omit it for the whole project.",
+        "threshold": (
+            "How strong a scene change has to be to **demand** a window. Boundaries "
+            "are scored against every detected cut rather than only these, since a "
+            "cut too weak to demand a window still explains one."
+        ),
+    },
+    "continuity_check": {
+        "gap": (
+            "How much timeline may pass before re-showing an asset reads as a replay "
+            "rather than a rewind, in seconds."
+        ),
+        "min_shot": (
+            "Shortest a shot may run before it is reported as a short shot, in "
+            "seconds. Stills are excluded."
+        ),
+        "stub_tolerance": (
+            "How close a shot edge has to sit to its footage's own internal cut to be "
+            "called a stub, in seconds."
+        ),
+        "stubs": (
+            "Look for stubs. On by default, and it costs a scene-cut decode per "
+            "distinct asset placed — `false` skips that."
+        ),
+        "scene_threshold": (
+            "The scene-cut threshold for the stub scan. It defaults to the pinned "
+            "0.15, but darker footage from a different film has needed 0.12."
+        ),
+    },
+    "continuity_accept": {
+        "clip_id": "The cue's own addressing transcript, as `continuity_check` reports it.",
+        "word_index": (
+            "The cue's word. With `clip_id` and `kind` it is the finding's address — "
+            "one shot can carry more than one finding."
+        ),
+        "kind": "Which finding to acknowledge: `rewind`, `replay`, `short_shot` or `stub`.",
+    },
+    "continuity_reject": {
+        "clip_id": "The cue's own addressing transcript.",
+        "word_index": (
+            "The cue's word, with `clip_id` and `kind` the address the "
+            "acknowledgement was stored under."
+        ),
+        "kind": "Which finding to un-acknowledge: `rewind`, `replay`, `short_shot` or `stub`.",
+    },
+    "reframe_sheet": {
+        "moments": (
+            "Fractions of each window to draw tiles at, e.g. `[0.1, 0.5, 0.9]`. A "
+            "tile is evidence about one instant while a rect is a claim about a "
+            "stretch, so where the subject moves these decide what the sheet can see. "
+            "Refused alongside `extremes`."
+        ),
+        "extremes": (
+            "Draw the subject's own leftmost and rightmost moments, worst first, "
+            "instead of fixed fractions — the rect does not move inside a stretch, so "
+            "that is where a static window is worst. Off by default: it costs the "
+            "face detector and about half a second a probe. Read `worst_offset` "
+            "beside `multi_face`, never after it."
+        ),
+    },
+    "footage_sheet": {
+        "clip_id": (
+            "The registered clip to browse. This sheet reads the clip's **own "
+            "source**, so it needs no edit, no cues and no transcript."
+        ),
+        "mode": (
+            "`auto` (the default) draws a tile every `interval` seconds; `scenes` "
+            "draws one per detected cut. Scenes is opt-in because its yield is "
+            "uncorrelated with anything the caller knows — 0 cuts on a 29s b-roll "
+            "loop, 17 in 60s of gameplay — and it decodes the whole clip."
+        ),
+        "interval": (
+            "Seconds between tiles in `auto` mode. It is `describe`'s own window "
+            "length, so a tile lines up with a description."
+        ),
+    },
+    "thumbnail": {
+        "clip_id": "The clip to pull a frame from.",
+        "at": (
+            "Source seconds to pull the frame at. It snaps to a multiple of "
+            "`interval` first, so a repeated ask for a nearby instant is a cache hit."
+        ),
+        "interval": "The grid `at` snaps to, in seconds.",
+    },
+    "contact_sheet": {
+        "clip_id": "The clip whose head to look at.",
+        "seconds": (
+            "How much of the head to cover, in seconds. Ten by default — long enough "
+            "to catch credits, black or a slate before anything is cued to the clip."
+        ),
+        "interval": "Seconds between tiles.",
+    },
+    "synopsis": {
+        "clip_id": (
+            "The clip to read or write. Omit it to list every clip's synopsis and "
+            "which are missing one."
+        ),
+        "text": (
+            "What this footage **is** — the work, the scene, the people. A different "
+            "fact from a `describe` window, which says what is in front of the "
+            "camera. Write it yourself: nothing generates one, because a model "
+            "reading the pixels measurably cannot."
+        ),
+        "clear": "Remove this clip's synopsis.",
+    },
+    "broll_brief": {
+        "fps": (
+            "The frame grid the shot positions are projected on. Defaults to the rate "
+            "`export` would use."
+        ),
+    },
+    "verify": {
+        "render": "The finished render to transcribe and diff against the timeline.",
+        "clip_id": "Diff against one transcript's expected words rather than all of them.",
+        "transcript_path": (
+            "An existing transcription of `render` — what a previous run cached and "
+            "reported as `heard_transcript`. Pass it back to re-diff without spending "
+            "the minutes again."
+        ),
+        "model": "The whisper model for the single-pass transcription.",
+        "language": "Force a language code for it.",
+        "windowed": (
+            "Transcribe in short overlapping windows instead of one pass. **A clean "
+            "single-pass result is not proof** — one pass collapses an immediate "
+            "repeat the same way the source transcript did, and three surviving "
+            "retakes passed a correct single-pass run on a real video. It costs a run "
+            "over twice the audio and a smaller model."
+        ),
+        "window": "Length of each window in the windowed pass, in seconds.",
+        "overlap": "How far each window overlaps the one before, in seconds.",
+    },
+    "check_frames": {
+        "target": (
+            "An NLE project (`.kdenlive`/`.mlt`/`.xml`) or a finished render. Omit it "
+            "to just report `expected_frames`, the total the timeline lays down. Run "
+            "it on the **exported project before rendering** — that is where it is "
+            "worth the most."
+        ),
+        "fps": (
+            "The rate the export ran at. It has to match, or the two sides are "
+            "counting on different grids; it defaults to the rate `export` would have "
+            "picked."
+        ),
+    },
+    "film_check": {
+        "reference": (
+            "The delivered file this project is supposed to be. It is remembered, so "
+            "a later call with no argument re-asks the same question against the same "
+            "file."
+        ),
+        "reset": "Drop the stored reference.",
+    },
+    "import_edit": {
+        "document": (
+            "The `.kdenlive` or `.mlt` playlist somebody already trimmed by hand. "
+            "Every clip it references has to be registered already; ones that do not "
+            "match a registered clip by resolved path are named rather than imported "
+            "behind your back."
+        ),
+        "clip_id": (
+            "The registered clip to attribute a single-source document to, when its "
+            "media sits at a path this project does not know."
+        ),
+    },
+    "check_black": {
+        "target": (
+            "The render to scan. Required — unlike `check_frames` there is no cheap "
+            "no-target mode, since there is nothing to detect black in without a "
+            "render."
+        ),
+        "fps": "The rate the timeline's own frame arithmetic is counted on.",
+        "pix_th": "How dark a pixel counts as black, 0–1.",
+        "min_duration": "Shortest black run to report, in seconds.",
+    },
+    "spot_frames": {
+        "target": "The render to pull frames from.",
+        "count": (
+            "How many evenly-spaced frames to pull. They come back ranked "
+            "darkest-first, with a montage of them as an image."
+        ),
+        "times": "Explicit seconds to sample as well as the evenly-spaced ones.",
+        "fps": (
+            "The rate used to map a frame back to the clip and word it lands near — "
+            "refused rather than guessed when the render's duration no longer matches "
+            "the timeline."
+        ),
+    },
+    "speech_overlap": {
+        "clip_id": (
+            "The clip whose placement is being proposed. It need not be on the "
+            "timeline yet, and usually is not."
+        ),
+        "at": "Where the clip would sit on the timeline, in seconds.",
+        "clip_in": (
+            "Where inside the clip the proposed placement starts, in its own source "
+            "seconds. Unset, its head."
+        ),
+        "clip_out": "Where it ends, in the clip's own source seconds. Unset, its end.",
+        "vo_clip_id": (
+            "Which transcript is the VO. Unset, the project's own. The VO always "
+            "needs a transcript; the placed clip does not."
+        ),
+        "max_gap": (
+            "How short a silence may be and still be swallowed into one speech run, "
+            "in seconds — a 0.05s gap is not a usable seam."
+        ),
+        "min_seam": "How wide a gap has to be to be reported as a `clean_seam`, in seconds.",
+        "cap": (
+            "How far a word's claimed duration is trusted, as a multiple of the "
+            "median. Whisper inflates the word after a collapsed retake until it "
+            "covers the second take, so believing the claim masks exactly the hole "
+            "being looked for — 3x is the same multiple a suspect duration is "
+            "flagged at."
+        ),
+        "clip_evidence": (
+            "`auto` (the default) uses the clip's transcript if it has one and its "
+            "energy envelope otherwise, saying which in the result. `transcript` "
+            "refuses a clip with none; `energy` forces the envelope even on a clip "
+            "that has one — sound rather than speech, which counts a sting or a swell "
+            "too."
+        ),
+    },
+    "attenuate_noises": {
+        "clip_id": (
+            "The clip to scan. It always reads that clip's **original** media, never "
+            "a previous attenuated copy, so repeated calls never compound gain."
+        ),
+        "db": "How far to pull each qualifying event down, in dB. Negative is quieter.",
+        "max_event_seconds": (
+            "Longest an event may run and still qualify automatically. Anything "
+            "longer is reported as `disqualified` and never written."
+        ),
+        "max_gap_seconds": (
+            "How wide the word-map gap around an event may be. A wide gap "
+            "disqualifies even a very short event — that is the false-positive class "
+            "this exists to prevent, speech sitting in a hole the transcript never "
+            "wrote down."
+        ),
+        "pad": "Seconds added either side of each event before it is pulled down.",
+    },
+    "proxy_transcode": {
+        "clip_id": (
+            "The clip the preview cannot decode. A clip that already plays is "
+            "refused, and so is one with no decodable streams — that is a broken "
+            "file, not a codec problem."
+        ),
+        "force": (
+            "Rebuild a proxy that is already current. It touches nothing authored: a "
+            "proxy is a preview artefact the manifest never records, so no render can "
+            "reach one. It overrides neither refusal."
+        ),
+    },
+    "review_add": {
+        "name": (
+            "What to call this item in the served round. Re-using a name replaces "
+            "that entry while its verdict stays attached."
+        ),
+        "source": (
+            "The file to point at — never copied. A render already lives in "
+            "`renders/`, a sheet in the sheet directory."
+        ),
+        "kind": "One of `render`, `sheet`, `ab`, `control`.",
+        "baseline": (
+            "Required for `kind=\"control\"`: the name of the already-registered item "
+            "this one claims to be identical to. Both files' sha256 must match or the "
+            "call is refused — nothing is labelled a control here unless it is "
+            "byte-identical to what it claims."
+        ),
+    },
+    "review_verdict": {
+        "name": "The registered item being answered. An unregistered name is refused.",
+        "verdict": (
+            "The answer, as free text rather than an enum — past rounds answered "
+            "yes/no, loop/hold, or a specific choice by name, and a fixed vocabulary "
+            "would misfit whichever question the next round asks."
+        ),
+        "note": "Anything to record beside the verdict.",
+    },
+}
+
+def _has_description(annotation: Any) -> bool:
+    """Does this annotation already carry a `Field(description=...)`?
+
+    `ProjectPath` is one, so `path` is documented before the table is
+    consulted and must not be asked for twice.
+    """
+    if get_origin(annotation) is not Annotated:
+        return False
+    return any(getattr(meta, "description", None) for meta in get_args(annotation)[1:])
+
+
+def _describe_params(fn: Callable[..., Any]) -> None:
+    """Hang `_PARAM_DOCS`'s text on the function's own annotations.
+
+    On `fn` rather than on the wrapper deliberately: `functools.wraps` sets
+    `__wrapped__` and `inspect.signature` follows it, so the advertised schema
+    is always the undecorated function's — a description attached to the
+    wrapper would be invisible in `tools/list`, which is the one place it has
+    to appear.
+
+    Refuses an argument with no entry, and an entry naming no argument. The
+    second half is what catches a rename: the table would otherwise keep
+    describing a parameter that no longer exists while the one that replaced
+    it advertised nothing.
+    """
+    documented = {**_COMMON_PARAMS, **_PARAM_DOCS.get(fn.__name__, {})}
+    hints = get_type_hints(fn, include_extras=True)
+    parameters = [
+        name
+        for name, parameter in inspect.signature(fn).parameters.items()
+        if parameter.kind is not inspect.Parameter.VAR_KEYWORD
+    ]
+
+    unknown = set(_PARAM_DOCS.get(fn.__name__, {})) - set(parameters)
+    if unknown:
+        raise RuntimeError(
+            f"server._PARAM_DOCS[{fn.__name__!r}] describes {sorted(unknown)}, which "
+            f"{fn.__name__} does not take — renamed, or a typo"
+        )
+
+    for name in parameters:
+        annotation = hints.get(name)
+        if annotation is None or _has_description(annotation):
+            continue
+        text = documented.get(name)
+        if text is None:
+            raise RuntimeError(
+                f"tool {fn.__name__!r} advertises {name!r} with no description — add one "
+                "to server._PARAM_DOCS (or to _COMMON_PARAMS if it means the same "
+                "thing on every tool that takes it)"
+            )
+        fn.__annotations__[name] = Annotated[annotation, Field(description=text)]
 
 
 def _tool(*selectors: str, projectless: bool = False) -> Callable[[F], F]:
@@ -322,6 +1709,7 @@ def _tool(*selectors: str, projectless: bool = False) -> Callable[[F], F]:
                 f"tool {fn.__name__!r} has no entry in server._ANNOTATIONS — classify it "
                 "(read, add, set or edit) before registering it"
             )
+        _describe_params(fn)
         register = mcp.tool(annotations=_ANNOTATIONS[fn.__name__])
         signature = inspect.signature(fn)
         present = [name for name in names if name in signature.parameters]
@@ -353,6 +1741,30 @@ def _tool(*selectors: str, projectless: bool = False) -> Callable[[F], F]:
     return decorator
 
 
+#: What `path` means, stated once and attached to the parameter itself rather
+#: than repeated in 89 docstrings. It rides the advertised JSON schema as the
+#: parameter's `description`, which is where a client — and a directory
+#: grading this server's tools — looks for what an argument means: the schema
+#: alone says only `string | null`, and "the optional `path`" being the one
+#: unexplained argument is what Glama's tool-definition score reported, tool
+#: after tool, on 2026-09-15 (docs/plans/LAUNCH.md § Step 4).
+#:
+#: The text is the two bind states `_confine` actually implements, because an
+#: agent meets both: bound, it is ceremony with one accepted value; unbound,
+#: it is the whole address.
+ProjectPath = Annotated[
+    str | None,
+    Field(
+        description=(
+            "The project directory to act on. Omit it — the usual case — when this "
+            "server was started as `proofcut -C DIR mcp`: it then resolves to that "
+            "one bound project, a relative path resolves against it, and a path "
+            "outside it is refused by name. Unbound, `path` is the whole address "
+            "and omitting it refuses rather than guessing."
+        )
+    ),
+]
+
 @_tool()
 def ping() -> dict[str, str]:
     """Check that the proofcut MCP server is alive, and report its version."""
@@ -377,7 +1789,7 @@ def doctor() -> dict[str, Any]:
 
 
 @_tool()
-def init(path: str | None = None,
+def init(path: ProjectPath = None,
     *, name: str | None = None) -> dict[str, Any]:
     """Create a proofcut project directory at `path`.
 
@@ -391,7 +1803,7 @@ def init(path: str | None = None,
 
 
 @_tool()
-def migrate_project(path: str | None = None,
+def migrate_project(path: ProjectPath = None,
     *, plan: bool = False) -> dict[str, Any]:
     """Bring an older project manifest forward to the current schema version.
 
@@ -408,7 +1820,7 @@ def migrate_project(path: str | None = None,
 
 @_tool()
 def import_media(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     source: str,
     clip_id: str | None = None,
@@ -452,7 +1864,7 @@ def import_media(
 
 @_tool()
 def list_media(
-    path: str | None = None, *, source_dir: str, recursive: bool = True
+    path: ProjectPath = None, *, source_dir: str, recursive: bool = True
 ) -> dict[str, Any]:
     """List media files under `source_dir` that `import_media` could register.
 
@@ -469,7 +1881,7 @@ def list_media(
 
 @_tool()
 def clip_role(
-    path: str | None = None,
+    path: ProjectPath = None,
     *, clip_id: str, role: str | None = None, reset: bool = False
 ) -> dict[str, Any]:
     """Read or set a clip's import role — voiceover vs footage.
@@ -489,7 +1901,7 @@ def clip_role(
 
 
 @_tool()
-def clip_rm(path: str | None = None, *, clip_id: str) -> dict[str, Any]:
+def clip_rm(path: ProjectPath = None, *, clip_id: str) -> dict[str, Any]:
     """Un-register a clip `import_media` added, when nothing depends on it yet.
 
     Refused, naming every reason, if the clip is on the timeline, cued,
@@ -502,7 +1914,7 @@ def clip_rm(path: str | None = None, *, clip_id: str) -> dict[str, Any]:
 
 
 @_tool()
-def attach_transcript(path: str | None = None,
+def attach_transcript(path: ProjectPath = None,
     *, clip_id: str, transcript_path: str) -> dict[str, Any]:
     """Ingest an existing word-timed whisper JSON as this clip's transcript.
 
@@ -526,7 +1938,7 @@ def attach_transcript(path: str | None = None,
 
 @_tool()
 def transcribe(
-    path: str | None = None,
+    path: ProjectPath = None,
     *, clip_id: str, model: str = "turbo", language: str | None = None
 ) -> dict[str, Any]:
     """Transcribe a clip's own media with whisper, and attach the result.
@@ -536,13 +1948,19 @@ def transcribe(
     long recording — there is no timeout, so let it run. Reports
     `near_duplicates`, `suspect_durations`, `overlaps` and `repeats` the same
     way attach_transcript does.
+
+    **It replaces whatever transcript the clip already had**, and it is the
+    one mutation `undo` cannot reach: a transcript is its own file, so this
+    writes neither the manifest nor the timeline and nothing is snapshotted.
+    There is no cache either — a second call spends the same minutes again.
+    `get_transcript` first if a transcript might already be there.
     """
     return ops.transcribe(path, clip_id, model=model, language=language)
 
 
 @_tool()
 def hear(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     start: float,
@@ -581,7 +1999,7 @@ def hear(
 
 @_tool()
 def get_transcript(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     first: int | None = None,
@@ -599,7 +2017,7 @@ def get_transcript(
 
 @_tool()
 def resolve_phrase(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     phrase: str,
@@ -629,7 +2047,7 @@ def resolve_phrase(
 
 
 @_tool()
-def transcript_checks(path: str | None = None,
+def transcript_checks(path: ProjectPath = None,
     *, clip_id: str | None = None) -> dict[str, Any]:
     """Re-check an already-attached transcript against itself.
 
@@ -651,7 +2069,7 @@ def transcript_checks(path: str | None = None,
 
 @_tool()
 def attribute_speakers(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     streams: list[int] | None = None,
@@ -697,7 +2115,7 @@ def attribute_speakers(
 
 @_tool()
 def describe(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str | None = None,
     window: float = 10.0,
@@ -726,13 +2144,17 @@ def describe(
     stops mid-fact and reads exactly like a complete one, and a window is
     never evidence of a *continuous shot*: the model narrates across a cut
     inside one as though it were a single take.
+
+    The descriptions are written into the project, and `force` replaces the
+    ones a clip already has; without it an already-described clip is skipped,
+    so a repeat costs nothing and changes nothing.
     """
     return ops.describe(path, clip_id, window=window, force=force, plan=plan)
 
 
 @_tool()
 def describe_ls(
-    path: str | None = None,
+    path: ProjectPath = None,
     *, clip_id: str | None = None, contains: str | None = None
 ) -> dict[str, Any]:
     """Read the footage descriptions, to find b-roll by what is in it.
@@ -772,7 +2194,20 @@ def card_templates() -> dict[str, Any]:
 
 
 @_tool(projectless=True)
-def fonts(path: str | None = None, install: bool = False) -> dict[str, Any]:
+def fonts(
+    path: Annotated[
+        str | None,
+        Field(
+            description=(
+                "A project directory, or nothing. Omitting it means *no project* "
+                "here — never the bound one — and reports proofcut's own default "
+                "caption face; with a project, it reports the face that project's "
+                "caption style would burn."
+            )
+        ),
+    ] = None,
+    install: bool = False,
+) -> dict[str, Any]:
     """Will the caption font actually draw on this machine?
 
     Reports two answers side by side and does not merge them: `fontconfig`
@@ -792,7 +2227,7 @@ def fonts(path: str | None = None, install: bool = False) -> dict[str, Any]:
 
 @_tool()
 def card_new(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     name: str,
     template: str,
@@ -831,7 +2266,7 @@ def card_new(
 
 @_tool()
 def card_render(
-    path: str | None = None,
+    path: ProjectPath = None,
     *, name: str, width: int | None = None, height: int | None = None
 ) -> dict[str, Any]:
     """Rasterise `assets/cards/<name>.svg` into the PNG `card:<name>` shows.
@@ -856,7 +2291,7 @@ def card_render(
 
 
 @_tool()
-def card_reauthor(path: str | None = None,
+def card_reauthor(path: ProjectPath = None,
     *, name: str | None = None, plan: bool = False) -> dict[str, Any]:
     """Draw recorded cards again at the shape this project renders at now.
 
@@ -879,7 +2314,7 @@ def card_reauthor(path: str | None = None,
 
 
 @_tool()
-def card_safe_zones(path: str | None = None,
+def card_safe_zones(path: ProjectPath = None,
     *, card: str, platform: str) -> dict[str, Any]:
     """Measure a rendered card's ink in and around a platform's reserved band.
 
@@ -900,7 +2335,7 @@ def card_safe_zones(path: str | None = None,
 
 @_tool()
 def pack_apply(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     pack_path: str,
     variant: str = "default",
@@ -942,7 +2377,7 @@ def pack_apply(
 
 
 @_tool()
-def pack_activate(path: str | None = None,
+def pack_activate(path: ProjectPath = None,
     *, variant: str, plan: bool = False) -> dict[str, Any]:
     """Switch the active pack variant to one already snapshotted by pack_apply.
 
@@ -953,7 +2388,7 @@ def pack_activate(path: str | None = None,
 
 
 @_tool()
-def pack_apply_captions(path: str | None = None,
+def pack_apply_captions(path: ProjectPath = None,
     *, preset: str, plan: bool = False) -> dict[str, Any]:
     """Apply the active pack variant's caption preset, through caption_style.
 
@@ -969,7 +2404,18 @@ def pack_apply_captions(path: str | None = None,
 
 @_tool(projectless=True)
 def pack_show(
-    pack_path: str | None = None, path: str | None = None, variant: str | None = None
+    pack_path: str | None = None,
+    path: Annotated[
+        str | None,
+        Field(
+            description=(
+                "A project directory, or nothing. Omitting it means *no project* "
+                "here — never the bound one — so `pack_path` alone reads the file "
+                "fresh; given, it reports what that project has applied."
+            )
+        ),
+    ] = None,
+    variant: str | None = None,
 ) -> dict[str, Any]:
     """What a pack declares — from its file, a project's snapshot, or both.
 
@@ -983,7 +2429,7 @@ def pack_show(
 
 
 @_tool()
-def pack_status(path: str | None = None) -> dict[str, Any]:
+def pack_status(path: ProjectPath = None) -> dict[str, Any]:
     """Active pack variant, and which cards/captions have drifted from it.
 
     A card is `stale` when its own recorded pack_hash no longer matches the
@@ -997,7 +2443,7 @@ def pack_status(path: str | None = None) -> dict[str, Any]:
 
 @_tool()
 def cue_add(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     word_index: int | None = None,
@@ -1051,7 +2497,7 @@ def cue_add(
 
 @_tool()
 def cue_rm(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     word_index: int | None = None,
@@ -1071,7 +2517,7 @@ def cue_rm(
 
 
 @_tool()
-def cue_ls(path: str | None = None,
+def cue_ls(path: ProjectPath = None,
     *, clip_id: str | None = None) -> dict[str, Any]:
     """List the picture cue table, each entry echoed with its resolved word.
 
@@ -1084,7 +2530,7 @@ def cue_ls(path: str | None = None,
 
 @_tool()
 def cue_reresolve(
-    path: str | None = None,
+    path: ProjectPath = None,
     *, clip_id: str | None = None, apply: bool = False
 ) -> dict[str, Any]:
     """Re-resolve every phrase-addressed cue, unspoken mark and music-bed
@@ -1108,7 +2554,7 @@ def cue_reresolve(
 
 
 @_tool()
-def assets(path: str | None = None) -> dict[str, Any]:
+def assets(path: ProjectPath = None) -> dict[str, Any]:
     """Every asset a cue can point at — clip or card — for an assets pane.
 
     The cue vocabulary is `clip_id` or `card:name`, so this lists both: each
@@ -1123,7 +2569,7 @@ def assets(path: str | None = None) -> dict[str, Any]:
 
 @_tool()
 def unspoken_add(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     word_index: int | None = None,
@@ -1160,7 +2606,7 @@ def unspoken_add(
 
 @_tool()
 def unspoken_rm(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     word_index: int | None = None,
@@ -1181,7 +2627,7 @@ def unspoken_rm(
 
 
 @_tool()
-def unspoken_ls(path: str | None = None) -> dict[str, Any]:
+def unspoken_ls(path: ProjectPath = None) -> dict[str, Any]:
     """Every word marked never-spoken, with what the transcript says now.
 
     Read-only. `stale` is a mark whose recorded text and current text
@@ -1194,7 +2640,7 @@ def unspoken_ls(path: str | None = None) -> dict[str, Any]:
 
 @_tool()
 def unspoken_detect(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     render: str,
     clip_id: str | None = None,
@@ -1238,7 +2684,7 @@ def unspoken_detect(
 
 
 @_tool()
-def build_shots(path: str | None = None,
+def build_shots(path: ProjectPath = None,
     *, fps: float | None = None) -> dict[str, Any]:
     """Project the cue table into contiguous shots over the current edit.
 
@@ -1257,7 +2703,7 @@ def build_shots(path: str | None = None,
 
 @_tool()
 def seed_timeline(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     remove_silences: bool = True,
@@ -1269,6 +2715,11 @@ def seed_timeline(
 
     `edit_expr` passes auto-editor's edit language straight through, e.g.
     "(or audio:0.03 motion:0.06)".
+
+    Writes `project.otio` and **replaces any timeline already there** — every
+    cut made since the last seed included. It seeds a project rather than
+    re-cutting one, and a re-seed with the same arguments lands the same
+    timeline. The old one is snapshotted first, so `undo` puts it back.
     """
     return ops.seed_timeline(
         path,
@@ -1282,7 +2733,7 @@ def seed_timeline(
 
 @_tool()
 def cut_by_transcript(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     cut: Sequence[Sequence[int]] | None = None,
@@ -1334,7 +2785,7 @@ def cut_by_transcript(
 
 @_tool()
 def cut_by_time(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     spans: Sequence[Sequence[float]],
     pad: float = 0.0,
@@ -1365,13 +2816,19 @@ def cut_by_time(
 
     Refused the same way cut_by_transcript is if a span overlaps a word with a
     suspect duration; `confirm_suspect=True` or `plan=True` behave the same.
+
+    **A second call is not the same call.** These are render timestamps, and
+    this cut moves everything after it, so the same numbers name different
+    material next time — take them off a fresh watch rather than reusing a
+    list across two calls. That is also why one call takes every span at
+    once.
     """
     return ops.cut_by_time(path, spans=spans, pad=pad, confirm_suspect=confirm_suspect, plan=plan)
 
 
 @_tool()
 def restore(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     ranges: Sequence[Sequence[int]],
@@ -1410,7 +2867,7 @@ def restore(
 
 @_tool()
 def locate(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     first: int | None = None,
@@ -1466,7 +2923,7 @@ def locate(
 
 
 @_tool()
-def timeline_status(path: str | None = None) -> dict[str, Any]:
+def timeline_status(path: ProjectPath = None) -> dict[str, Any]:
     """Report the current timeline: duration, segment count, undo depth.
 
     `head`/`tail` echo the cold open / finishing pass set with the `head`/
@@ -1484,7 +2941,7 @@ def timeline_status(path: str | None = None) -> dict[str, Any]:
 
 
 @_tool()
-def timeline_view(path: str | None = None,
+def timeline_view(path: ProjectPath = None,
     *, clip_id: str | None = None) -> dict[str, Any]:
     """The whole edit at once: segments, cut seams, and every word's fate.
 
@@ -1518,7 +2975,7 @@ def timeline_view(path: str | None = None,
 
 @_tool()
 def properties(
-    path: str | None = None,
+    path: ProjectPath = None,
     *, clip_id: str | None = None, word_index: int | None = None
 ) -> dict[str, Any]:
     """Project/clip/cue detail for a properties inspector, composed only.
@@ -1536,7 +2993,7 @@ def properties(
 
 @_tool()
 def finish_report(
-    path: str | None = None,
+    path: ProjectPath = None,
     *, framing: bool = False, holds: bool = False, continuity: bool = False
 ) -> dict[str, Any]:
     """Duration/canvas/caption/picture/marks/seams report for Finish mode,
@@ -1576,7 +3033,7 @@ def finish_report(
 
 
 @_tool()
-def undo(path: str | None = None) -> dict[str, Any]:
+def undo(path: ProjectPath = None) -> dict[str, Any]:
     """Roll the project back one mutation — the timeline, the manifest, or both.
 
     Mutating tools snapshot first (`migrate_project` keeps its own backup
@@ -1592,7 +3049,7 @@ def undo(path: str | None = None) -> dict[str, Any]:
 
 @_tool()
 def export(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     output: str,
     export_format: str | None = "kdenlive",
@@ -1653,7 +3110,7 @@ def export(
 
 @_tool()
 def add_captions(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     output: str,
     clip_id: str | None = None,
@@ -1695,7 +3152,7 @@ def add_captions(
 
 
 @_tool()
-def caption_view(path: str | None = None,
+def caption_view(path: ProjectPath = None,
     *, clip_id: str | None = None) -> dict[str, Any]:
     """The captions this timeline would produce, and the style in force.
 
@@ -1713,7 +3170,7 @@ def caption_view(path: str | None = None,
 
 @_tool()
 def caption_style(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     preset: str | None = None,
     font: str | None = None,
@@ -1784,7 +3241,7 @@ def caption_style(
 
 @_tool()
 def canvas(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     size: str | None = None,
     reset: bool = False,
@@ -1813,7 +3270,7 @@ def canvas(
 
 @_tool()
 def head(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     asset: str | None = None,
     src_start: float | None = None,
@@ -1864,7 +3321,7 @@ def head(
 
 @_tool()
 def tail(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     asset: str | None = None,
     seconds: float | None = None,
@@ -1902,7 +3359,7 @@ def tail(
 
 @_tool()
 def music(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     asset: str | None = None,
     clip_id: str | None = None,
@@ -1999,7 +3456,7 @@ def music(
 
 @_tool()
 def vo_extend(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     word_index: int | None = None,
@@ -2058,7 +3515,7 @@ def vo_extend(
 
 @_tool()
 def vo_synth(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     text: str,
     voice: str | None = None,
@@ -2098,7 +3555,10 @@ def vo_synth(
     to the script's before the WER is scored.
 
     Renders are cached under `cache/synth/` per (voice, text, cap), so a repeat
-    call is free and a new `seed` range renders only what it lacks. With
+    call spends no GPU and a new `seed` range renders only what it lacks. The
+    *splice* is not cached: calling again with the same `clip_id` +
+    `word_index` opens a second gap and splices a second time, so undo or
+    check the timeline rather than re-calling to "make sure". With
     `clip_id` + `word_index` the winner is registered and spliced into that
     clip's track right after the word, through `vo_extend`'s own mechanism —
     same one-way consequences (melt routing, `restore` refusing across the
@@ -2126,7 +3586,7 @@ def vo_synth(
 
 @_tool()
 def hold_add(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     gap_word_index: int | None = None,
@@ -2196,7 +3656,7 @@ def hold_add(
 
 
 @_tool()
-def hold_rm(path: str | None = None,
+def hold_rm(path: ProjectPath = None,
     *, clip_id: str, gap_word_index: int) -> dict[str, Any]:
     """Drop a hold's record and its owned cue — the spliced silence stays.
 
@@ -2210,7 +3670,7 @@ def hold_rm(path: str | None = None,
 
 @_tool()
 def hold_under(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     asset: str,
@@ -2252,13 +3712,20 @@ def hold_under(
 
 
 @_tool()
-def hold_under_rm(path: str | None = None, *, clip_id: str, word_index_start: int) -> dict[str, Any]:
-    """Drop the film audio under the VO addressed by `(clip_id, word_index_start)`."""
+def hold_under_rm(path: ProjectPath = None, *, clip_id: str, word_index_start: int) -> dict[str, Any]:
+    """Drop the film audio under the VO addressed by `(clip_id, word_index_start)`.
+
+    The inverse of `hold_under`: that span plays the VO alone again, and the
+    music bed — which a hold gates out — comes back across it. Refused when
+    no entry sits at that address, so a second call says so rather than
+    doing nothing quietly. The audio was a manifest entry, not a splice, so
+    no word moves and `undo` restores it.
+    """
     return ops.hold_under_rm(path, clip_id, word_index_start)
 
 
 @_tool()
-def hold_ls(path: str | None = None) -> dict[str, Any]:
+def hold_ls(path: ProjectPath = None) -> dict[str, Any]:
     """Every stored hold plus its live-resolved plan.
 
     A hold that cannot currently resolve is reported inline (`hold_error`),
@@ -2271,7 +3738,7 @@ def hold_ls(path: str | None = None) -> dict[str, Any]:
 
 
 @_tool()
-def hold_check(path: str | None = None,
+def hold_check(path: ProjectPath = None,
     *, render: str) -> dict[str, Any]:
     """Transcribe each hold's own span off `render` and check its seams.
 
@@ -2287,7 +3754,7 @@ def hold_check(path: str | None = None,
 
 @_tool()
 def finish_check(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     final: str,
     holds: list[dict[str, Any]] | None = None,
@@ -2350,9 +3817,18 @@ def finish_check(
 
 @_tool("path", "dest")
 def reel(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
-    dest: str,
+    dest: Annotated[
+        str,
+        Field(
+            description=(
+                "Where the derived project is created. It is a project selector "
+                "too, not a file, so a bound server confines it to the same tree "
+                "as `path` rather than letting a reel be written anywhere on disk."
+            )
+        ),
+    ],
     start: float,
     end: float,
     canvas: str | None = None,
@@ -2413,7 +3889,7 @@ def reel(
 
 @_tool()
 def reframe(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str | None = None,
     rect: str | None = None,
@@ -2478,7 +3954,7 @@ def reframe(
 
 @_tool()
 def reframe_detect(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str | None = None,
     threshold: float = ops.SCENE_THRESHOLD,
@@ -2528,7 +4004,7 @@ def reframe_detect(
 
 @_tool()
 def reframe_coverage(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str | None = None,
     threshold: float = ops.SCENE_THRESHOLD,
@@ -2575,7 +4051,7 @@ def reframe_coverage(
 
 @_tool()
 def continuity_check(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     gap: float = ops.CONTINUITY_GAP,
     min_shot: float = ops.CONTINUITY_MIN_SHOT,
@@ -2620,7 +4096,7 @@ def continuity_check(
 
 
 @_tool()
-def continuity_accept(path: str | None = None,
+def continuity_accept(path: ProjectPath = None,
     *, clip_id: str, word_index: int, kind: str) -> dict[str, Any]:
     """Acknowledge one continuity finding once — a deliberate rhyme, never
     re-reported every run.
@@ -2636,14 +4112,23 @@ def continuity_accept(path: str | None = None,
 
 
 @_tool()
-def continuity_reject(path: str | None = None,
+def continuity_reject(path: ProjectPath = None,
     *, clip_id: str, word_index: int, kind: str) -> dict[str, Any]:
-    """Unmark a continuity finding, putting it back into `continuity_check`."""
+    """Unmark a continuity finding, putting it back into `continuity_check`.
+
+    The inverse of `continuity_accept`: the acknowledgement is dropped from
+    the manifest, so every later run reports that finding again instead of
+    passing over it. Addressed exactly as it was accepted (`clip_id`,
+    `word_index`, `kind`), and refused when no accepted finding of that kind
+    sits there — so a second call says so rather than quietly doing nothing.
+    Nothing on the timeline moves either way; an acknowledgement is a
+    manifest entry, and `undo` puts it back.
+    """
     return ops.continuity_reject(path, clip_id, word_index, kind)
 
 
 @_tool()
-def continuity_ls(path: str | None = None) -> dict[str, Any]:
+def continuity_ls(path: ProjectPath = None) -> dict[str, Any]:
     """Every accepted continuity finding, with whether it is still live and
     whether it still matches what was accepted (`stale`).
 
@@ -2659,7 +4144,7 @@ def continuity_ls(path: str | None = None) -> dict[str, Any]:
 # schema, and the tool then answers `is_error` from a perfectly correct body.
 @_tool()
 def reframe_sheet(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     out: str | None = None,
     moments: list[float] | None = None,
@@ -2713,6 +4198,11 @@ def reframe_sheet(
     project-wide number on every page, so it is the same window `reframe
     --src-start` addresses. Under `extremes` the detector only probes the page
     you asked for.
+
+    `out` is the one thing here that writes where you say: the montage lands
+    at that path, **replacing whatever file is there**. Without it a page is
+    written into the project's own sheet cache, which nothing reads back as
+    authored state.
     """
     report = ops.reframe_sheet(
         path, out=out, moments=moments, extremes=extremes, page=page, per_page=per_page
@@ -2734,7 +4224,7 @@ def reframe_sheet(
 # returns a picture.
 @_tool()
 def shot_sheet(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     page: int = 0,
     per_page: int = ops.SHOT_SHEET_PER_PAGE,
@@ -2767,6 +4257,11 @@ def shot_sheet(
     **What you see here is a hypothesis, not a check.** Nothing downstream
     reads a verdict formed off this sheet — confirm one with an op that
     measures (`check_frames`, `verify`, `black`, `reframe_coverage`).
+
+    `out` is the one thing here that writes where you say: the montage lands
+    at that path, **replacing whatever file is there**. Without it a page is
+    written into the project's own sheet cache, which nothing reads back as
+    authored state.
     """
     report = ops.shot_sheet(path, page=page, per_page=per_page, out=out)
     if not report.get("sheet"):
@@ -2779,7 +4274,7 @@ def shot_sheet(
 # and the tool answers `is_error` from a correct body.
 @_tool()
 def footage_sheet(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     mode: str = "auto",
@@ -2822,6 +4317,11 @@ def footage_sheet(
     where that matters most, because it is read in order to *choose* footage.
     `synopsis` is where a person says what a clip is; a tile shows what the
     camera saw, which is a different fact.
+
+    `out` is the one thing here that writes where you say: the montage lands
+    at that path, **replacing whatever file is there**. Without it a page is
+    written into the project's own sheet cache, which nothing reads back as
+    authored state.
     """
     report = ops.footage_sheet(
         path, clip_id, mode=mode, interval=interval, page=page, per_page=per_page, out=out
@@ -2833,7 +4333,7 @@ def footage_sheet(
 
 @_tool()
 def thumbnail(
-    path: str | None = None,
+    path: ProjectPath = None,
     *, clip_id: str, at: float, interval: float = ops.THUMB_INTERVAL
 ) -> dict[str, Any]:
     """One filmstrip frame for `clip_id`, at the source time nearest `at`.
@@ -2851,7 +4351,7 @@ def thumbnail(
 # `-> Any` for the reason spelled out above `shot_sheet`.
 @_tool()
 def contact_sheet(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     seconds: float = ops.FIRST_LOOK_SECONDS,
@@ -2884,7 +4384,7 @@ def contact_sheet(
 
 @_tool()
 def synopsis(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str | None = None,
     text: str | None = None,
@@ -2912,7 +4412,7 @@ def synopsis(
 
 
 @_tool()
-def broll_brief(path: str | None = None,
+def broll_brief(path: ProjectPath = None,
     *, fps: float | None = None) -> dict[str, Any]:
     """The whole b-roll question as data: what there is, and what it goes under.
 
@@ -2937,7 +4437,7 @@ def broll_brief(path: str | None = None,
 
 @_tool()
 def verify(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     render: str,
     clip_id: str | None = None,
@@ -2998,7 +4498,7 @@ def verify(
 
 
 @_tool()
-def check_frames(path: str | None = None,
+def check_frames(path: ProjectPath = None,
     *, target: str | None = None, fps: float | None = None) -> dict[str, Any]:
     """Check an export's frame count against what the timeline says it should be.
 
@@ -3025,7 +4525,7 @@ def check_frames(path: str | None = None,
 
 @_tool()
 def film_check(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     reference: str | None = None,
     reset: bool = False,
@@ -3057,7 +4557,7 @@ def film_check(
 
 @_tool()
 def import_edit(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     document: str,
     clip_id: str | None = None,
@@ -3096,7 +4596,7 @@ def import_edit(
 
 @_tool()
 def check_black(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     target: str,
     fps: float | None = None,
@@ -3118,7 +4618,7 @@ def check_black(
 # `-> Any` for the reason spelled out above `shot_sheet`.
 @_tool()
 def spot_frames(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     target: str,
     count: int = 6,
@@ -3146,7 +4646,7 @@ def spot_frames(
 
 @_tool()
 def speech_overlap(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     at: float = 0.0,
@@ -3202,7 +4702,7 @@ def speech_overlap(
 
 @_tool()
 def attenuate_noises(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     clip_id: str,
     db: float = -12.0,
@@ -3246,7 +4746,7 @@ def attenuate_noises(
 
 
 @_tool()
-def proxy_transcode(path: str | None = None,
+def proxy_transcode(path: ProjectPath = None,
     *, clip_id: str, force: bool = False) -> dict[str, Any]:
     """Make footage the preview cannot decode playable in the window.
 
@@ -3273,7 +4773,7 @@ def proxy_transcode(path: str | None = None,
 
 @_tool()
 def review_add(
-    path: str | None = None,
+    path: ProjectPath = None,
     *,
     name: str,
     source: str,
@@ -3287,6 +4787,11 @@ def review_add(
     served round has something to stream and a verdict has something to
     attach to.
 
+    Registering a `name` that already exists **replaces** that entry, and the
+    verdict recorded against it stays — so re-pointing a name at a different
+    file leaves yesterday's answer attached to today's bytes. Register the new
+    file under a new name unless replacing it is what you mean.
+
     `kind` is one of `render`, `sheet`, `ab`, `control`. **A `control`
     requires `baseline`, the name of an already-registered item, and the two
     files' sha256 must match — a mismatch refuses the call.** This is the
@@ -3299,7 +4804,7 @@ def review_add(
 
 
 @_tool()
-def review_verdict(path: str | None = None,
+def review_verdict(path: ProjectPath = None,
     *, name: str, verdict: str, note: str | None = None) -> dict[str, Any]:
     """Record a verdict against a review item registered by `review_add`.
 
@@ -3307,12 +4812,16 @@ def review_verdict(path: str | None = None,
     yes/no, "loop"/"hold", or a specific choice by name, and a fixed
     vocabulary would misfit whichever question the next round is actually
     asking.
+
+    Refuses a `name` `review_add` has not registered. Calling it again for
+    the same item **replaces** that item's answer rather than appending one,
+    so a round holds one verdict per item, with the time it was recorded.
     """
     return ops.review_verdict(path, name, verdict, note=note)
 
 
 @_tool()
-def review_list(path: str | None = None) -> dict[str, Any]:
+def review_list(path: ProjectPath = None) -> dict[str, Any]:
     """Every item registered for this project's review round, and its verdict."""
     return ops.review_list(path)
 

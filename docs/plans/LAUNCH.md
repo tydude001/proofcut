@@ -391,7 +391,10 @@ twos, with time to fix what they find.
   claim is not a listing: Glama takes a submission, through the **Add
   Server** button on `glama.ai/mcp/servers` (GitHub OAuth, write access to
   the repo verified), and two days public listed nothing on its own.
-  Submitted 2026-09-15 and **live the same day, rated A**. The
+  Submitted 2026-09-15 and **live the same day**; the badge read `rated A`
+  on the listing's first hours and `rated B` once the tool-definition half of
+  the score landed (HISTORY.md § The tool definitions were graded, and `path`
+  was the gap). The
   awesome-list PR is open and waits on that maintainer
   (punkpeye/awesome-mcp-servers#14483, one line, mergeable).
   Shipped — see HISTORY.md § The launch clip's product defects, fixed,
