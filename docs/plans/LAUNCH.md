@@ -380,7 +380,9 @@ twos, with time to fix what they find.
   `mcp-name: io.github.tydude001/proofcut` in the README *PyPI holds*, and
   0.29.0's predates the marker README.md now carries. So the block
   (`registryType: "pypi"`, `identifier: "proofcut"`, the version, `transport:
-  stdio`) goes in with the next upload, not before. `mcp-publisher
+  stdio`) goes in with the next upload, not before. **It is in `server.json`
+  as of 0.29.1, validated** —
+  HISTORY.md § The registry entry names its PyPI package. `mcp-publisher
   validate` checks the file against the registry itself and publishes
   nothing, so it settles the entry before the handoff. A publish proves the
   `io.github.tydude001` namespace with a GitHub device login, and **the token

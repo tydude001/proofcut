@@ -15864,3 +15864,37 @@ them in `test_portability`, which never changed. The fixture now sets
 `USERPROFILE` and asserts setup's folder is inside `tmp_path`; the whisper
 tests find the `uv` stub as `uv.cmd`, which `shutil.which` skips under a
 faked linux. No assertion changed.
+
+## The registry entry names its PyPI package — 2026-09-16
+
+`server.json` gained its `packages` block: `pypi`, `proofcut`, `0.29.1`,
+`runtimeHint: uvx`, stdio, and one positional argument, `mcp`. Without that
+argument a client runs `uvx proofcut` and gets the CLI's help rather than a
+server. `mcp-publisher validate` passes against the live registry. The wheel
+built from this commit carries `mcp-name: io.github.tydude001/proofcut` in
+its `METADATA`, which is what the registry looks for on PyPI at publish time.
+Launched as a client would launch it (`uvx --from <wheel> proofcut mcp`,
+outside the repo, no venv active), it answered `initialize` as `proofcut`
+0.29.1 and listed 93 tools.
+
+**0.29.1 is a patch bump on purpose.** Nothing became callable after
+0.29.0. The upload exists to put the README marker on PyPI, because PyPI
+never takes a second file for 0.29.0. `tests/test_version.py` now holds the
+package entry's version too. The registry installs exactly that version, so
+a bump that missed it would advertise the previous wheel.
+
+**No `environmentVariables` in the block.** A client may prompt for each
+one, and the resolvers' seven optional `PROOFCUT_*` paths are what
+`proofcut doctor` and `proofcut setup` already handle. Listing them would
+also be one more hand-typed list to drift.
+
+Glama's `rated B` was re-read the same day, and it is stale. The listing was
+scored at 2026-09-15 23:15Z, before `e2fbdd9` documented all 475 arguments,
+and its parameter tables still show every description blank. The one
+structural mark left is `Tool Count 1/5` at 92 tools, which is the surface
+docs/plans/MCP.md chose to keep behind deferred loading.
+
+The upload and the registry publish are Tyler's hand, in that order:
+`uv build && uv publish`, then `mcp-publisher login github` and
+`mcp-publisher publish` back to back, since the login token lasts five
+minutes.

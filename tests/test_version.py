@@ -82,8 +82,11 @@ def test_every_launch_listing_states_the_package_version() -> None:
     """
     version = proofcut.__version__
     marketplace = _listing(".claude-plugin/marketplace.json")
+    server = _listing("server.json")
     stated = {
-        "server.json": [_listing("server.json")["version"]],
+        # The `pypi` package entry states it again: the registry installs that
+        # exact version, so a bump that missed it advertises the old wheel.
+        "server.json": [server["version"], *(pkg["version"] for pkg in server.get("packages", []))],
         ".claude-plugin/plugin.json": [_listing(".claude-plugin/plugin.json")["version"]],
         ".claude-plugin/marketplace.json": [
             marketplace["version"],
