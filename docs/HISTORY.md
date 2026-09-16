@@ -15469,6 +15469,20 @@ session, not by reading a tool body.
   docstring said the flags were imported. The one test that pinned `""`
   (`test_webui_http`'s agent argv test) now pins `ToolSearch`: the plan
   changed the value, not the rule the test holds.
+  **The three recorded briefs, re-run under it, all pass everything they
+  passed before**, and turn-1 context is 8.1K to 8.4K tokens on each
+  against 58K to 63K. The runs:
+
+  | brief | checks | turns | cost | turn-1 context | wall |
+  |---|---|---|---|---|---|
+  | demo | 9/9 | 31 → 38 | $1.31 → $1.45 | 57,867 → 8,113 | 184 → 134 s |
+  | film | 12/12 | 43 → 45 | $2.27 → $1.56 | 63,329 → 8,220 | 191 → 149 s |
+  | real footage | 9/9 | 77 → 60 | $6.94 → $3.43 | 61,055 → 8,419 | 913 → 414 s |
+
+  The demo's extra turns are its 4 tool searches. Its total context still
+  fell from 1.51M to 1.16M tokens. The real-footage run is not a like-for-like cost
+  comparison: it kept 71 s where the recorded run cut to the brief's 45
+  (TRIAL.md § The fourth runs).
 - **Step 2.** `instructions` went from a 786-byte command order to a
   1,435-byte map (`server.INSTRUCTIONS`): what proofcut is, the tool family
   per phase, the four rules an agent breaks silently, and the three tools to
@@ -15480,8 +15494,18 @@ session, not by reading a tool body.
   cut surfaced it: `footage_sheet`'s `mode` described two of its four modes,
   and called `auto` an interval when it prefers described windows.
 - **Step 4.** `_tool(always_load=True)` sets `_meta["anthropic/alwaysLoad"]`;
-  nothing uses it, and a test pins the empty set until a trial says
-  otherwise.
+  nothing uses it, and a test pins the empty set, because the trial said
+  so. Across the three step 1 runs the agent searched 3 or 4 times per
+  brief, always in batches, and its first search loaded 10 to 20
+  definitions at once. The 24 tools that all three runs searched for include
+  the plan's ten. A second demo run with the plan's top eight marked
+  always-loaded (`import_media`, `cue_add`, `export`, `check_frames`,
+  `verify`, `get_transcript`, `cut_by_transcript`, `seed_timeline`; run
+  `20260916-144351`, a working-tree edit reverted afterwards) also passed
+  9 of 9. It needed 3 searches instead of 4, 37 turns instead of 38, and
+  cost $1.44 instead of $1.45, and its turn-1 context doubled from 8,113 to
+  16,695 tokens. The first search still went out; it fetched fifteen other
+  tools. The eight bought one search and cost every turn of every session.
 - **Step 5.** Measured on the 336 s film, the text the SDK sends was
   `timeline_view` 388 KB, `caption_view` 225 KB and `get_transcript` 118 KB.
   All three are windowed by default now — 300 words (31 KB on the film), 30

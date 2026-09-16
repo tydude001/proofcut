@@ -562,3 +562,88 @@ good take. Its reading was not a defect.
 - **One brief, one model, one run.** The brief named the level, the card's text,
   and where the music starts. A brief that leaves those to taste asks a
   different question.
+
+## The fourth runs — the three briefs under deferred loading — 2026-09-16
+
+docs/plans/MCP.md § Step 1 changed the client every run above used.
+`--tools ""` had stripped Claude Code's tool search along with its built-ins,
+so all of proofcut's definitions were loaded on every turn. The client is
+now `--tools ToolSearch`, which reads no file and runs nothing, and the agent
+fetches definitions as it needs them. The step's done-when was that each
+brief passes what it passed before, with turn-1 context under 12K tokens.
+Each brief was re-run once, unchanged. The film brief is the recorded run's
+byte for byte. The real-footage brief differs only in naming the tool
+proofcut rather than lucid (`brief-proofcut.txt` beside the old one). What
+changed in the code is HISTORY.md § The MCP surface, rebuilt for deferred
+loading.
+
+| brief | run | checks | turns | tool calls | refusals | cost | wall | turn-1 context | distinct tools | searches |
+|---|---|---|---|---|---|---|---|---|---|---|
+| demo | `20260825-165027` | 9/9 | 31 | 30 | 1 | $1.31 | 184 s | 57,867 | 22 | — |
+| demo | `20260916-143015` | 9/9 | 38 | 37 | 1 | $1.45 | 134 s | 8,113 | 22 | 4 |
+| real footage | `20260903-201638` | 9/9 | 77 | 76 | 1 | $6.94 | 913 s | 61,055 | 26 | — |
+| real footage | `20260916-143523` | 9/9 | 60 | 59 | 2 | $3.43 | 414 s | 8,419 | 23 | 4 |
+| film | `20260915-140025` | 12/12 | 43 | 42 | 0 | $2.27 | 191 s | 63,329 | 31 | — |
+| film | `20260916-143238` | 12/12 | 45 | 44 | 1 | $1.56 | 149 s | 8,220 | 27 | 3 |
+
+Tool calls count `ToolSearch`; distinct tools do not. Each run is kept
+beside the one before it, under its own brief's `runs/` directory. The
+projects the older runs left are copied into each run's `proj-after`,
+because a new run's `prepare` deletes `proj`.
+
+**Every check that passed still passes, and turn-1 context is 13–14% of what
+it was.** The searches came in batches:
+- **The first search loaded 10 to 20 definitions.** It was the same start
+  every time: `timeline_status`, `finish_report`, `list_media`,
+  `import_media`, `transcribe`, `get_transcript`, `seed_timeline`.
+- **Each later search fetched a phase's worth:** cues and sheets, then
+  cards, then a check.
+- **29 of the 101 definitions fetched were never called.**
+  `resolve_phrase`, `cue_ls` and `film_check` were fetched and never called
+  on all three runs.
+
+The demo run's seven extra turns are mostly those searches, and it still read
+fewer tokens in total (1.16M against 1.51M).
+
+**The refusals are ordering slips, not regressions.** All three new runs
+called `finish_report` before anything was seeded, and got the refusal that
+says to seed first. The first demo run made the same slip with
+`timeline_status`. The real run's second refusal was `get_transcript`,
+asked before `transcribe` had run.
+
+**Always-loading the top eight did not pay** (plan § Step 4). The demo brief
+was run once more with `import_media`, `cue_add`, `export`, `check_frames`,
+`verify`, `get_transcript`, `cut_by_transcript` and `seed_timeline` always
+loaded (`20260916-144351`). Against the deferred run:
+- **Checks and refusals:** 9 of 9 passed, with no refusals.
+- **Searches:** 3 against 4. The first search still went out, for fifteen
+  other tools.
+- **Turns and cost:** 37 turns against 38, and $1.44 against $1.45.
+- **Turn-1 context:** 16,695 tokens against 8,113, a cost on every turn of
+  every session.
+
+**The real-footage run chose the other side of its brief's contradiction.**
+The third run found that the fluffs and the aside together left ~79 seconds
+against an asked-for 45. It cut the personal-history digression to reach 45
+and said so. This run kept every line the narrator meant, delivered 71 s
+(1,701 frames, similarity 0.985, 204 heard against 206), and said instead
+that 45 was not reachable without cutting "about 25 seconds of real
+argument", naming the digression as the candidate. Both readings are
+defensible, and the brief's `length` line is not scored. So the cost and
+turn figures above compare two different edits: a longer cut has more
+shots (12 against the third run's 8) and a longer verify.
+It also shows the second trial's queue closing from the agent's side. Item 1
+asked for a tool that says what the source audio holds between two times.
+This run called `hear` five times for it, where the third run had rendered a
+scratch WAV and verified that. Picture was again chosen by subject. With no
+Scream 6 footage, it drew a title card for that line rather than borrow
+another film's footage.
+
+### What these runs do not settle
+
+- **One run per brief, again**, and the demo's seven extra turns may be no
+  more than the variation between two runs of the same client. Nothing here separates the
+  client change from run-to-run noise except turn-1 context, which is
+  deterministic.
+- **Nobody has watched or listened to the three new renders.** They are at
+  each spike's `cut.mp4`.
