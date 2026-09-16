@@ -24,20 +24,22 @@ body:
     validations:
       required: true
   - type: textarea
-    id: summary
-    attributes:
-      label: The summary block
-      description: Everything from `════ summary` to the end of the run.
-      render: text
-    validations:
-      required: true
-  - type: textarea
     id: report
     attributes:
       label: The report
-      description: Drag proofcut-mac-report.zip from your Desktop into this box.
-    validations:
-      required: true
+      description: |
+        Drag proofcut-mac-report.zip from your Desktop onto this box, or click the "Paste, drop, or click to
+        add files" bar under it and pick the zip. GitHub's forms have no separate upload button:
+        a file is attached through a box like this one, and it appears as a link once uploaded.
+        The zip holds the whole run, summary included, so there is nothing to paste.
+  - type: textarea
+    id: summary
+    attributes:
+      label: The summary block (only if the zip would not attach)
+      description: |
+        Everything from `════ summary` to the end of the run. The zip already has it in
+        report.txt, so leave this empty when the zip is attached above.
+      render: text
   - type: dropdown
     id: frames
     attributes:
