@@ -284,6 +284,7 @@ source = { editable = "." }
 dependencies = [
     { name = "mcp" },
     { name = "opentimelineio" },
+    { name = "pydantic" },
 ]
 
 [package.dev-dependencies]
@@ -296,6 +297,7 @@ dev = [
 requires-dist = [
     { name = "mcp", specifier = ">=2" },
     { name = "opentimelineio", specifier = ">=0.18.1" },
+    { name = "pydantic", specifier = ">=2" },
 ]
 
 [package.metadata.requires-dev]
