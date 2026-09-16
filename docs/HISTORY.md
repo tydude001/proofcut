@@ -15214,6 +15214,12 @@ That was a prediction, and only the "louder under a line" half was right.
 - **Nobody has listened to `-5`.** The numbers say it is closer to v8; the
   wiki row `proofcut-native` holds the watch.
 
+**Heard, 2026-09-16.** Tyler played 30 s of `scream-native-5` beside v8 and the
+first 20 s of `longlegs-native-7` beside v10, on matched clips: no music in the
+voice's way in either Scream, no difference between them, and no music audible
+in either Longlegs opening. The loudness change that the numbers put in that
+cold open did not register as a difference.
+
 ## Glama takes a submission, and the probe that missed it — 2026-09-15
 
 § The registry listing recorded that Glama "has no submission page (every
