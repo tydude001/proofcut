@@ -45,12 +45,14 @@ pointer, and the wiki row updates.
 
 ## What is already done, and must not be redone
 
-- **The closed loop has run twice and passed 9 of 9 both times** — the
-  generated demo project on 2026-08-25 (31 turns, 184s, $1.31) and real
+- **The closed loop has run three times and passed every check each time** —
+  the generated demo project on 2026-08-25 (31 turns, 184s, $1.31), real
   footage on 2026-09-03 (77 turns, 914s, $6.94, the agent choosing picture by
   subject, reviewing its own shot sheet, and defeating the duration trap
-  unprompted). TRIAL.md § The result, § The result — real footage. The
-  launch does not need a run; it needs a *recording* of one.
+  unprompted), and a whole film on 2026-09-15 (43 turns, 192s, $2.27, 12 of
+  12, the music and the level and the end card each measured in the delivered
+  file). TRIAL.md § The result, § The result — real footage, § The result — a
+  whole film. The launch does not need a run; it needs a *recording* of one.
 - **The fresh-checkout rehearsal passed on this box**: clone, `uv sync`,
   `lucid doctor`, every command in docs/DEMO.md, the full suite at 1921
   passed. TRIAL.md § The publish rehearsal. What it does not say is anything
@@ -63,8 +65,8 @@ pointer, and the wiki row updates.
   Open-core, a hosted tier and a commercial licence are later calls, and
   **none of them is a launch step** — see § What this plan deliberately does
   not do.
-- **CI runs on three OSes, on GitHub**: Linux and macOS are green and
-  Windows is not yet (HISTORY.md § The second run on macOS and Windows).
+- **CI runs on three OSes, on GitHub, and all three are green** — Linux,
+  macOS and Windows (HISTORY.md § The second run on macOS and Windows).
   The three-OS suite is what lets step 2 ask a Mac to try it at all.
 
 ## Step 1 — the launch asset: a watchable closed loop
@@ -387,8 +389,9 @@ twos, with time to fix what they find.
   claim is not a listing: Glama takes a submission, through the **Add
   Server** button on `glama.ai/mcp/servers` (GitHub OAuth, write access to
   the repo verified), and two days public listed nothing on its own.
-  Submitted 2026-09-15 and **live the same day, rated A**, so the
-  awesome-list PR is the one piece of this step still to open.
+  Submitted 2026-09-15 and **live the same day, rated A**. The
+  awesome-list PR is open and waits on that maintainer
+  (punkpeye/awesome-mcp-servers#14483, one line, mergeable).
   Shipped — see HISTORY.md § The launch clip's product defects, fixed,
   § Glama takes a submission, and the probe that missed it.
 - **A Claude Code plugin.** The agent pane already spawns `claude` against a
