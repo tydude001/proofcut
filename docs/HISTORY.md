@@ -15766,3 +15766,79 @@ diff of the render against the cut, and `check_frames`' exact count.
 LAUNCH.md's title rested on the wider claim and now carries a note saying
 so. Rescript's word-edge drag, the survey's other lead, turned out to be
 built already: the Edit lanes' drag-trim handles and the cut tools' `pad`.
+
+## `proofcut setup`, built — 2026-09-16
+
+PRIOR-ART.md § FableCut, read called install the gap most likely to cost
+proofcut a stranger. docs/plans/INSTALL.md planned the fix off measurements
+made the same day, and Tyler took all four of its decisions: Linux goes
+ahead of LAUNCH.md's install-script gate, the installer is a subcommand,
+Shotcut's melt is used only where doctor crosses melt or the display, and
+PyPI waits until this has shipped.
+
+**What it is.** `proofcut setup` reads doctor's report in-process and, for
+this user and with no sudo, installs only what doctor crossed. That means
+BtbN's static ffmpeg, linked into `~/.local/bin`; auto-editor's release
+binary; Shotcut 26.8.1's portable melt; and whisper, as a uv tool on Python
+3.12 with CPU torch unless `nvidia-smi` answers. Every download is pinned by
+URL and SHA-256. Everything added is recorded: links, folders, the uv tool,
+and the Python uv downloaded for it. `--uninstall` removes exactly that. It
+is CLI-only, on `test_server_stdio`'s `CLI_ONLY` list, because an agent must
+not start a 2 GB download or change PATH unasked. On a Mac or Windows it
+refuses and points at doctor's fixes and the trial kits.
+
+**Measured in clean containers, as a non-root user.** Each run was uv's
+installer, a copy of the checkout, `uvx --from <checkout> proofcut setup
+--yes`, and then DEMO.md end to end in `mac_trial.sh`'s own step format, so
+`scripts/trial_check.py` judged it unchanged. `setup --uninstall` came last,
+with a listing of `$HOME` diffed against the one taken before setup.
+
+| | ubuntu:24.04 | fedora:latest (44) | fedora, no desktop libraries |
+|---|---|---|---|
+| Added to the image | espeak-ng, a font, 15 desktop library packages | the same, by soname | espeak-ng, a font |
+| setup | 39 s; all four pieces | 41 s; all four | ffmpeg, whisper and auto-editor installed; melt refused, naming the 17 missing libraries, nothing of it kept |
+| DEMO.md | ALL STEPS RAN | ALL STEPS RAN | stopped at the render |
+| frames | 289 of 289, delta 0 | 289 of 289, delta 0 | — |
+| verify | 34 of 34 words, similarity 1.0 | 34 of 34, 0.971 | — |
+| master, score | −16.1 LUFS; bed 10.2 dB clear of its wrong seconds | −16.1; 10.2 dB | — |
+| b-roll frames | BLUE and RUST, each 2 from its colour | 2 and 3 | — |
+| after `--uninstall` | listing unchanged | unchanged | unchanged |
+
+These are the HISTORY.md § A stranger's install runs repeated, with no
+`xvfb-run`, no RPM Fusion and no distribution melt. `QT_QPA_PLATFORM=offscreen`
+was the only setting. The listing excludes what the demo writes rather than
+setup: the render scratch, PulseAudio's runtime files, and bytecode caches in
+proofcut's own Python 3.13. A `command -v ffmpeg` after uninstall still
+printed the removed link. That was bash's hash of a path the same shell had
+run, and the listing, which includes `~/.local/bin`, shows it gone.
+
+**The first container run found two defects, both fixed before the run
+above:**
+
+- **auto-editor 31.6.0's Linux binary links `libgomp.so.1`, which a bare
+  Ubuntu lacks, and doctor called it ✓.** The row's version field was the
+  loader's own refusal, `error while loading shared libraries: libgomp.so.1`,
+  because the probe took the first line of any output as a version. `seed`
+  was the first to fail. Doctor now wants a number from an exit 0 and names
+  the library's package. Setup `ldd`-checks the binary and keeps nothing it
+  cannot run. The earlier Ubuntu run never met this, because apt's melt
+  pulled libgomp in.
+- **Each piece's reason was the resolver's whole refusal**, advice included.
+  On Linux that advice now begins with `proofcut setup`, so setup's plan
+  recommended itself. A reason is now the refusal's first sentence.
+  whisper's own not-found message gained the `--python 3.12` pin the doctor
+  fix already had.
+
+**Two design points changed from the plan while building.** melt and
+auto-editor are not linked onto PATH. Their resolvers search setup's folder
+first (`deps.py`), because a link loses to Fedora's `/usr/bin/mlt-melt`,
+which `melt_command` searches before `melt` and which draws nothing
+headless. Only ffmpeg is linked, because proofcut and whisper's `audio.py`
+both call it by bare name. And BtbN's pin is a month-end build: its dated
+daily builds are deleted after a few weeks, and month-ends go back to 2024.
+
+Step 1 of the plan shipped with it. Doctor's whisper fix pins Python 3.12,
+since `uv pip compile` resolves no torch for an Intel Mac above it. Its Linux
+fixes lead with `proofcut setup`, and the headless-display fix names
+Shotcut's melt beside `xvfb-run`. Logs and images:
+`~/proofcut-work/spikes/install-paths/`.

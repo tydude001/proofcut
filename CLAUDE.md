@@ -69,7 +69,8 @@ How a stranger gets from a bare machine to a checked render — doctor's
 advice corrected, a no-sudo Linux installer that fills only doctor's ✗s,
 where it lives, the PyPI name, and why Linux goes ahead of LAUNCH.md's
 install-script gate — is [docs/plans/INSTALL.md](docs/plans/INSTALL.md),
-written 2026-09-16 off PRIOR-ART.md's FableCut read. It measured **Shotcut's
+written 2026-09-16 off PRIOR-ART.md's FableCut read and built for Linux the
+same day (HISTORY.md § `proofcut setup`, built). It measured **Shotcut's
 portable Linux melt drawing with no X server**, where both distro MLTs need
 `xvfb-run`.
 Open-item status lives in the wiki, not here. **This repo is public: a
@@ -103,6 +104,27 @@ absent optional capability is "unavailable", never a failure, and never moves
 `PROOFCUT_*` name** (`legacy_env`) — names, never values, and a note, never a
 ✗: no resolver reads the old name, so a stale `60-lucid.conf` otherwise loses what it
 configured — face detection, say — at exit 0. HISTORY.md § `lucid doctor`.
+
+**`proofcut setup` (`install.py`, Linux only) installs what doctor crosses and
+nothing doctor passed, and it is CLI-only on purpose** — never register it as
+a tool; an agent must not start a 2 GB download or change PATH. Four rules it
+holds to, each measured in a clean container (HISTORY.md § `proofcut setup`,
+built; docs/plans/INSTALL.md):
+- **Every download is pinned by URL and SHA-256 and bumped by hand.** BtbN
+  deletes its dated daily builds after weeks and keeps month-ends, so the
+  ffmpeg pin is a month-end build and never `latest`.
+- **melt and auto-editor resolve setup's folder (`deps.py`) ahead of PATH;
+  ffmpeg is a `~/.local/bin` link.** A melt link loses to Fedora's
+  `/usr/bin/mlt-melt`, which draws nothing headless, and whisper's own
+  `audio.py` calls `ffmpeg` bare, so neither half can be the other's shape.
+- **A binary is kept only if `ldd` finds its libraries.** Shotcut's melt
+  needs ordinary desktop libraries, and auto-editor needs `libgomp.so.1`,
+  which a bare Ubuntu lacks. Doctor called that auto-editor ✓, with the
+  loader's refusal printed as its version, so a version is now a number from
+  an exit 0.
+- **Everything added is recorded — links, folders, the uv tool, the Python uv
+  downloaded for it — and `--uninstall` removes exactly that**; a test
+  compares the home's listing before and after.
 
 - **The MCP SDK is v2. `FastMCP` no longer exists** — it is `MCPServer`, from
   `mcp.server` (and there is no `mcp.server.fastmcp` module). Training priors

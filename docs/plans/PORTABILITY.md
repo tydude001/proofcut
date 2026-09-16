@@ -419,7 +419,9 @@ render has not been read back is still unsupported, whatever runs.
 ## What this plan deliberately does not do
 
 - **No installer, no packaged app.** `uv sync` and the tool list is the
-  route on every OS; a `.dmg` or `.msi` is a different project.
+  route on every OS; a `.dmg` or `.msi` is a different project. (`proofcut
+  setup` installs the external tools on Linux and packages nothing;
+  docs/plans/INSTALL.md.)
 - **No transcoding to dodge a platform codec gap.** The lean is to not
   transcode (CLAUDE.md § `vfr`); a platform ffmpeg missing an encoder is
   reported by doctor, not worked around.

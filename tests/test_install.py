@@ -94,7 +94,7 @@ def pins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, install.P
     shotcut = _tarball(downloads / "shotcut.txz", {"Shotcut.app/melt": "melt\n", "Shotcut.app/bin/melt-7": "melt\n"})
     table = {"ffmpeg": _pin(ffmpeg), "auto-editor": _pin(auto_editor), "melt": _pin(shotcut)}
     monkeypatch.setattr(install, "PINS", {name: {"x86_64": pin} for name, pin in table.items()})
-    monkeypatch.setattr(install, "_missing_libraries", lambda shotcut: [])
+    monkeypatch.setattr(install, "_missing_libraries", lambda binaries, lib_dir=None: [])
     return table
 
 
@@ -115,6 +115,15 @@ def test_only_the_pieces_doctor_crossed_are_planned(home: Path, pins: dict[str, 
     assert steps["bytes"] == pins["ffmpeg"].size + pins["auto-editor"].size
     assert steps["unavailable"] == []
     assert install.plan(_report())["pieces"] == []
+
+
+def test_a_reason_is_the_refusals_first_sentence_not_its_advice(home: Path, pins: dict[str, install.Pin]) -> None:
+    """A resolver's refusal ends in advice that, on Linux, recommends `proofcut
+    setup` — read inside setup's own plan on the first clean Ubuntu run."""
+    report = _report(failing=("auto-editor",))
+    row = next(r for r in report["required"] if r["name"] == "auto-editor")
+    row["why"] = "auto-editor not found. `proofcut setup` installs it. Or by hand."
+    assert install.plan(report)["pieces"][0]["why"] == "auto-editor not found."
 
 
 def test_a_melt_that_draws_nothing_headless_plans_shotcut(home: Path, pins: dict[str, install.Pin]) -> None:
@@ -173,6 +182,38 @@ def test_whisper_is_a_uv_tool_on_the_python_an_intel_mac_can_install(
     assert result["installed"] == ["whisper"]
     assert "tool install --python 3.12 openai-whisper --torch-backend cpu" in log.read_text()
     assert install.read_record()["pieces"]["whisper"]["uv_tool"] == "openai-whisper"
+
+
+@links
+def test_the_python_and_folders_uv_added_for_whisper_go_with_it(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--python 3.12` downloads a Python into uv's folder on a fresh box, and
+    the first tool install makes uv's folders and ~/.local/bin. All of it is
+    setup's doing, so uninstall takes it all back, as mac_trial.sh does."""
+    share = home / ".local" / "share" / "uv"
+    write_stub(
+        tmp_path / "usr-bin" / "uv",
+        "import os, sys\n"
+        f"share = {str(share)!r}\n"
+        f"bin_dir = {str(home / '.local' / 'bin')!r}\n"
+        "args = [a for a in sys.argv[1:] if a not in ('--color', 'never')]\n"
+        "if args[:2] == ['python', 'dir']: print(share + '/python')\n"
+        "elif args[:2] == ['tool', 'dir']: print(share + '/tools')\n"
+        "elif args[:2] == ['tool', 'install']:\n"
+        "    os.makedirs(share + '/python/cpython-3.12-linux/bin')\n"
+        "    os.makedirs(share + '/tools/openai-whisper')\n"
+        "    os.makedirs(bin_dir, exist_ok=True)\n"
+        "elif args[:2] == ['tool', 'uninstall']:\n"
+        "    import shutil; shutil.rmtree(share + '/tools/openai-whisper')\n",
+    )
+    before = _listing(home)
+    monkeypatch.setattr(install.doctor, "report", _report)
+    result = install.install(install.plan(_report(failing=("whisper",))), say=lambda line: None)
+    assert result["installed"] == ["whisper"]
+    assert install.read_record()["pieces"]["whisper"]["uv_pythons"] == [str(share / "python" / "cpython-3.12-linux")]
+    install.uninstall()
+    assert _listing(home) == before
 
 
 def test_a_whisper_the_user_already_installed_is_never_reinstalled(home: Path, tmp_path: Path) -> None:
@@ -263,12 +304,25 @@ def test_a_melt_missing_desktop_libraries_names_them_and_keeps_nothing(
     """A server image has none of the 20 libraries `ldd` names in a bare
     container (INSTALL.md, measurement 2); setup has no sudo to add them."""
     monkeypatch.setattr(install.shutil, "which", lambda name, path=None: "/usr/bin/ldd" if name == "ldd" else None)
-    monkeypatch.setattr(install, "_missing_libraries", lambda shotcut: ["libasound.so.2", "libGL.so.1"])
+    monkeypatch.setattr(install, "_missing_libraries", lambda binaries, lib_dir=None: ["libasound.so.2", "libGL.so.1"])
     monkeypatch.setattr(install.doctor, "report", lambda: _report(failing=("melt",)))
     result = install.install(install.plan(_report(failing=("melt",))), say=lambda line: None)
     assert result["installed"] == []
     assert "libasound.so.2, libGL.so.1" in result["failed"][0]["why"]
     assert not deps.melt().parent.parent.exists()
+
+
+def test_an_auto_editor_missing_libgomp_says_so_and_keeps_nothing(
+    home: Path, pins: dict[str, install.Pin], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bare Ubuntu has no libgomp; the first container run found out at `seed`."""
+    monkeypatch.setattr(install.shutil, "which", lambda name, path=None: "/usr/bin/ldd" if name == "ldd" else None)
+    monkeypatch.setattr(install, "_missing_libraries", lambda binaries, lib_dir=None: ["libgomp.so.1"])
+    monkeypatch.setattr(install.doctor, "report", lambda: _report(failing=("auto-editor",)))
+    result = install.install(install.plan(_report(failing=("auto-editor",))), say=lambda line: None)
+    assert result["installed"] == []
+    assert "libgomp1" in result["failed"][0]["why"]
+    assert not deps.auto_editor().parent.exists()
 
 
 def test_a_piece_setup_installed_that_still_fails_is_not_installed_again(

@@ -273,6 +273,22 @@ def test_current_auto_editor_reports_the_gate_as_designed_around(
     assert "Nothing here needs the key" in row["note"]
 
 
+def test_an_auto_editor_that_cannot_load_is_not_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A clean Ubuntu has no libgomp, and the loader's refusal came back as the
+    version string beside a ✓ (INSTALL.md § Step 2, the first container run).
+    A version is a number, and exit 127 is not one."""
+    monkeypatch.setattr(doctor.autoeditor, "binary", lambda: "/deps/auto-editor")
+    loader = (
+        "/deps/auto-editor: error while loading shared libraries: libgomp.so.1: "
+        "cannot open shared object file: No such file or directory\n"
+    )
+    monkeypatch.setattr(doctor, "_run", lambda cmd: ("", loader, 127))
+    row = doctor._auto_editor_entry()
+    assert row["ok"] is False
+    assert row["version"] is None
+    assert "libgomp.so.1" in row["why"]
+
+
 def test_absent_auto_editor_still_names_the_stale_pypi_build(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

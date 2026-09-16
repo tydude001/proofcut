@@ -133,6 +133,8 @@ reduces it. See § What this plan deliberately does not do.
 
 ## Step 1 — doctor's advice, corrected
 
+Shipped — see HISTORY.md § `proofcut setup`, built.
+
 No gate. Each change is a line of advice with a test that fails against the
 old text.
 
@@ -152,6 +154,8 @@ with `readlink -f`), since step 2 may link it rather than set a variable.
 
 ## Step 2 — a Linux installer (decisions 1–3)
 
+Shipped — see HISTORY.md § `proofcut setup`, built.
+
 The Windows kit's shape, applied to Linux, for use rather than for a test.
 
 - **One folder**, `~/.local/share/proofcut/deps`, holding a pinned
@@ -162,19 +166,32 @@ The Windows kit's shape, applied to Linux, for use rather than for a test.
   is ✗, and Shotcut's tarball if the melt row or the Display row is ✗. Then
   whisper by `uv tool install --python 3.12 openai-whisper`, with
   `--torch-backend cpu` unless `nvidia-smi` answers.
-- **What goes on PATH is a symlink in `~/.local/bin`**, the directory uv's
-  own installer already puts on PATH, and only under a name that resolves to
-  nothing today. Measurement 7 is why ffmpeg needs a link. For melt, a link
-  is found by `melt_command`'s own PATH search, so no environment file is
-  written. Every link is recorded.
-- **`--uninstall` removes the folder, the recorded links and the whisper
-  tool**, and nothing else.
+- **Only ffmpeg and ffprobe go on PATH, as symlinks in `~/.local/bin`**, the
+  directory uv's own installer already puts on PATH (measurement 7). A link
+  is never written over a file that is already there. It may shadow a system
+  ffmpeg doctor crossed, such as Fedora's `ffmpeg-free`, which is the point,
+  and removing the link brings that one back. If the name still resolves
+  elsewhere after linking, setup says to put `~/.local/bin` first.
+- **melt and auto-editor get no link. Their resolvers search setup's folder
+  ahead of PATH** (`deps.py`). As built, a link could not work: setup
+  installs a melt when a distro melt that draws nothing is already on PATH,
+  and on Fedora that one is `/usr/bin/mlt-melt`, a name `melt_command`
+  searches before `melt`. A PATH-first search would find the failing one
+  again. The order is safe because setup installs one only when the PATH one
+  failed doctor.
+- **`--uninstall` removes the folder, the recorded links, the whisper tool,
+  any Python uv downloaded for it, and every directory setup created and
+  left empty**, and nothing else. uv's download cache is uv's, for `uv cache
+  clean`.
 - **Before it downloads anything, it asks and prints the total**, whisper's
   1.9 GB included.
 - **No sudo, ever.** It never installs a distribution package. The 14 desktop
-  libraries in measurement 2 are the one thing it cannot supply. On a server
-  image it names them from `ldd` and stops, rather than guessing a package
-  manager.
+  libraries in measurement 2 are the one thing it cannot supply, plus
+  `libgomp.so.1`, which auto-editor's binary links and a bare Ubuntu lacks.
+  The first clean-container run found that one only when `seed` died, with
+  doctor calling auto-editor ✓. On a server image setup names the missing
+  libraries from `ldd`, keeps nothing of that piece, and stops there rather
+  than guessing a package manager.
 
 **Done when:** in clean `ubuntu:24.04` and `fedora:latest` containers, given
 the desktop libraries and nothing else, the installer followed by DEMO.md
@@ -183,13 +200,17 @@ cropping correctly. That is the HISTORY.md runs repeated, with no xvfb and no
 RPM Fusion. After `--uninstall`, a file listing of `$HOME` matches the one
 taken before the install.
 
-Verify first: BtbN's `latest` tag moves daily, so pin a dated release tag
-(`autobuild-YYYY-MM-DD-…`), never `latest`. Check the Shotcut tarball's
-licence terms for redistribution: we download it and never mirror it, but
-say so. Check whether auto-editor's Linux binary is static. The HISTORY.md
-Ubuntu run used it, so it runs on glibc 2.39 at least.
+Verify first: BtbN's `latest` tag moves daily, so pin a dated release tag,
+never `latest`. **Its dated daily builds are deleted after a few weeks,
+while its month-end builds are kept back to 2024**, so the pin is
+`autobuild-2026-08-31-13-27`. Shotcut is GPLv3; setup downloads it from
+Shotcut's own release and never mirrors it. auto-editor's Linux binary is
+dynamically linked against glibc. The HISTORY.md Ubuntu run used it, so it
+runs on glibc 2.39 at least.
 
 ## Step 3 — where the installer lives (decision 2)
+
+Shipped — see HISTORY.md § `proofcut setup`, built.
 
 Either `scripts/install.sh`, or `proofcut setup`, a CLI subcommand that reads
 doctor's report in-process. **Recommended: `proofcut setup`.** The one-line
@@ -222,6 +243,8 @@ LAUNCH.md's gate holds here: build it when a report says where a person
 stopped.
 
 ## Decisions for Tyler
+
+**Taken 2026-09-16, all four as recommended.**
 
 1. **Build Linux ahead of LAUNCH.md's gate?** Recommended: **yes.** The gate
    asks for a measurement of where strangers stop, and for Linux the two

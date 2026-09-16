@@ -631,7 +631,11 @@ the decision moves to wiki `decisions.md`, not here.
   the word, and the company holds a live US trademark on the bare word
   LUCID. So the project is proofcut — docs/plans/RENAME.md.
 - **No container or install script before step 2 says where the stranger
-  stopped.** Measure the blocker, then beat it.
+  stopped.** Measure the blocker, then beat it. *Except Linux, decided
+  2026-09-16:* two clean-container runs had already measured where a
+  stranger stops there, so `proofcut setup` was built for Linux alone.
+  docs/plans/INSTALL.md § The gate this plan works under. No container
+  is built, and the Mac and Windows installers still wait on this step.
 - **No Product Hunt, no paid promotion, no launch-day mass posting.** Wrong
   audience, wrong signal, and a launch that lands everywhere at once cannot
   say which channel worked.

@@ -306,14 +306,25 @@ def _auto_editor_entry() -> dict[str, Any]:
         )
     out, err, code = _run([binary, "--version"])
     version = (out or err).strip().splitlines()[0].strip() if (out or err).strip() else None
-    if not version:
+    # A version is a number from a process that exited 0. A binary the loader
+    # refuses prints its refusal on stderr at exit 127, and that line read as
+    # the version beside a ✓ on a clean Ubuntu with no libgomp.
+    if code != 0 or not version or not re.match(r"v?\d+\.\d+", version):
+        said = (out + err).strip().splitlines()
         return _entry(
             "auto-editor",
             "silence removal, and rendering a single-source cut",
             looked_for=looked_for,
             found=binary,
-            why=f"{binary} exited {code} without printing a version",
-            fix=stale_fix,
+            why=f"{binary} --version exited {code} without printing a version"
+            + (f": {said[-1].strip()}" if said else ""),
+            fix=(
+                "a missing shared library is named above: install your distribution's "
+                "package for it (libgomp.so.1 is `libgomp1` on Ubuntu, `libgomp` on "
+                "Fedora). Otherwise: " + stale_fix
+            )
+            if said and "shared librar" in said[-1]
+            else stale_fix,
         )
     major = _major(version)
     if major is not None and major < MIN_AUTO_EDITOR:

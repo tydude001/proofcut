@@ -159,7 +159,9 @@ def read_record() -> dict[str, Any]:
 
 def _write_record(record: dict[str, Any]) -> None:
     path = _record_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    # Through `_makedirs`, so the record's own folders are recorded too: a
+    # whisper-only install creates them and nothing else would say so.
+    _makedirs(path.parent, record)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, path)
@@ -178,6 +180,18 @@ def _makedirs(path: Path, record: dict[str, Any]) -> None:
 
 
 # -- the plan ----------------------------------------------------------------
+
+
+def _reason(row: dict[str, Any]) -> str:
+    """A doctor row's `why`, cut to its first sentence.
+
+    The rest of a resolver's refusal is advice, and on Linux that advice now
+    begins by recommending `proofcut setup`, which reads as nonsense inside
+    setup's own plan. The whole row is one `proofcut doctor` away.
+    """
+    why = row["why"] or f"{row['name']} is unusable"
+    head, dot, _rest = why.partition(". ")
+    return head + "." if dot else why
 
 
 def _rows(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -209,7 +223,7 @@ def _melt_wanted(report: dict[str, Any], rows: dict[str, dict[str, Any]]) -> str
     and one run should settle it.
     """
     if not rows["melt"]["ok"]:
-        return rows["melt"]["why"] or "no usable melt"
+        return _reason(rows["melt"])
     display = report["display"]
     if display.get("applicable") is False or display["ok"]:
         return None
@@ -264,7 +278,7 @@ def plan(report: dict[str, Any] | None = None) -> dict[str, Any]:
 
     ffmpeg_rows = [rows[n] for n in ("ffmpeg", "ffprobe") if not rows[n]["ok"]]
     if ffmpeg_rows:
-        want("ffmpeg", "; ".join(r["why"] or f"{r['name']} is unusable" for r in ffmpeg_rows))
+        want("ffmpeg", " ".join(_reason(r) for r in ffmpeg_rows))
 
     if not rows["whisper"]["ok"]:
         uv = _uv()
@@ -275,7 +289,7 @@ def plan(report: dict[str, Any] | None = None) -> dict[str, Any]:
                 "fix": "install uv (https://docs.astral.sh/uv/), then run `proofcut setup` again",
             })
         elif "whisper" in record["pieces"]:
-            want("whisper", rows["whisper"]["why"] or "whisper is unusable")
+            want("whisper", _reason(rows["whisper"]))
         elif WHISPER_TOOL in _uv_tools(uv):
             unavailable.append({
                 "name": "whisper",
@@ -286,14 +300,14 @@ def plan(report: dict[str, Any] | None = None) -> dict[str, Any]:
             backend = "cuda" if _gpu() else "cpu"
             pieces.append({
                 "name": "whisper",
-                "why": rows["whisper"]["why"] or "whisper is unusable",
+                "why": _reason(rows["whisper"]),
                 "version": f"{WHISPER_TOOL} (uv tool, Python {WHISPER_PYTHON}, {backend} torch)",
                 "url": None,
                 "bytes": WHISPER_BYTES[backend],
             })
 
     if not rows["auto-editor"]["ok"]:
-        want("auto-editor", rows["auto-editor"]["why"] or "auto-editor is unusable")
+        want("auto-editor", _reason(rows["auto-editor"]))
 
     if (why := _melt_wanted(report, rows)) is not None:
         want("melt", why)
@@ -370,11 +384,14 @@ def _link(target: Path, name: str, entry: dict[str, Any], record: dict[str, Any]
         )
 
 
-def _missing_libraries(shotcut: Path) -> list[str]:
-    env = {**os.environ, "LD_LIBRARY_PATH": str(shotcut / "lib")}
+def _missing_libraries(binaries: list[Path], lib_dir: Path | None = None) -> list[str]:
+    """The shared libraries `ldd` cannot find for any of `binaries`."""
+    env = dict(os.environ)
+    if lib_dir is not None:
+        env["LD_LIBRARY_PATH"] = str(lib_dir)
     missing: set[str] = set()
-    for rel in MELT_LINKED:
-        done = subprocess.run(["ldd", str(shotcut / rel)], capture_output=True, text=True, env=env, check=False)
+    for binary in binaries:
+        done = subprocess.run(["ldd", str(binary)], capture_output=True, text=True, env=env, check=False)
         missing |= {line.split()[0] for line in done.stdout.splitlines() if "not found" in line}
     return sorted(missing)
 
@@ -403,6 +420,14 @@ def _install_auto_editor(pin: Pin, entry: dict[str, Any], record: dict[str, Any]
     entry["dir"] = str(target.parent)
     _fetch(pin, target, say)
     target.chmod(0o755)
+    # It links the system's OpenMP runtime, which a bare Ubuntu lacks; the
+    # first clean-container run found it only when `seed` died.
+    if shutil.which("ldd") and (missing := _missing_libraries([target])):
+        raise InstallError(
+            f"auto-editor needs {', '.join(missing)}, which this system does not have. "
+            "Install your distribution's package for it (libgomp.so.1 is `libgomp1` "
+            "on Ubuntu, `libgomp` on Fedora) and run `proofcut setup` again."
+        )
 
 
 def _install_melt(pin: Pin, entry: dict[str, Any], record: dict[str, Any], say: Say, notes: list[str]) -> None:
@@ -415,7 +440,9 @@ def _install_melt(pin: Pin, entry: dict[str, Any], record: dict[str, Any], say: 
     _unpack(archive, home)
     if not deps.melt().is_file():
         raise InstallError(f"{pin.url} unpacked with no Shotcut.app/melt in it")
-    if shutil.which("ldd") and (missing := _missing_libraries(deps.melt().parent)):
+    shotcut = deps.melt().parent
+    linked = [shotcut / rel for rel in MELT_LINKED]
+    if shutil.which("ldd") and (missing := _missing_libraries(linked, shotcut / "lib")):
         raise InstallError(
             "Shotcut's melt needs desktop libraries this system does not have: "
             f"{', '.join(missing)}. A desktop install has them; on a server image, install "
@@ -429,10 +456,32 @@ def _install_melt(pin: Pin, entry: dict[str, Any], record: dict[str, Any], say: 
 _INSTALLERS = {"ffmpeg": _install_ffmpeg, "auto-editor": _install_auto_editor, "melt": _install_melt}
 
 
-def _install_whisper(entry: dict[str, Any], say: Say, notes: list[str]) -> None:
+def _uv_dir(uv: str, which: str) -> Path | None:
+    done = subprocess.run([uv, "--color", "never", which, "dir"], capture_output=True, text=True, check=False)
+    return Path(done.stdout.strip()) if done.returncode == 0 and done.stdout.strip() else None
+
+
+def _children(directory: Path | None) -> set[Path]:
+    return set(directory.iterdir()) if directory and directory.is_dir() else set()
+
+
+def _install_whisper(entry: dict[str, Any], record: dict[str, Any], say: Say, notes: list[str]) -> None:
+    """`uv tool install` whisper, recording what that added outside the tool itself.
+
+    `--python 3.12` can download a Python into uv's own folder, and a first
+    tool install creates uv's tool folder. Both are setup's doing, so both
+    are recorded, the way scripts/mac_trial.sh records `uv-python`. uv's
+    download cache is uv's, and is left to `uv cache clean`.
+    """
     uv = _uv()
     if uv is None:
         raise InstallError("uv is not on PATH")
+    pythons, tools = _uv_dir(uv, "python"), _uv_dir(uv, "tool")
+    pythons_before = _children(pythons)
+    # uv's tool install also creates ~/.local/bin, where it links `whisper`.
+    tops = [top for top in (pythons, tools, bin_dir()) if top]
+    chain = [d for top in tops for d in (top, *top.parents) if Path.home() in d.parents]
+    absent = [d for d in dict.fromkeys(chain) if not d.exists()]
     argv = [uv, "tool", "install", "--python", WHISPER_PYTHON, WHISPER_TOOL]
     if not _gpu():
         argv += ["--torch-backend", "cpu"]
@@ -442,6 +491,9 @@ def _install_whisper(entry: dict[str, Any], say: Say, notes: list[str]) -> None:
     if subprocess.run(argv, check=False).returncode != 0:
         raise InstallError(f"`{' '.join(argv)}` failed; its output is above")
     entry["uv_tool"] = WHISPER_TOOL
+    entry["uv_pythons"] = sorted(str(p) for p in _children(pythons) - pythons_before)
+    # Outermost first, so uninstall's deepest-first rmdir can empty the chain.
+    record["made_dirs"] += [str(d) for d in sorted(absent, key=lambda d: len(d.parts)) if d.exists()]
     if shutil.which("whisper") is None:
         notes.append("whisper installed, but uv's tool directory is not on PATH: run `uv tool update-shell`, then open a new shell")
 
@@ -463,7 +515,7 @@ def install(steps: dict[str, Any], say: Say = print) -> dict[str, Any]:
         entry: dict[str, Any] = {"dir": None, "links": [], "uv_tool": None, "version": piece["version"]}
         try:
             if name == "whisper":
-                _install_whisper(entry, say, notes)
+                _install_whisper(entry, record, say, notes)
             else:
                 _INSTALLERS[name](PINS[name][machine() or ""], entry, record, say, notes)
         except (InstallError, OSError, tarfile.TarError) as exc:
@@ -513,6 +565,18 @@ def _remove_entry(entry: dict[str, Any]) -> list[str]:
     if entry.get("uv_tool") and (uv := _uv()):
         subprocess.run([uv, "tool", "uninstall", entry["uv_tool"]], check=False)
         removed.append(f"uv tool {entry['uv_tool']}")
+        pythons = _uv_dir(uv, "python")
+        for recorded in entry.get("uv_pythons", []):
+            path = Path(recorded)
+            if pythons is None or pythons not in path.parents:
+                continue
+            if path.is_symlink() or path.is_file():
+                path.unlink()
+            elif path.is_dir():
+                shutil.rmtree(path)
+            else:
+                continue
+            removed.append(recorded)
     directory = entry.get("dir")
     if directory and _inside(Path(directory), root) and Path(directory).exists():
         shutil.rmtree(directory)

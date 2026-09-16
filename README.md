@@ -122,8 +122,18 @@ uvx --from git+https://github.com/tydude001/proofcut proofcut doctor
 ```
 
 The first run downloads Python 3.13 if uv has none, plus proofcut's
-dependencies, about 230 MB together. The demo and your own recordings run
-from a checkout:
+dependencies, about 230 MB together.
+
+On Linux, `proofcut setup` installs whatever doctor marked ✗, for you alone
+and with no sudo, and `proofcut setup --uninstall` removes exactly what it
+added. It says what it will download and asks first; whisper is about 1.9 GB
+of it. On a Mac or a Windows PC, follow the fix doctor prints under each ✗.
+
+```sh
+uvx --from git+https://github.com/tydude001/proofcut proofcut setup
+```
+
+The demo and your own recordings run from a checkout:
 
 ```sh
 git clone https://github.com/tydude001/proofcut && cd proofcut
@@ -314,14 +324,18 @@ checked render. On Windows one person's PC has too, the author's; no person
 has run it on a Mac yet. Where each OS stands is in
 [docs/plans/PORTABILITY.md](docs/plans/PORTABILITY.md).
 
-Run `uv run proofcut doctor` to check everything below at once.
+Run `uv run proofcut doctor` to check everything below at once. On Linux,
+`uv run proofcut setup` installs any of the last four that doctor marks ✗:
+a static ffmpeg, whisper, auto-editor's release binary and Shotcut's
+portable melt, which renders with no display at all
+([docs/plans/INSTALL.md](docs/plans/INSTALL.md)).
 
 | You need | For | Notes |
 |---|---|---|
 | **Python 3.13** and [uv](https://docs.astral.sh/uv/) | everything | `uv sync` installs the Python side. The only runtime dependencies are `mcp` and OpenTimelineIO. |
 | **ffmpeg / ffprobe** built with `libx264`, freetype and libass | every media operation, captions | Fedora's default `ffmpeg-free` has no `libx264`: use RPM Fusion's `ffmpeg`. On a Mac, Homebrew's `ffmpeg` lacks freetype and libass: install `ffmpeg-full` and put `$(brew --prefix ffmpeg-full)/bin` first on `PATH` (it is keg-only). |
 | **[auto-editor](https://github.com/WyattBlue/auto-editor) 31+** | silence removal, single-source renders | Install the upstream binary. The PyPI package is a stale 29.x. |
-| **whisper** | transcription, render verification | Any `openai-whisper` install. `uv tool install openai-whisper` is the short route; add `--torch-backend cpu` without an NVIDIA GPU (1.9 GB instead of 5.5 GB). Found via `PROOFCUT_WHISPER`, then `PATH`. The CPU build transcribed the demo's 19-second voiceover in 33 seconds. |
+| **whisper** | transcription, render verification | Any `openai-whisper` install. `uv tool install --python 3.12 openai-whisper` is the short route (3.12 because torch's Intel-Mac builds stop there); add `--torch-backend cpu` without an NVIDIA GPU (1.9 GB instead of 5.5 GB). Found via `PROOFCUT_WHISPER`, then `PATH`. The CPU build transcribed the demo's 19-second voiceover in 33 seconds. |
 | **MLT (`melt`)** | layered renders (b-roll, cards, music) | Your distribution's MLT package (`mlt` on Fedora, whose `melt` package is an unrelated compression tool), or Kdenlive, whose flatpak copy is found automatically. `PROOFCUT_MELT` overrides both. |
 
 Optional. Each unlocks one feature, `proofcut doctor` reports whether it is

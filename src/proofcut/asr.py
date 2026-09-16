@@ -87,7 +87,7 @@ def whisper_binary() -> Path:
     raise ASRError(
         "whisper not found. Looked at $PROOFCUT_WHISPER "
         f"({override or 'unset'}), then PATH. Install openai-whisper "
-        "(`uv tool install openai-whisper`, or any venv) and put its `whisper` "
+        "(`uv tool install --python 3.12 openai-whisper`, or any venv) and put its `whisper` "
         "on PATH, or set PROOFCUT_WHISPER to the binary."
     )
 
