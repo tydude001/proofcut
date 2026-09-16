@@ -15898,3 +15898,12 @@ The upload and the registry publish are Tyler's hand, in that order:
 `uv build && uv publish`, then `mcp-publisher login github` and
 `mcp-publisher publish` back to back, since the login token lasts five
 minutes.
+
+**Both went out the same evening, by Tyler's hand.** PyPI lists 0.29.1, and
+a fresh `uvx --isolated --no-cache proofcut@0.29.1 --version` installs it.
+The first attempt answered "unsatisfiable" for a few seconds while PyPI's
+index caught up. The registry lists 0.29.1 as `isLatest`, with the `proofcut`
+package attached. Two snags on the way are worth knowing next time: `uv
+publish` from a non-interactive shell has no way to ask for the token, and a
+bare `uv publish` uploads everything in `dist/`, stale versions included.
+So name the files: `uv publish dist/proofcut-<version>*`.
