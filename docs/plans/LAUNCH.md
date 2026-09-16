@@ -427,7 +427,13 @@ following six hours.
 
 **Title** (draft; HN strips "Show HN:" formatting quirks, keeps it under 80
 characters, no exclamation):
-> Show HN: proofcut – a local-first AI video editor that's an MCP server
+> Show HN: proofcut – a local-first AI video editor that checks its own render
+
+**Retitled 2026-09-15**, off "…that's an MCP server": MCP is how it is
+reached rather than what it does, and it narrows the title to the readers who
+already run one. The check is what nothing else in this field does, and the
+first comment then measures it; that comment's first paragraph still says MCP
+server, which is where a reader who cares meets it.
 
 **The first comment is Tyler's, posted immediately, and it does three
 things**: says what it is in two sentences, links the 47-second clip and the
