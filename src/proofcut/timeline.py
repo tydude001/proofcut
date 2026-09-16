@@ -784,4 +784,14 @@ def read(path: Path | str) -> Edit:
 
 
 def write(timeline: otio.schema.Timeline, path: Path | str) -> None:
-    otio.adapters.write_to_file(timeline, str(path))
+    """Write `timeline` to `path`, atomically.
+
+    Not `otio.adapters.write_to_file`, which truncates the live file and
+    writes into it — a process killed mid-save left a `project.otio` nothing
+    could parse. Same bytes, written beside the file and moved over it, as
+    `Project.write_manifest` and `rewrite_legacy_metadata` already do.
+    """
+    path = Path(path)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(otio.adapters.write_to_string(timeline, "otio_json"), encoding="utf-8")
+    tmp.replace(path)

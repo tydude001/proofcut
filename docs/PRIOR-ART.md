@@ -10,7 +10,9 @@ snapshots from those dates and go stale; the *conclusions* they support live
 in [PLAN.md](PLAN.md), which is authoritative for decisions. This file is the
 evidence, not the decision.
 
-Re-run this survey before any major scope change.
+Re-run this survey before any major scope change. Last re-checked in full
+**2026-09-16** — § The re-check before Show HN; the counts above it stay as
+they were read.
 
 ## Why this survey happened
 
@@ -98,7 +100,9 @@ than raw tool calls.
 
 Against proofcut's three differentiators, it plausibly covers all three:
 addressable word-level cuts (not just filters), persistent projects with undo,
-and real MCP with typed skills. What it does **not** cover:
+and real MCP with typed skills. What it does **not** cover (re-checked
+2026-09-16, still true; it now checks renders structurally — § The re-check
+before Show HN):
 
 1. **Headless.** The MCP endpoint is served by the Electron app; a GUI process
    has to be running. No CLI. Docs are macOS-flavored; the Linux AppImage is
@@ -239,7 +243,9 @@ Two ideas worth stealing regardless:
 
 [veedstudio/open-edit](https://github.com/veedstudio/open-edit) · 169★ ·
 Apache-2.0 editor over **PolyForm Shield** renderer binaries · TypeScript ·
-Apple Silicon macOS Tahoe only, 11 commits
+Apple Silicon macOS Tahoe only, 11 commits (macOS arm64 and Windows x64 by
+2026-09-16, with no default transcription provider — § The re-check before
+Show HN)
 
 VEED's agent-driven caption/motion-graphics pipeline. Default transcription
 uploads audio to VEED (WhisperX local fallback exists); rendering is their
@@ -272,6 +278,8 @@ Two things they got right, arrived at independently:
 
 They do **not** use OTIO (3 incidental code hits). They built a JSON workflow
 engine over stateless ffmpeg instead — i.e. reinvented a weaker timeline model.
+(By 2026-09-16 they read and write OTIO-schema JSON at the edges, still not
+as their model — § The re-check before Show HN.)
 
 Worth stealing: the **Video Receipt** idea — per-operation JSON provenance with
 input/output hashes, ffmpeg version, and a resume cursor.
@@ -414,7 +422,9 @@ short or missing file — a duration floor, not a content check. NeuroCut checks
 only that the file exists and is non-empty; CutPilot's `visual-qa-engine.mjs`
 runs `blackdetect`/`freezedetect`; vidcut's `preview-vs-export.mjs` compares
 ink boxes between preview and render, which is geometry, not words or frames.
-So `verify` and `check_frames` stay proofcut's, stated as before.
+So `verify` and `check_frames` stay proofcut's, stated as before — narrowed
+four days later, when OpenChatCut's `verify_export` turned up (§ The re-check
+before Show HN).
 
 **Both melt-based servers keep the first-audio-stream trap unguarded**:
 mcpCut's `_probe_clip_audio` asks only whether an audio stream exists, and
@@ -471,6 +481,80 @@ it yet**: 12.8% of the trial turns could have been folded together, most
 of what a batch would fold is already parallel calls, and each trial reads
 a `plan` echo before applying it — HISTORY.md § Stop reaches the render,
 and `batch` was measured.
+
+## The re-check before Show HN — 2026-09-16
+
+Every section above, re-read against current source, plus a new-entrant
+sweep searched the way a user would type it (GitHub search, the MCP
+registry, awesome-mcp-servers, Glama, HN and Product Hunt). Clones were
+shallow and read, never run. Heads that day: auto-editor `1647365`, kinocut
+`e593881`, OpenChatCut `8411023`, video-use `9575612`, open-edit `b470ebc`,
+FableCut `21ec62f`, oh-my-cassette `4bebe25` (`main`), Diffusion Studio
+`b312417`, splicedeck `1d6b31b`. Daydream and Cardboard have no source and
+were read from their sites.
+
+**The launch claim needs narrowing.** OpenChatCut now ships
+`verify_export` (`assessExportQuality`, `src/export/quality.ts`). It probes
+the rendered file for duration against the timeline (tolerance max(0.25 s,
+2 frames)), resolution, fps (±0.5), missing streams, black and frozen spans,
+long silences and clipping peaks, and it draws a contact sheet around edit
+points. So "checks its
+own render" is no longer something only proofcut does. What is still
+proofcut's alone: **transcribing the render and diffing its words against
+the cut** (`verify`), which nothing found does, and an **exact** frame count
+against the timeline (`check_frames`), where OpenChatCut's check is a
+duration tolerance. No match turned up in `src/export/` or
+`server/plugins/export-qa.ts` for `transcribe`, searched both through the
+output filter and around it. docs/plans/LAUNCH.md's title rests on the old
+claim.
+
+What changed in the sections above:
+
+| Project | Change | Evidence |
+|---|---|---|
+| OpenChatCut | ~140 MCP tools, not ~24, with a `toolExposure=progressive` mode and a bearer token by default; v0.2.14; an "offline edit session" runs reversible edits without the editor tab, **still inside the Electron process**, so still no CLI; still custom JSON, FCPXML only | `server/external-agent/offline-*.ts`, `src/agent/external-tool-shape.ts` |
+| Daydream | four tiers now: Creator $20–25/mo, Pro $40–50/mo (was $16–19), unlimited MCP calls on every paid tier; homepage footer says "macOS and Windows" while `/download` still says Mac and the docs name no OS; MCP URL, no tool list, the "never uploaded" line and the three NLE exports are unchanged | daydreamvideo.com `/`, `/download`, `/pricing`; docs `connect-mcp.md`, `exporting.md` |
+| auto-editor | 31.6.0 on GitHub, PyPI still 29.3.1. The multi-source paywall is **two gates**: a render degrades to 720x576 with a warning (`src/render/format.nim:145-155`), and an NLE export with more than one source refuses outright (`src/conductor.nim:496-501`). Still no MCP, no project state, `--edit word:` still a filter | |
+| kinocut | repo renamed `KyaniteLabs/kinocut` (old URL redirects); 201 MCP / 173 CLI at tip (196/167 published, 1.15.1). **It now reads and writes OTIO-schema JSON** (`kinocut/multipliers/otio_io.py`, tools `video_otio_export`/`video_otio_import`), hand-rolled without the `opentimelineio` library, with its own IR carried in `metadata.kinocut_ir` — a bridge at the edges, not its model. QC is still signal-level (`watching/metrics.py`, `vision_qc.py`); its ASR is for dub consistency | |
+| open-edit | **Windows x64 as well as macOS arm64** (`SETUP.md:21`); Tahoe is what CI tests, not a gate. **No default transcription provider** now, and local WhisperX is listed first (README:47-48) | |
+| video-use | local whisper is now *rejected by name*: "Use hosted Scribe" (`SKILL.md:312-313`). Still no MCP | |
+| OpenTimelineIO | still 0.18.1, still no `editAlgorithm` bindings, still the only package here with no cp314 wheel (ctranslate2 4.8.2, onnxruntime 1.30.0 and av 18.1.0 all have one) | |
+| FableCut, oh-my-cassette | 7 commits since `6ed70b0`, still v1.7.0, still 8 tools and no headless export; Cassette still needs an account | |
+
+The rest of the survey was re-checked and still holds: clipwright,
+open-post-production, otio-diff, the stateless servers, rescript, CutScript,
+OpenCut-AI, openshorts and davinci-resolve-mcp. Their stars moved, but none
+added MCP or a render check, and none was archived.
+
+**New since the survey:**
+
+- **[diffusionstudio/editor](https://github.com/diffusionstudio/editor)**
+  · 2,795★ · MPL-2.0 · TypeScript · created 2026-07-07. The nearest
+  substantial neighbour. A browser canvas editor whose project is a
+  folder of JSX, with a real `dapi` CLI and an MCP server. It had a Show HN
+  in 2026-08. Its `check` tool (`packages/dapi/src/tools/check.ts`) is
+  structural and says so: "without rendering … a scheduled clip can still
+  render black … confirm suspicious spans visually." Its transcription
+  (`media-transcribe.ts`) is for reading and captions. Edits address nodes
+  by id, never by word.
+- **DaVinci Resolve 21.1** (2026-09-08, Studio only) ships a native MCP
+  server with 88 tools, read from press coverage, not source. It is a GUI
+  with an MCP front end, and no coverage mentions a render check. A major
+  NLE now has agent hooks out of the box.
+- **Cardboard** (YC W26, closed, browser-rendered): a natural-language
+  timeline editor with NLE XML export. It has no source to read, so it is
+  Daydream's case again.
+- **[ihuzaifashoukat/splicedeck](https://github.com/ihuzaifashoukat/splicedeck)**
+  · 3★ · Apache-2.0 · Python. The closest in *shape*: nine verbs generated
+  from one table for both CLI and MCP, local, with a hash-chained ledger.
+  Its `verify` gates the plan before `deliver` encodes
+  (`splicedeck/surface/verbs.py`); it is not a check of the render. By its
+  own README, cutting by speech needs a binary it cannot obtain yet.
+- Named and not read further: nanzhi84/Rushes (24★, local, GUI-only,
+  versioned timeline, README-only read), FireRed-OpenStoryline (3.4k★,
+  CLI+MCP, needs a cloud LLM key), burningion/video-editing-mcp (288★,
+  2024, a client for a cloud service), krusemediallc/video-editor-agent (a
+  skill pack whose QA is "pixels and dB, not intentions").
 
 ## Stateless-ffmpeg MCP servers
 

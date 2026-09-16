@@ -567,6 +567,40 @@ def test_rewrite_legacy_metadata_rekeys_a_file_and_leaves_a_clean_one_alone(tmp_
     assert clean.read_bytes() == before
 
 
+def test_write_never_leaves_half_a_timeline(tmp_path, monkeypatch) -> None:
+    """OTIO's own `write_to_file` truncates the live file and writes into it
+    (same inode, measured on 0.18.1), so a process killed mid-save — a Stop,
+    a closed terminal — left a `project.otio` that no op can parse. `write`
+    goes beside the file and moves over it, the manifest's own rule; the
+    move failing here stands in for dying before it."""
+    path = tmp_path / "project.otio"
+    tl.write(to_otio(_edit((0.0, 1.0)), CLIPS, rate=1000), path)
+    before = path.read_bytes()
+
+    def dies(self, target):
+        raise OSError("killed before the move")
+
+    monkeypatch.setattr(type(path), "replace", dies)
+    with pytest.raises(OSError):
+        tl.write(to_otio(_edit((0.0, 1.0), (2.0, 3.0)), CLIPS, rate=1000), path)
+    assert path.read_bytes() == before
+    monkeypatch.undo()
+
+    # And the text is what OTIO's own writer produced, so no project on disk
+    # reads as changed the first time it is saved again. Line endings are
+    # left out: text mode translates them on Windows, unmeasured for OTIO's.
+    timeline = to_otio(_edit((0.0, 1.0), (2.0, 3.0)), CLIPS, rate=1000)
+    tl.write(timeline, path)
+    reference = tmp_path / "reference.otio"
+    otio.adapters.write_to_file(timeline, str(reference))
+
+    def text(p):
+        return p.read_bytes().replace(b"\r\n", b"\n")
+
+    assert text(path) == text(reference)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["project.otio", "reference.otio"]
+
+
 # -- timeline_spans: the aggregate source -> timeline inverse --------------
 
 

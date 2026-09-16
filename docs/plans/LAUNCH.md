@@ -440,6 +440,14 @@ already run one. The check is what nothing else in this field does, and the
 first comment then measures it; that comment's first paragraph still says MCP
 server, which is where a reader who cares meets it.
 
+**That premise is narrower as of 2026-09-16.** OpenChatCut (1.9k★) now ships
+`verify_export`, which checks a render's duration, resolution, fps, and black,
+frozen or silent spans against its timeline. "Checks its own render" is
+therefore true of it too, and a commenter can point at it. What nothing else
+found does is **transcribe the render and diff its words against the cut**.
+The title should claim that, or claim nothing unique.
+PRIOR-ART.md § The re-check before Show HN.
+
 **The first comment is Tyler's, posted immediately, and it does three
 things**: says what it is in two sentences, links the 47-second clip and the
 uncut run, and pre-empts the two questions that will otherwise be the

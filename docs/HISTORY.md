@@ -15728,3 +15728,41 @@ canvas.
 
 **Not yet watched:** a blur-fill on real footage. The fixed look waits on
 that viewing.
+
+## The timeline is saved atomically, and the survey re-checked — 2026-09-16
+
+**`timeline.write` wrote `project.otio` in place.** OTIO's `write_to_file`
+is `core.serialize_json_to_file`, and on 0.18.1 it truncates the live file
+and writes into it: the inode was the same before and after. A process
+killed partway through a save (a Stop, a closed terminal, a crash) left a
+document nobody could parse, and every op then failed with OTIO's bare
+`ValueError: JSON parse error`. The manifest beside it has been written to
+a temp file and moved over since the stale-write refusal, and
+`rewrite_legacy_metadata` already did the same one function up. `write` now
+does it too, with the same text OTIO would have written, so no project reads
+as changed the next time it is saved.
+`test_write_never_leaves_half_a_timeline` fails the move and asserts the old
+document survives. It fails against the old `write`, which never moved
+anything. Its byte comparison ignores line endings, because text mode
+translates them on Windows and nobody has measured what OTIO's C++ writer
+does there.
+
+Recovery was already in place, and nobody had written it down. `undo`
+opens only the manifest and copies the last snapshot over `project.otio`
+without parsing it. After a torn save that snapshot is the state before the
+interrupted edit, so a truncated timeline was always one `undo` from whole.
+A manifest corrupted by something outside proofcut has no such route,
+because `Project.open` refuses it before `restore` runs. The copy in
+`cache/history/N.manifest.json` is the way back by hand. That gap is noted
+here and not fixed: nothing in proofcut can produce such a manifest any
+more.
+
+**The prior-art survey was re-checked in full before Show HN** (PRIOR-ART.md
+§ The re-check before Show HN). OpenChatCut now ships `verify_export`, a
+structural check of the render: duration within a tolerance, resolution,
+fps, black, frozen and silent spans. So "checks its own render" no longer
+belongs to proofcut alone. What stays proofcut's is `verify`'s transcribed
+diff of the render against the cut, and `check_frames`' exact count.
+LAUNCH.md's title rested on the wider claim and now carries a note saying
+so. Rescript's word-edge drag, the survey's other lead, turned out to be
+built already: the Edit lanes' drag-trim handles and the cut tools' `pad`.
