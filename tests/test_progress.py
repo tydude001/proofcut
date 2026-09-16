@@ -9,6 +9,7 @@ child is still writing to it. docs/plans/MCP.md § Step 6.
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 import sys
 import threading
@@ -197,7 +198,9 @@ def stub_melt(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         "Path(target).write_bytes(b'a render')\n",
     )
     monkeypatch.setattr(sys, "platform", "linux")
-    monkeypatch.setenv("PROOFCUT_MELT", str(stub))
+    # Quoted: the platform is pinned to linux, so the value is split POSIX-style,
+    # which eats a Windows path's backslashes.
+    monkeypatch.setenv("PROOFCUT_MELT", shlex.quote(str(stub)))
     monkeypatch.setenv("DISPLAY", ":0")
     monkeypatch.setattr(picture, "RENDER_SCRATCH", tmp_path / "scratch")
     monkeypatch.setattr(picture.shutil, "which", lambda name: None)
