@@ -4839,3 +4839,117 @@ rows (b-roll's "nothing is built"; aspect swap's "none has been reviewed").
 The goodsometimes side of the review — the teaser workflow absent from
 `pipeline.md`, the unrecorded 3:00 Shorts cap, `branding.md`'s stale
 end-screen row — belongs to that repo, not this queue.
+
+## Blur-fill — the design note — 2026-09-16
+
+PRIOR-ART.md § Glama's related servers found blur-fill in vidcut, and it is
+the usual vertical-video treatment proofcut does not have. A shot whose
+aspect does not match the canvas is drawn *contained*, and a blurred,
+darkened copy of the same moment, scaled to *cover* the canvas, fills the
+bars. proofcut offers two answers to a wide shot on a 9:16 canvas today, a
+crop (§ Per-shot framing) and a stacked split (§ The stacked split). Blur-fill
+is the third, for a shot where every crop loses something and nothing
+divides into two panes: a wide establishing shot, a screen recording, a
+group. The mechanism was measured before this note, in
+`~/proofcut-work/spikes/blur-fill/` (`FINDINGS.md`: every number below,
+with the command that produced it). Nothing is built.
+
+### Finding 1 — it is a second node again, and the third time is not a surprise
+
+The same result as the split: two nodes of one resource and the tractor's
+existing `qtblend` transitions. The background node has a `qtblend` rect
+scaled to cover (the larger of the two axis ratios, centred, overflowing the
+profile, which clips it), plus `box_blur` and `brightness level=0.7`. The
+foreground node has the contain rect, which is `fit_rect`'s. A 1080x1920
+render of a 1920x1080 colour-coded source read back as follows. The centre
+band matches ffmpeg's own contain scale of the same frame to RMSE 7.4, the
+same compression floor the no-blur and letterbox controls read. The bands
+are non-black, and their Laplacian energy is 0.30 of the sharp copy's. A
+per-second colour marker read back correctly in the blurred band at two
+different seconds, so the background is the same *moment*, not merely the
+same clip. No new service, no mask, no `<blank>`.
+
+### Finding 2 — the blur has to be a percentage, which rules out every avfilter blur
+
+`box_blur`'s radius is a percentage of the image, and ffmpeg's `gblur` sigma
+is pixels. Measured as the seam's transition width over frame width, at
+1080x1920 and at 360x640: `box_blur` gives 6.20% and 6.39% (ratio 1.03),
+`gblur` gives 12.69% and 38.61% (ratio 3.04). A pixel blur tuned on one
+canvas is three times as strong on a third-size one, and it renders at
+exit 0 either way. **Use `box_blur`**. The same rule binds the preview (step
+3): CSS `filter: blur()` takes pixels, so its radius must be computed from
+the drawn frame's width, never written as a constant.
+
+### Finding 3 — the audio stays single, and `audio_index=-1` stays mandatory
+
+An unmuted second node added nothing to the mix: −42.1 dB mean, identical to
+the baseline. It added +6.0 dB only once a `mix` transition was wired to it.
+So the writer's convention (picture nodes carry `audio_index=-1`, and no
+`mix` targets a picture track) is what holds today. Keep both, because the
+convention is the only guard against a later generic per-track loop that
+mixes whatever declares audio.
+
+### Finding 4 — the cost is the second decode
+
+A 10 s 1080x1920 render took 7.3–7.5 s single-track, 12.0 s with the cover
+node, and 12.4–13.6 s with blur and darken as well: about +60% for the
+node and a further ~13% for the blur. It is paid only by a project using
+it, because a project with no fill window writes no background node, and
+its document stays byte-identical (the aspect swap's rule).
+
+### The design
+
+1. **Blur-fill is a mode of a framing window, not a project setting.** A
+   `reframe` record may carry `fill: "blur"` instead of a `rect`, meaning
+   "this shot, whole source, contained, over its own blur". It is additive
+   and optional, so absence means today's window and there is no schema
+   bump. `pane` and `fill` on one window refuse. The switch keys the
+   background node's opacity at every window boundary (the pane's own
+   mechanism, § The stacked split: a step not written is a value that
+   carries on), and the picture node's discrete `qtblend` key takes the
+   contain rect for a fill window.
+2. **The background covers the whole source, never the shot's crop.** This
+   is the fork the spike left open. A fill window has no crop, so there is
+   nothing to follow, and the rect is a pure function of (source size,
+   canvas). No keyframes of its own beyond the opacity switch, and no
+   inheritance risk, because it is its own role (`bgchain`) under
+   one-node-per-resource-per-role. Following a crop (a contained crop over
+   its own blur) is expressible later as `rect` plus `fill` together,
+   refused until someone asks.
+3. **The preview draws it, or the lane is not drawn.** `timeline_view`'s
+   shot entry gains `fill` and the writer's own two dest rects (contain and
+   cover), scaled like `dest` is. `player.js` draws a second `<video>` of the
+   same shot behind, with a blur radius computed from the frame's drawn
+   width (Finding 2). Nothing in JS derives either rect.
+4. **`reframe_sheet` labels a fill row and draws the contain rect**, so a
+   fill window is judged where every window is judged.
+   **`reframe_detect` does not propose fill yet.** Its subject evidence is
+   faces, and "every crop loses someone" is a claim to pin against looked-at
+   windows first, the way `SCENE_THRESHOLD` was pinned.
+5. **`_is_layered` needs no new trigger.** A fill window exists only under a
+   canvas override, which already routes to melt. A test holds that, rather
+   than this sentence.
+
+### Steps
+
+1. The writer: `bgchain`, the opacity switch, and a real-melt readback test
+   on a colour-coded source (centre band against ffmpeg's contain; a band
+   pixel naming the same second). **Two traps from the spike**: tag the
+   generated source's colour range (bt709/tv) or the readback reads a
+   range mismatch as a picture error (RMSE 14.7 before, 7.4 after); and
+   place the time marker inside the *cover* crop, since the spike's first
+   marker sat entirely off-canvas.
+2. The op: `reframe --fill blur` (and `plan`), on CLI and MCP, echoing the
+   contain rect it will draw.
+3. `timeline_view` and the preview layer, verified by canvas readback
+   against ffmpeg (verify-live).
+4. `reframe_sheet`'s fill row, and a Fill control beside Crop and Split in
+   Frame mode.
+
+### Decisions for Tyler
+
+- **Per-window, not project-wide** (recommended). A project-wide "fill
+  every mismatched shot" is one line on top of it later, if asked.
+- **Whole-source background** (recommended), not following the crop.
+- **Darkening fixed at 0.7, blur at 12%**, until a real render has been
+  watched. A pack value would be tuning a number nobody has looked at.
