@@ -369,18 +369,18 @@ drafted awesome-list line: `~/proofcut-work/spikes/launch-listings/LISTINGS.md`.
 List it a week *before* Show HN so the first strangers arrive in ones and
 twos, with time to fix what they find.
 
-- **The official MCP registry** (`registry.modelcontextprotocol.io`) —
-  **`server.json` is written and in the repo** (2026-09-12, against the
-  published `2025-12-11` schema); what remains is the publish through its
-  CLI, which proves the `io.github.tydude001` namespace with a GitHub login
-  and so cannot be done before the flip. The entry carries **no `packages`
-  block**, because proofcut is on no package registry and a `pypi` identifier
-  would name something that does not exist — `websiteUrl` points at
-  docs/DEMO.md instead. If proofcut is ever published to PyPI, that block is
-  the one thing to add. Re-check the schema URL at publish time; the
-  mechanics have changed more than once. Shipped — see HISTORY.md § The
-  registry entry and the plugin manifest. **Published 2026-09-13** — see
-  HISTORY.md § The registry listing.
+- **The official MCP registry** (`registry.modelcontextprotocol.io`) — **live
+  at 0.25.0**, republished 2026-09-15 with the SHOWCASE description; 0.23.0
+  stays listed as version history. `server.json` is in the repo against the
+  published `2025-12-11` schema, still what `mcp-publisher init` emits —
+  re-check that URL at each publish, the mechanics have changed more than
+  once. The entry carries **no `packages` block**, because proofcut is on no
+  package registry and a `pypi` identifier would name something that does not
+  exist — `websiteUrl` points at docs/DEMO.md instead. If proofcut is ever
+  published to PyPI, that block is the one thing to add. A publish proves the
+  `io.github.tydude001` namespace with a GitHub device login, and **the token
+  it writes lives five minutes**, so the login and the publish go back to
+  back. HISTORY.md § The registry listing.
 - **The community directories** — PulseMCP, Glama, Smithery, and a pull
   request to the `awesome-mcp-servers` list under its media/video heading.
   Each takes the repo URL, the description and the release; none needs

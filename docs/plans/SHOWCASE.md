@@ -135,10 +135,9 @@ in the query that matters. Recommended (92 characters; the registry schema's
 > Local-first AI video editor: recordings to a finished film, cut by
 > transcript, then verified
 
-The GitHub repo description follows it. **It rides the next release rather
-than earning one.** Changing a description makes nothing new callable. The
-registry republish is Tyler's hand (memory:
-`public-surface-actions-are-tylers-hand`).
+**Live as of 2026-09-15** — the five strings above, the GitHub repo
+description and homepage, and the registry at 0.25.0. Changing a description
+makes nothing new callable, so it rode that release rather than earning one.
 
 Two drafts follow it too:
 - `~/proofcut-work/spikes/launch-listings/LISTINGS.md` (the awesome-list line
