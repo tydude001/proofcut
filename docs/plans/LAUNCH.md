@@ -191,7 +191,9 @@ at the next: README.md § Help wanted, right above § Requirements, where a
 Mac user reading the install list meets it; a pinned issue saying the same
 thing, for anyone who lands on the Issues tab (step 3, item 9); and the
 `Mac test report` issue form, `.github/ISSUE_TEMPLATE/mac-test.yml`, which
-asks for the run's own summary block and the report zip, so a report comes
+asks for the report zip (the summary block is an optional fallback, since
+the zip's `report.txt` already holds it, and a required paste box ahead of
+the zip read as the form refusing an upload), so a report comes
 back in one shape whoever files it. It is scripted so it costs the tester
 nothing to think about: clone, one command, attach a zip. What finds the
 stranger is step 4's listings — their audience runs Claude Code, mostly on
