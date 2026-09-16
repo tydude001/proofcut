@@ -429,7 +429,10 @@ characters, no exclamation):
 **The first comment is Tyler's, posted immediately, and it does three
 things**: says what it is in two sentences, links the 47-second clip and the
 uncut run, and pre-empts the two questions that will otherwise be the
-thread. Draft:
+thread. **Redrafted 2026-09-15**, because the draft it replaces led with the
+demo cut — it predated the third trial, which is the strongest measured thing
+here and the one a reader should be handed first (TRIAL.md § The third
+trial — a whole film). Draft:
 
 > proofcut takes your recordings to a finished film, and then proves the
 > film matches the edit. Transcription, editing and rendering run on your own
@@ -438,8 +441,19 @@ thread. Draft:
 > model provider is the agent you choose. Any agent that speaks MCP (Claude
 > Code, Codex, your own) can cut by transcript, hang b-roll off phrases, score
 > it, caption, render and master it, and then check the render against the
-> edit. Here is one cutting, captioning and checking a demo unattended, start
-> to finish: [clip](https://github.com/user-attachments/assets/4153d180-3d7c-4c70-af5f-54d63d0a8bd5) / [the uncut runs](https://github.com/tydude001/proofcut/releases/tag/v0.23.0). Two things people will ask:
+> edit.
+>
+> The repo scores three unattended runs, each handed a goal and no steps.
+> Here is the first, cutting and captioning a demo start to finish:
+> [clip](https://github.com/user-attachments/assets/4153d180-3d7c-4c70-af5f-54d63d0a8bd5) / [the uncut runs](https://github.com/tydude001/proofcut/releases/tag/v0.23.0).
+> The newest is the one I'd judge it on: briefed as a finished film ready to
+> upload, it cut the fluffed takes, laid music 18 LU under the voice, ended on
+> a card, mastered to −16.1 LUFS and checked its own render — 387 frames
+> against the timeline's 387, every word heard back — in 192 seconds and
+> $2.27. The music, the level and the card were each measured in the delivered
+> file, not read off the project. That one ran on generated demo footage; the
+> run before it used real footage and stopped at a captioned cut. Two things
+> people will ask:
 >
 > *Licence.* PolyForm Shield — source-available; you can read, run, modify
 > and redistribute it, and the one thing reserved is shipping a competing
@@ -455,6 +469,14 @@ thread. Draft:
 >     uvx --from git+https://github.com/tydude001/proofcut proofcut doctor
 >
 > I'd genuinely like the doctor output from your machine if it says ✗.
+
+**Say what the whole-film run ran on.** It was generated demo footage, and
+the sentence above concedes it rather than leaving it to be found — the run
+on real footage is a different, earlier one that stopped at a captioned cut
+(TRIAL.md § The second trial over real footage). Conceding it is the
+licence paragraph's own tactic, and the same reason nobody has listened to
+that render is worth saying if asked: the level and the fade are numbers
+here, not a judgement (TRIAL.md § What this run does not settle).
 
 **The licence paragraph is the load-bearing one.** "Source-available" draws
 scrutiny on HN, and a defensive reply loses the thread; the paragraph above
@@ -485,6 +507,11 @@ reasoning if anyone wants it, and it is public.
 - *"Whisper hallucinates."* — it does, both passes, and `asr.clean` catches
   two classes of it; HISTORY.md § The ingest path's hallucination guard.
   Answers that cite a measurement land; answers that reassure do not.
+- *"What does a run cost?"* — the whole-film run was $2.27 and 192 seconds on
+  Opus 5, over 43 turns and 42 tool calls. proofcut itself holds no API key and
+  talks to no provider; the bill is whatever agent you point at it, and a
+  cheaper model is a cheaper run. Give the number, not a range — it is
+  measured (TRIAL.md § The third trial — a whole film).
 - *"Does it need a GPU?"* — no for the core (whisper on CPU is slow but
   works); yes for `describe` and `reframe-detect`, both optional and both
   reported as "unavailable" rather than failing.
