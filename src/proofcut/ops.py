@@ -4667,7 +4667,7 @@ def contact_sheet(
     warns `preview_path`'s containment against. What `montage=True` adds is
     one labelled JPEG under `cache/sheets/`, drawn from those same thumbnails
     and drawn nowhere near the manifest, because the MCP tool hands its
-    *bytes* back and the agent panel (`--tools ''`) can open nothing else.
+    *bytes* back and the agent panel (`--tools ToolSearch`) can open nothing else.
 
     **`import_media` asks for `montage=False`, and that is not a cost
     decision.** Its reply is a record, read by a person through the web pane
@@ -4962,7 +4962,7 @@ def shot_sheet(
     watches; an agent has no window and cannot watch an MP4.
 
     **Every other sheet here returns paths, and a path is not an image.** The
-    agent panel runs `claude` with `--tools ''`, so proofcut's MCP tools are the
+    agent panel runs `claude` with `--tools ToolSearch`, so proofcut's MCP tools are the
     entire surface it has and it cannot Read a file — which means
     `contact_sheet`'s frame list and `reframe_sheet`'s montage are both
     invisible to the one caller that most needs them. What makes this one
@@ -5233,7 +5233,7 @@ def footage_sheet(
     address. `describe` already indexes what is visible and `describe-ls`
     searches that text, so they can *find* a moment; what neither can do is
     let the thing choosing **look** at it. The find is a text match and the
-    confirm was a path, which under the agent panel's `--tools ''` is no
+    confirm was a path, which under the agent panel's `--tools ToolSearch` is no
     confirm at all.
 
     That gap is measured rather than supposed: against 25 human picks the
@@ -14822,7 +14822,7 @@ def spot_frames(
     is an exploratory tool over potentially many samples, and one bad seek
     should not cost the other N-1.
 
-    **`frames[].png` is a path, and the agent panel runs `--tools ''` — no
+    **`frames[].png` is a path, and the agent panel runs `--tools ToolSearch` — no
     `Read`, so a path there is exactly as unreachable as it was for
     `shot_sheet`/`footage_sheet`/`contact_sheet` before each grew a montage
     (TRIAL.md § `spot_frames` hands back paths the agent cannot open). `sheet`

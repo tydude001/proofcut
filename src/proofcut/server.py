@@ -2073,8 +2073,10 @@ def list_media(
 ) -> dict[str, Any]:
     """List media files under `source_dir` that `import_media` could register.
 
-    What hands an unattended agent source paths on a real job, since
-    `--tools ""` gives it no directory listing of its own (TRIAL.md item 7).
+    What hands an unattended agent source paths on a real job, since an
+    agent confined to proofcut's tools (the agent panel's `--tools
+    ToolSearch`) has no directory listing of its own (HISTORY.md § The
+    seventh queue item, decided and built).
     A filename filter, not a probe — `import_media` is still what decides a
     file is actually usable. Each entry's `already_imported` is checked
     against this project's own registered clips, so a repeated call does not
@@ -4307,8 +4309,8 @@ def shot_sheet(
     with the same kind of picture: `footage_sheet` browses one registered
     clip's own material, `contact_sheet` looks at a clip's first ten seconds,
     and `reframe_sheet` reviews framing windows a page at a time. All four
-    hand the bytes back, because this server's agent runs under `--tools ''`
-    and can open no path at all.
+    hand the bytes back, because an agent confined to proofcut's tools (the
+    agent panel's `--tools ToolSearch`) can open no path at all.
 
     One tile per shot, at the exact source second that shot reads from, four
     across and about two dozen a page — the measured ceiling before vision
@@ -4417,8 +4419,8 @@ def contact_sheet(
 
     The frames come from `thumbnail()`'s cache — no new cache location, no new
     manifest key, no new web route — and the montage of them comes back here
-    as bytes, since this server's agent runs under `--tools ''` and cannot
-    open a path. `import_media` makes the frames for every clip it registers,
+    as bytes, since an agent confined to proofcut's tools (the agent panel's
+    `--tools ToolSearch`) cannot open a path. `import_media` makes the frames for every clip it registers,
     so this is usually a cache hit; call it to *see* them, to look further
     than ten seconds, or to redraw after a re-import.
 
@@ -4685,8 +4687,9 @@ def spot_frames(
 
     Like `shot_sheet`/`footage_sheet`/`contact_sheet`, the reply also carries
     a montage of the sampled frames as an image — `frames[].png` is a path,
-    and this server's agent runs under `--tools ''` with no `Read` to open
-    one (TRIAL.md § `spot_frames` hands back paths the agent cannot open).
+    and an agent confined to proofcut's tools (the agent panel's `--tools
+    ToolSearch`) has no `Read` to open one (TRIAL.md § `spot_frames` hands
+    back paths the agent cannot open).
     """
     report = ops.spot_frames(path, target, count=count, times=times, fps=fps)
     if not report.get("sheet"):
@@ -4872,7 +4875,14 @@ def review_verdict(path: ProjectPath = None,
 
 @_tool()
 def review_list(path: ProjectPath = None) -> dict[str, Any]:
-    """Every item registered for this project's review round, and its verdict."""
+    """List every item registered for this project's review round, and its verdict.
+
+    Read-only. Returns `items` (each `review_add` registration: name, kind,
+    project-relative path, sha256 and any control baseline) and `verdicts`
+    (keyed by item name: the verdict, its note and when it was recorded). Items are registered with
+    `review_add`, judged with `review_verdict`, and served to a phone by
+    `proofcut review serve`.
+    """
     return ops.review_list(path)
 
 
