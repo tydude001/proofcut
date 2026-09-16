@@ -135,8 +135,12 @@ in the query that matters. Recommended (92 characters; the registry schema's
 > Local-first AI video editor: recordings to a finished film, cut by
 > transcript, then verified
 
-**Live as of 2026-09-15** — the five strings above, the GitHub repo
-description and homepage, and the registry at 0.25.0. Changing a description
+**Live as of 2026-09-15** — the five strings above and the registry at
+0.25.0. **The GitHub and Gitea descriptions are their own line since
+2026-09-16**, with no website link — Tyler's pick, and too long for the
+registry's 100: "An AI video editor that proves its cuts: an agent edits your
+recordings by transcript, on your machine, and every render is checked
+against the edit." Changing a description
 makes nothing new callable, so it rode that release rather than earning one.
 
 Two drafts follow it too:
