@@ -432,7 +432,7 @@ following six hours.
 
 **Title** (draft; HN strips "Show HN:" formatting quirks, keeps it under 80
 characters, no exclamation):
-> Show HN: proofcut – a local-first AI video editor that checks its own render
+> Show HN: proofcut – an AI video editor that transcribes its render to check it
 
 **Retitled 2026-09-15**, off "…that's an MCP server": MCP is how it is
 reached rather than what it does, and it narrows the title to the readers who
@@ -440,12 +440,14 @@ already run one. The check is what nothing else in this field does, and the
 first comment then measures it; that comment's first paragraph still says MCP
 server, which is where a reader who cares meets it.
 
-**That premise is narrower as of 2026-09-16.** OpenChatCut (1.9k★) now ships
-`verify_export`, which checks a render's duration, resolution, fps, and black,
-frozen or silent spans against its timeline. "Checks its own render" is
-therefore true of it too, and a commenter can point at it. What nothing else
-found does is **transcribe the render and diff its words against the cut**.
-The title should claim that, or claim nothing unique.
+**Retitled again 2026-09-16**, off "…a local-first AI video editor that
+checks its own render", because that premise stopped being true. OpenChatCut
+(1.9k★) now ships `verify_export`, which checks a render's duration,
+resolution, fps, and black, frozen or silent spans against its timeline, so a
+commenter could point at it. What nothing else found does is **transcribe the
+render and diff its words against the cut**, and the title now names that
+mechanism rather than the general claim. "Local-first" came out to fit 80
+characters; the first comment's opening sentence carries it.
 PRIOR-ART.md § The re-check before Show HN.
 
 **The first comment is Tyler's, posted immediately, and it does three
