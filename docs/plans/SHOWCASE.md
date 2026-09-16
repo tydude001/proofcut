@@ -140,14 +140,14 @@ description and homepage, and the registry at 0.25.0. Changing a description
 makes nothing new callable, so it rode that release rather than earning one.
 
 Two drafts follow it too:
-- `~/proofcut-work/spikes/launch-listings/LISTINGS.md` (the awesome-list line
-  and the Show HN first comment)
+- `~/proofcut-work/spikes/launch-listings/LISTINGS.md` (the awesome-list line;
+  the Show HN comment is LAUNCH.md § Step 5, and that file says so itself)
 - `~/proofcut-work/spikes/launch-release/NOTES.md`
 
-The awesome-list PR is open-able whenever Tyler is ready — Glama listed on
-2026-09-15, so the line carries its badge (wiki `lucid-publish`). Its line is
-copied from the description, and **steps 1–2 landed first**, so the list will
-not carry the front-half wording.
+The awesome-list PR is open (punkpeye/awesome-mcp-servers#14483), one line
+carrying Glama's badge and waiting on that maintainer (wiki `lucid-publish`).
+Its line is copied from the description, and **steps 1–2 landed first**, so
+the list will not carry the front-half wording.
 
 ## Step 3 — the demo makes a whole film
 

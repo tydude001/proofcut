@@ -377,7 +377,9 @@ twos, with time to fix what they find.
   once. The entry carries **no `packages` block**, because proofcut is on no
   package registry and a `pypi` identifier would name something that does not
   exist — `websiteUrl` points at docs/DEMO.md instead. If proofcut is ever
-  published to PyPI, that block is the one thing to add. A publish proves the
+  published to PyPI, that block is the one thing to add. `mcp-publisher
+  validate` checks the file against the registry itself and publishes
+  nothing, so it settles the entry before the handoff. A publish proves the
   `io.github.tydude001` namespace with a GitHub device login, and **the token
   it writes lives five minutes**, so the login and the publish go back to
   back. HISTORY.md § The registry listing.
