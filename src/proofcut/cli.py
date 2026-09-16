@@ -1549,6 +1549,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "until the next window. Omit for the window from the head of the file",
     )
     p_reframe.add_argument(
+        "--fill",
+        choices=["blur"],
+        help="draw this window whole, over a blurred copy of itself, instead of "
+        "cropping it. Takes no --rect or --pane",
+    )
+    p_reframe.add_argument(
         "--interp",
         action="store_true",
         help="slide into this window from whatever governed before it, instead "
@@ -2825,6 +2831,7 @@ def _cmd_reframe(args: argparse.Namespace) -> int:
             pane=args.pane,
             src_start=args.at,
             interp=args.interp,
+            fill=args.fill,
             reset=args.reset,
             plan=args.plan,
         )

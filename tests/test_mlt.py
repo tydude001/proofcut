@@ -821,6 +821,145 @@ def test_the_edit_lanes_split_pane_is_silent() -> None:
     assert pane.find("property[@name='set.test_audio']").text == "1"
 
 
+# -- blur-fill ---------------------------------------------------------------
+#
+# PLAN.md § Blur-fill: a window drawn whole (contained) over a blurred,
+# darkened copy of itself scaled to cover the canvas. The background is a
+# second node, switched by opacity at every window boundary like a pane.
+
+WHOLE = (0, 0, *WIDE)
+
+
+def test_a_fill_window_contains_the_source_and_its_background_covers_the_canvas() -> None:
+    reframe = mlt.Reframe(WIDE, WHOLE, fills=(0.0,))
+
+    contained = mlt.fit_rect(WIDE, VERTICAL)
+    assert reframe.dest_rect(VERTICAL) == contained
+    assert contained[2] == 1080, "contained: the full width, bars above and below"
+    cover = reframe.cover_rect(VERTICAL)
+    assert cover[3] == 1920 and cover[2] > 1080, "cover: the full height, overflowing sideways"
+    assert cover[0] + cover[2] / 2 == pytest.approx(540, abs=1), "centred"
+    assert reframe.fill_rect_property(VERTICAL) == " ".join(map(str, cover)) + " 1"
+    assert reframe.fill_dest_at(0.0, VERTICAL) == cover
+
+
+def test_the_fill_background_is_switched_off_at_every_other_window() -> None:
+    """A pane's rule: a step not written is a value that carries on."""
+    reframe = mlt.Reframe(WIDE, LEFT, later=((2.0, WHOLE), (5.0, RIGHT)), fills=(2.0,))
+
+    keys = reframe.fill_rect_property(VERTICAL, RATE).split(";")
+    assert [key.split("|=")[0] for key in keys] == ["0", "60", "150"]
+    assert keys[0].endswith(" 0") and keys[2].endswith(" 0"), "off either side"
+    assert keys[1].endswith(" 1"), "and on for its own window"
+    # The picture node steps to the contained rect for the fill and back.
+    picture = reframe.rect_property(VERTICAL, RATE).split(";")
+    assert picture[1] == "60|=" + " ".join(map(str, mlt.fit_rect(WIDE, VERTICAL))) + " 1"
+    assert reframe.fill_dest_at(1.0, VERTICAL) is None
+    assert reframe.fill_dest_at(3.0, VERTICAL) == reframe.cover_rect(VERTICAL)
+
+
+def test_a_fill_is_refused_where_it_would_render_wrong() -> None:
+    with pytest.raises(mlt.MLTError, match="names no window"):
+        mlt.Reframe(WIDE, LEFT, later=((5.0, WHOLE),), fills=(3.0,))
+    with pytest.raises(mlt.MLTError, match="both split and blur-fill"):
+        mlt.Reframe(WIDE, PANE_LEFT, panes=((0.0, PANE_RIGHT),), fills=(0.0,))
+    with pytest.raises(mlt.MLTError, match="slide into or out of a blur-fill"):
+        mlt.Reframe(WIDE, WHOLE, later=((2.0, LEFT),), interp=(2.0,), fills=(0.0,))
+    with pytest.raises(mlt.MLTError, match="slide into or out of a blur-fill"):
+        mlt.Reframe(WIDE, LEFT, later=((2.0, WHOLE),), interp=(2.0,), fills=(2.0,))
+
+
+def test_a_fill_is_never_an_identity() -> None:
+    """Even a source already at the canvas's shape: the fill adds a node."""
+    same = mlt.Reframe(VERTICAL, (0, 0, *VERTICAL), fills=(0.0,))
+
+    assert same.is_identity(VERTICAL) is False
+
+
+def test_a_picture_fill_goes_under_the_lane_and_over_the_edit() -> None:
+    """Under its own lane, so the contained picture draws over it; over the
+    edit, or the edit's footage would show through the filled shot's bars."""
+    audio = [mlt.Entry("/media/talk.mp4", 0, 60, has_video=True)]
+    lane = mlt.plan_picture(
+        [_shot("cold-open", 60, duration=30.0, path="/media/cold-open.mp4")], RATE
+    )
+    reframe = {"/media/cold-open.mp4": mlt.Reframe(WIDE, WHOLE, fills=(0.0,))}
+
+    root = mlt.document(
+        audio=audio, picture=lane, rate=RATE, resolution=VERTICAL, reframe=reframe
+    )
+
+    assert sorted(mlt.reframed_nodes(root)) == ["fvchain0", "vchain0"]
+    sequence = [t for t in root.findall("tractor") if t.find("property[@name='kdenlive:uuid']") is not None]
+    stack = [track.get("producer") for track in sequence[0].findall("track")]
+    assert stack == ["producer0", "tractor0", "tractorE", "tractor1"]
+    blends = [
+        t.find("property[@name='b_track']").text
+        for t in sequence[0].findall("transition")
+        if t.find("property[@name='mlt_service']").text == "qtblend"
+    ]
+    assert blends == ["1", "2", "3"]
+    mixes = [
+        t.find("property[@name='b_track']").text
+        for t in sequence[0].findall("transition")
+        if t.find("property[@name='mlt_service']").text == "mix"
+    ]
+    assert mixes == ["1"], "the background is never mixed"
+
+
+def test_the_fill_background_is_silent_blurred_darkened_then_placed() -> None:
+    """Blur before `qtblend`, so the percentage is of the source frame and the
+    look holds on any canvas (PLAN.md § Blur-fill, finding 2)."""
+    audio = [mlt.Entry("/media/talk.mp4", 0, 60, has_video=True)]
+    reframe = {"/media/talk.mp4": mlt.Reframe(WIDE, WHOLE, fills=(0.0,))}
+
+    root = mlt.document(audio=audio, rate=RATE, resolution=VERTICAL, reframe=reframe)
+
+    node = root.find("chain[@id='fchain0']")
+    assert node is not None
+    assert node.find("property[@name='audio_index']").text == "-1"
+    services = [f.find("property[@name='mlt_service']").text for f in node.findall("filter")]
+    assert services == ["box_blur", "brightness", "qtblend"]
+    blur = node.findall("filter")[0]
+    assert blur.find("property[@name='hradius']").text == str(mlt.FILL_BLUR)
+    sequence = [t for t in root.findall("tractor") if t.find("property[@name='kdenlive:uuid']") is not None]
+    stack = [track.get("producer") for track in sequence[0].findall("track")]
+    assert stack == ["producer0", "tractorD", "tractor0"]
+
+
+def test_a_fill_background_is_blanked_wherever_its_clip_is_not_on_the_lane() -> None:
+    audio = [mlt.Entry("/media/vo.wav", 0, 90)]
+    lane = mlt.plan_picture(
+        [
+            _shot("card:title", 30, is_image=True, path="/cards/title.png"),
+            _shot("cold-open", 30, duration=30.0, path="/media/cold-open.mp4"),
+            _shot("card:end", 30, is_image=True, path="/cards/end.png"),
+        ],
+        RATE,
+    )
+    reframe = {"/media/cold-open.mp4": mlt.Reframe(WIDE, WHOLE, fills=(0.0,))}
+
+    root = mlt.document(
+        audio=audio, picture=lane, rate=RATE, resolution=VERTICAL, reframe=reframe
+    )
+
+    playlist = root.find("playlist[@id='playlist16']")
+    assert playlist is not None
+    shape = [(child.tag, child.get("length") or child.get("producer")) for child in playlist]
+    assert shape == [("blank", "30"), ("entry", "fvchain0"), ("blank", "30")]
+
+
+def test_no_fill_writes_no_fill_node() -> None:
+    """What keeps every unfilled project's document byte-identical."""
+    audio = [mlt.Entry("/media/talk.mp4", 0, 60, has_video=True)]
+    reframe = {"/media/talk.mp4": mlt.Reframe(WIDE, LEFT)}
+
+    root = mlt.document(audio=audio, rate=RATE, resolution=VERTICAL, reframe=reframe)
+
+    text = ET.tostring(root, encoding="unicode")
+    assert "fchain" not in text and "tractorD" not in text and "box_blur" not in text
+
+
 def test_pane_overlap_is_the_share_of_the_narrower_pane() -> None:
     """The number a stacked split is judged on. Nothing masks a pane, so what
     the two share is source shown twice — once in each half."""

@@ -29,7 +29,7 @@ import pytest
 from mcp import ClientSession, StdioServerParameters, stdio_client
 from stubs import write_stub
 
-from proofcut import energy, finish, finishlog, graphics, media, ops, picture
+from proofcut import energy, finish, finishlog, graphics, media, mlt, ops, picture
 from proofcut.project import Project
 
 SERVER = StdioServerParameters(command=sys.executable, args=["-m", "proofcut.cli", "mcp"])
@@ -7256,6 +7256,101 @@ def test_a_head_delays_the_music_beds_own_lead_silence(visible_tmp: Path) -> Non
     assert during_head_880 < 50.0, "the bed must not be audible yet — it would be, un-offset"
     assert after_head_880 > 500.0, "the bed must be audible once the head has actually ended"
     assert after_head_300 < 50.0, "the head's own clip does not extend past its own length"
+
+
+def _halves_video(path: Path) -> None:
+    """A 320x180 source whose top and bottom halves change colour every 1.5s,
+    so one pixel names both the half and the moment it came from. Tagged
+    bt709/tv, the range melt writes, or a readback reads the range mismatch
+    as a picture error (PLAN.md § Blur-fill, step 1)."""
+    colours = [("red", "blue"), ("lime", "yellow"), ("white", "magenta"), ("white", "magenta")]
+    inputs: list[str] = []
+    for top, bottom in colours:
+        for colour in (top, bottom):
+            inputs += ["-f", "lavfi", "-i", f"color=c={colour}:s=320x90:r=30:d=1.5"]
+    stacks = "".join(f"[{2 * i}][{2 * i + 1}]vstack[s{i}];" for i in range(len(colours)))
+    joined = "".join(f"[s{i}]" for i in range(len(colours)))
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-loglevel", "error", *inputs,
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=6",
+            "-filter_complex", f"{stacks}{joined}concat=n={len(colours)}:v=1:a=0,format=yuv420p[v]",
+            "-map", "[v]", "-map", f"{2 * len(colours)}:a", "-shortest",
+            "-c:v", "libx264", "-c:a", "aac",
+            "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
+            "-color_range", "tv",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+    )  # fmt: skip
+
+
+def _pixel(render: Path, seconds: float, x: int, y: int, size: tuple[int, int]) -> tuple[int, int, int]:
+    raw = subprocess.run(
+        [
+            "ffmpeg", "-loglevel", "error", "-ss", f"{seconds}", "-i", str(render),
+            "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+        ],
+        check=True,
+        capture_output=True,
+    ).stdout  # fmt: skip
+    offset = (y * size[0] + x) * 3
+    return raw[offset], raw[offset + 1], raw[offset + 2]
+
+
+@needs_ffprobe
+@needs_ffmpeg
+@needs_melt
+def test_a_blur_fill_renders_the_same_moment_contained_over_its_own_darkened_copy(
+    visible_tmp: Path,
+) -> None:
+    """PLAN.md § Blur-fill, read back off a real melt render.
+
+    A 9:16 canvas over a 16:9 source: a fill window at the head, a crop from
+    3s. During the fill the centre band is the source at full brightness and
+    the bands above and below are the *same second's* colours darkened to
+    `FILL_DARKEN`; at 2.25s both have changed colour together, which is what
+    says the background is the same moment and not merely the same clip.
+    After 3s the crop fills the frame, so the fill's step off is honoured.
+    """
+    source = visible_tmp / "halves.mp4"
+    _halves_video(source)
+    project = visible_tmp / "proj"
+    canvas = (180, 320)
+
+    async def body(session: ClientSession) -> Any:
+        client = Client(session)
+        clip = await _seeded(client, project, source, None)
+        await client.call("canvas", path=str(project), size=f"{canvas[0]}x{canvas[1]}")
+        await client.call("reframe", path=str(project), clip_id=clip, fill="blur")
+        await client.call(
+            "reframe", path=str(project), clip_id=clip, rect="109,0,101,180", src_start=3.0
+        )
+        return await client.call(
+            "export", path=str(project), output=str(visible_tmp / "fill.mp4"), export_format=None
+        )
+
+    result = anyio.run(_with_server, body)
+    assert result["writer"] == "melt"
+    render = Path(result["output"])
+
+    def near(pixel: tuple[int, int, int], want: tuple[int, int, int], slack: int = 40) -> bool:
+        return all(abs(a - b) <= slack for a, b in zip(pixel, want, strict=True))
+
+    dark = round(255 * mlt.FILL_DARKEN)
+    # Contained: 180x101 at y≈110. Source row 90 (the halves' join) lands at
+    # y≈160, so y=130 is the top half and y=190 the bottom.
+    assert near(_pixel(render, 0.75, 90, 130, canvas), (255, 0, 0)), "centre, top half: red, full"
+    assert near(_pixel(render, 0.75, 90, 190, canvas), (0, 0, 255)), "centre, bottom half: blue, full"
+    assert near(_pixel(render, 0.75, 90, 60, canvas), (dark, 0, 0)), "top band: red, darkened"
+    assert near(_pixel(render, 0.75, 90, 260, canvas), (0, 0, dark)), "bottom band: blue, darkened"
+    # The same moment: at 2.25s the source's halves are lime over yellow.
+    assert near(_pixel(render, 2.25, 90, 60, canvas), (0, dark, 0)), "top band follows the source"
+    assert near(_pixel(render, 2.25, 90, 130, canvas), (0, 255, 0))
+    # After the fill: the crop covers the frame, full brightness, top to bottom.
+    assert near(_pixel(render, 4.5, 90, 60, canvas), (255, 255, 255)), "crop, top half: white"
+    assert near(_pixel(render, 4.5, 90, 260, canvas), (255, 0, 255)), "crop, bottom half: magenta"
 
 
 # -- export presets --------------------------------------------------------

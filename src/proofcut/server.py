@@ -1435,6 +1435,12 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "the head of the source to slide from — and cannot be combined with "
             "`pane`."
         ),
+        "fill": (
+            "`blur` draws this window **blur-filled**: the whole source contained in "
+            "the frame, over a blurred, darkened copy of the same moment covering the "
+            "canvas. For a shot every crop loses something from and no split divides. "
+            "Takes no `rect`, `pane` or `interp`; set `src_start` for one shot."
+        ),
         "reset": (
             "With `clip_id`, drop that clip's overrides; with `src_start` as well, "
             "only the window there. Alone, drop every override."
@@ -4070,6 +4076,7 @@ def reframe(
     pane: str | None = None,
     src_start: float | None = None,
     interp: bool = False,
+    fill: str | None = None,
     reset: bool = False,
     plan: bool = False,
 ) -> dict[str, Any]:
@@ -4086,7 +4093,8 @@ def reframe(
     per-**shot** window, addressed on the source's own clock, so every
     placement of the clip picks it up. `pane` makes that window a stacked
     split for a shot one crop cannot hold; `interp` slides into it rather than
-    stepping.
+    stepping; `fill="blur"` draws it whole over a blurred copy of itself
+    instead of cropping, for a shot every crop loses something from.
 
     `reset` drops overrides (one clip, one window, or all); `plan` resolves
     without writing. Nothing here analyses the picture — `reframe_detect`
@@ -4100,6 +4108,7 @@ def reframe(
         pane=pane,
         src_start=src_start,
         interp=interp,
+        fill=fill,
         reset=reset,
         plan=plan,
     )

@@ -266,6 +266,15 @@ class Reframe:
     window either slides or it does not — there is no third rect to carry.
     Empty means every window steps, which is what every window before this
     existed meant and what keeps an unflagged project's document unchanged.
+
+    `fills` names the windows drawn **blur-filled** (PLAN.md § Blur-fill):
+    the whole source contained in the frame over a blurred, darkened copy of
+    the same moment scaled to cover it. Addressed by window start like
+    `interp`. A fill window's own crop is the whole source, and nothing
+    reads it as a crop — `_window_dest` answers `fit_rect` for it. The
+    background is a second node (`fill_rect_property`), switched by opacity
+    the way a pane is. Empty on every project with no fill, which keeps
+    their documents byte-identical.
     The mechanism was already paid for by the writer (`rect_property` below):
     every key already carried its own operator, discrete `|=` or
     interpolated `=`, this class just never wrote anything but `|=`. **Which
@@ -284,6 +293,7 @@ class Reframe:
     later: tuple[tuple[float, tuple[int, int, int, int]], ...] = ()
     panes: tuple[tuple[float, tuple[int, int, int, int]], ...] = ()
     interp: tuple[float, ...] = ()
+    fills: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
         at = [seconds for seconds, _ in self.later]
@@ -321,6 +331,33 @@ class Reframe:
         # always writes `|=`), so a window that is both a split and a slide
         # would move on top and step underneath — two framings disagreeing in
         # the same frame, at exit 0. Refused rather than shipped half-built.
+        fill_at = list(self.fills)
+        if fill_at != sorted(set(fill_at)):
+            raise MLTError(f"fill windows must be in source order and distinct, not {fill_at}")
+        loose = [seconds for seconds in fill_at if seconds not in starts]
+        if loose:
+            raise MLTError(
+                f"a fill at {loose} names no window — a fill is a mode of the window "
+                "starting at that source in-point"
+            )
+        # A fill has no crop to split, and its background is keyed by opacity
+        # steps, so a slide into or out of one would move the picture while
+        # the blur behind it snaps.
+        split_fill = sorted(set(fill_at) & set(pane_at))
+        if split_fill:
+            raise MLTError(f"window {split_fill} cannot both split and blur-fill")
+        windows = self.windows()
+        sliding = [
+            windows[i][0]
+            for i in range(1, len(windows))
+            if self.is_interp(windows[i][0])
+            and (self.is_fill(windows[i][0]) or self.is_fill(windows[i - 1][0]))
+        ]
+        if sliding:
+            raise MLTError(
+                f"window {sliding} cannot slide into or out of a blur-fill — the "
+                "background steps at the join while the picture would travel"
+            )
         both = sorted(set(self.interp) & set(pane_at))
         if both:
             raise MLTError(
@@ -374,6 +411,41 @@ class Reframe:
         `rect_property`'s own docstring).
         """
         return any(abs(seconds - at) < 1e-9 for at in self.interp)
+
+    def is_fill(self, seconds: float) -> bool:
+        """Is the window starting exactly here drawn blur-filled?"""
+        return any(abs(seconds - at) < 1e-9 for at in self.fills)
+
+    def is_fill_at(self, seconds: float) -> bool:
+        """Is the window in force at this point in the source blur-filled?"""
+        return self.is_fill(self.window_start(seconds))
+
+    def _window_dest(
+        self,
+        start: float,
+        crop: tuple[int, int, int, int],
+        resolution: tuple[int, int],
+        box: tuple[int, int, int, int] | None = None,
+    ) -> tuple[int, int, int, int]:
+        """Where the source lands for the window starting at `start`: contained
+        for a fill window, `_dest`'s crop-to-fill for every other."""
+        if self.is_fill(start):
+            return fit_rect(self.source, resolution)
+        return self._dest(crop, resolution, box)
+
+    def cover_rect(self, resolution: tuple[int, int]) -> tuple[int, int, int, int]:
+        """Where a fill window's background lands: the whole source, scaled by
+        the larger ratio so it covers the frame, centred. The profile clips it."""
+        src_w, src_h = self.source
+        return self._dest((0, 0, src_w, src_h), resolution)
+
+    def fill_dest_at(
+        self, seconds: float, resolution: tuple[int, int]
+    ) -> tuple[int, int, int, int] | None:
+        """The background's rect at this point in the source, or None where the
+        window in force is not a fill — the preview's half of what the second
+        node draws."""
+        return self.cover_rect(resolution) if self.is_fill_at(seconds) else None
 
     def crop_at(self, seconds: float) -> tuple[int, int, int, int]:
         """The window in force at that point in the source."""
@@ -433,7 +505,7 @@ class Reframe:
         """
         upper, _lower = pane_boxes(resolution)
         box = upper if self.is_split(seconds) else None
-        return self._dest(self.crop_at(seconds), resolution, box)
+        return self._window_dest(self.window_start(seconds), self.crop_at(seconds), resolution, box)
 
     def pane_dest_at(
         self, seconds: float, resolution: tuple[int, int]
@@ -465,7 +537,7 @@ class Reframe:
         being handed to a second node, which is not something MLT was already
         doing.
         """
-        if self.panes:
+        if self.panes or self.fills:
             return False
         fitted = fit_rect(self.source, resolution)
         return all(self._dest(crop, resolution) == fitted for _, crop in self.windows())
@@ -519,7 +591,7 @@ class Reframe:
         keys = []
         for index, (seconds, crop) in enumerate(windows):
             box = upper if self.pane_at(seconds) is not None else None
-            values = " ".join(str(value) for value in self._dest(crop, resolution, box))
+            values = " ".join(str(value) for value in self._window_dest(seconds, crop, resolution, box))
             # This key's operator governs the segment *leaving* it, so it is
             # the *next* window's flag that decides — not this one's.
             next_start = windows[index + 1][0] if index + 1 < len(windows) else None
@@ -558,6 +630,35 @@ class Reframe:
                 continue
             values = " ".join(str(value) for value in self._dest(pane, resolution, lower))
             keys.append(f"{round(seconds * rate)}|={values} 1")
+        return ";".join(keys)
+
+
+    def fill_rect_property(self, resolution: tuple[int, int], rate: float | None = None) -> str:
+        """The fill background's own `rect`: cover where a window is a fill, off elsewhere.
+
+        `pane_rect_property`'s rule, for the same reason: keyed at every window
+        boundary, because a step not written is a value that carries on, and a
+        background left at opacity 1 past its fill would draw a blurred copy
+        behind the next shot's crop — invisible there, until the shot after
+        is contained too. One window writes the bare string.
+        """
+        if not self.fills:
+            raise MLTError("this reframe has no fill windows, so there is no background node")
+        cover = " ".join(str(value) for value in self.cover_rect(resolution))
+        if not self.later:
+            return f"{cover} 1"
+        if not rate:
+            raise MLTError(
+                "a fill background over more than one window needs the frame rate — "
+                "its keyframes are numbered in the source's own frames"
+            )
+        parked = " ".join(str(value) for value in fit_rect(self.source, resolution))
+        keys = []
+        for seconds, _crop in self.windows():
+            if self.is_fill(seconds):
+                keys.append(f"{round(seconds * rate)}|={cover} 1")
+            else:
+                keys.append(f"{round(seconds * rate)}|={parked} 0")
         return ";".join(keys)
 
 
@@ -954,6 +1055,37 @@ def _pane_filter(
     _property(node_filter, "rect", reframe.pane_rect_property(resolution, rate))
 
 
+#: A blur-fill background's blur, as `box_blur`'s radius — a **percentage**
+#: of the image, which is why it is `box_blur` and never an avfilter blur: a
+#: pixel sigma is three times as strong on a third-size canvas (PLAN.md
+#: § Blur-fill, finding 2). Fixed, with the darkening, until a real render has
+#: been watched.
+FILL_BLUR = 12
+FILL_DARKEN = 0.7
+
+
+def _fill_filters(
+    node: ET.Element, reframe: Reframe, resolution: tuple[int, int], rate: float
+) -> None:
+    """Blur, darken, then place — on a fill background's own node.
+
+    The order is the spike's: the blur runs on the source frame before
+    `qtblend` scales it, so its percentage is of the source and the look is the
+    same on any canvas.
+    """
+    node_id = node.get("id")
+    blur = ET.SubElement(node, "filter", {"id": f"blur_{node_id}"})
+    _property(blur, "mlt_service", "box_blur")
+    _property(blur, "hradius", str(FILL_BLUR))
+    _property(blur, "vradius", str(FILL_BLUR))
+    dark = ET.SubElement(node, "filter", {"id": f"dark_{node_id}"})
+    _property(dark, "mlt_service", "brightness")
+    _property(dark, "level", str(FILL_DARKEN))
+    place = ET.SubElement(node, "filter", {"id": f"filter_{node_id}"})
+    _property(place, "mlt_service", "qtblend")
+    _property(place, "rect", reframe.fill_rect_property(resolution, rate))
+
+
 def reframed_nodes(root: ET.Element) -> dict[str, str]:
     """Every rendered producer carrying a reframe, as node id → rect.
 
@@ -1028,6 +1160,12 @@ def document(
     that has one: a second node of the same resource, a playlist holding that
     lane's entries with everything unsplit blanked out, and one more compositing
     transition. Nothing else changes — no new service, no mask, no crop filter.
+
+    A reframe carrying **fill windows** does the same, one track per lane,
+    placed *under* the lane it backs: `fchain`/`fvchain` nodes with
+    `_fill_filters`, blanked where not filled. The picture lane's background
+    sits above the edit lane, or the edit's footage would show through a
+    filled shot's bars.
 
     `music2` is the bed's second lane, and exists only for a crossfade: two
     passages that overlap cannot share a playlist, so the writer alternates
@@ -1180,6 +1318,44 @@ def document(
                 found.setdefault(entry.resource, entry)
         return found
 
+    def _fill_in(lane: list[Entry]) -> dict[str, Entry]:
+        """The resources on this lane with a blur-filled window, first-seen order."""
+        found: dict[str, Entry] = {}
+        for entry in lane:
+            if entry.is_image or not entry.has_video:
+                continue
+            if entry.resource in reframe and reframe[entry.resource].fills:
+                found.setdefault(entry.resource, entry)
+        return found
+
+    def _fill_lane(
+        lane: list[Entry], prefix: str, playlists: tuple[str, str], tractor_id: str, track_name: str
+    ) -> dict[str, str]:
+        """A lane's blur-fill background: silent nodes, a blanked playlist, a tractor."""
+        nodes: dict[str, str] = {}
+        for resource, entry in _fill_in(lane).items():
+            node_id = f"{prefix}{len(nodes)}"
+            nodes[resource] = node_id
+            node = _source_node(node_id, entry, bin_ids[resource], rate)
+            _property(node, "audio_index", "-1")
+            _property(node, "video_index", "0")
+            _property(node, "set.test_audio", "1")
+            _fill_filters(node, reframe[resource], resolution, rate)
+            root.append(node)
+        if nodes:
+            root.append(_pane_playlist(playlists[0], lane, nodes, set(nodes)))
+            root.append(ET.Element("playlist", {"id": playlists[1]}))
+            track = ET.SubElement(
+                root, "tractor", {"id": tractor_id, "in": "0", "out": str(total_frames - 1)}
+            )
+            _property(track, "kdenlive:timeline_active", "1")
+            _property(track, "kdenlive:track_name", track_name)
+            for playlist_id in playlists:
+                ET.SubElement(track, "track", {"producer": playlist_id, "hide": "audio"})
+        return nodes
+
+    edit_fills = _fill_lane(audio, "fchain", ("playlist14", "playlist15"), "tractorD", "Edit fill")
+
     audio_nodes: dict[str, str] = {}
     for entry in audio:
         if entry.resource in audio_nodes:
@@ -1258,6 +1434,10 @@ def document(
         _property(picture_track, "kdenlive:track_name", "Picture")
         for playlist_id in ("playlist2", "playlist3"):
             ET.SubElement(picture_track, "track", {"producer": playlist_id, "hide": "audio"})
+
+    picture_fills = _fill_lane(
+        picture, "fvchain", ("playlist16", "playlist17"), "tractorE", "Picture fill"
+    )
 
     picture_panes: dict[str, str] = {}
     for resource, entry in _split_in(picture).items():
@@ -1375,9 +1555,15 @@ def document(
     # the picture lane, and that lane's second pane. A pane sits directly over
     # the track it is half of and under everything that was already above it,
     # so adding one cannot change what covers what.
-    stack = ["producer0", "tractor0"]
+    # A fill background goes directly under the lane it backs.
+    stack = ["producer0"]
+    if edit_fills:
+        stack.append("tractorD")
+    stack.append("tractor0")
     if edit_panes:
         stack.append("tractor3")
+    if picture_fills:
+        stack.append("tractorE")
     if picture:
         stack.append("tractor1")
     if picture_panes:
@@ -1518,6 +1704,7 @@ def document(
         (audio_nodes if role == "edit" else picture_nodes)[resource]
         for role, resource in wants_reframe
     } | set(edit_panes.values()) | set(picture_panes.values())
+    expected |= set(edit_fills.values()) | set(picture_fills.values())
     found = set(reframed_nodes(root))
     if expected != found:
         raise MLTError(

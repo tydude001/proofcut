@@ -756,3 +756,101 @@ def test_the_writer_gets_the_interp_flag(project: Project) -> None:
     assert entry.interp == (8.0,)
     assert entry.is_interp(4.0) is False
     assert entry.is_interp(8.0) is True
+
+
+# -- blur-fill ---------------------------------------------------------------
+#
+# PLAN.md § Blur-fill: `fill="blur"` makes a window draw the whole source,
+# contained, over a blurred copy of itself. Its record stores the whole
+# source as its rect, so every existing reader keeps working.
+
+
+def test_a_fill_window_is_stored_with_the_whole_source_as_its_rect(project: Project) -> None:
+    ops.canvas(project.root, size="1080x1920")
+    ops.reframe(project.root, "cold-open", fill="blur", src_start=4.0)
+
+    records = project.read_manifest()[ops.REFRAME_KEY]
+
+    assert records == [
+        {"clip_id": "cold-open", "rect": [0, 0, 1920, 816], "src_start": 4.0, "fill": "blur"}
+    ]
+
+
+def test_a_fill_window_reads_back_as_a_fill_and_keeps_the_whole_frame(project: Project) -> None:
+    ops.canvas(project.root, size="1080x1920")
+    result = ops.reframe(project.root, "cold-open", fill="blur", src_start=4.0)
+
+    windows = _clip(result, "cold-open")["windows"]
+
+    assert "fill" not in windows[0], "absent on a crop"
+    assert windows[1]["fill"] == "blur"
+    assert windows[1]["crop"] == "0,0,1920,816"
+    assert windows[1]["kept"] == 1.0
+    assert _clip(result, "cold-open")["reframes"] is True
+
+
+def test_a_fill_at_the_head_is_a_fill_too(project: Project) -> None:
+    ops.canvas(project.root, size="1080x1920")
+    result = ops.reframe(project.root, "cold-open", fill="blur")
+
+    assert _clip(result, "cold-open")["windows"][0]["fill"] == "blur"
+
+
+def test_a_crop_replaces_a_fill_at_the_same_in_point(project: Project) -> None:
+    ops.canvas(project.root, size="1080x1920")
+    ops.reframe(project.root, "cold-open", fill="blur", src_start=4.0)
+    ops.reframe(project.root, "cold-open", rect="0,0,459,816", src_start=4.0)
+
+    records = project.read_manifest()[ops.REFRAME_KEY]
+
+    assert records == [{"clip_id": "cold-open", "rect": [0, 0, 459, 816], "src_start": 4.0}]
+
+
+def test_fill_refuses_what_it_cannot_draw(project: Project) -> None:
+    ops.canvas(project.root, size="1080x1920")
+    with pytest.raises(ProjectError, match="no rect or pane"):
+        ops.reframe(project.root, "cold-open", fill="blur", rect="0,0,459,816")
+    with pytest.raises(ProjectError, match="cannot slide"):
+        ops.reframe(project.root, "cold-open", fill="blur", interp=True, src_start=2.0)
+    with pytest.raises(ProjectError, match="not one this build draws"):
+        ops.reframe(project.root, "cold-open", fill="mirror")
+    with pytest.raises(ProjectError, match="needs a clip_id"):
+        ops.reframe(project.root, fill="blur")
+    with pytest.raises(ProjectError, match="no picture"):
+        ops.reframe(project.root, "vo", fill="blur")
+    assert ops.REFRAME_KEY not in project.read_manifest()
+
+
+def test_a_fill_cannot_be_slid_into_or_out_of(project: Project) -> None:
+    ops.canvas(project.root, size="1080x1920")
+    ops.reframe(project.root, "cold-open", fill="blur", src_start=2.0)
+    with pytest.raises(ProjectError, match="cannot be slid out of"):
+        ops.reframe(project.root, "cold-open", rect="0,0,459,816", src_start=5.0, interp=True)
+
+    ops.reframe(project.root, "cold-open", reset=True, src_start=2.0)
+    ops.reframe(project.root, "cold-open", rect="0,0,459,816", src_start=8.0, interp=True)
+    with pytest.raises(ProjectError, match="slides in from this one"):
+        ops.reframe(project.root, "cold-open", fill="blur", src_start=6.0)
+
+
+def test_a_hand_edited_fill_with_a_crop_rect_is_reported_not_rendered(project: Project) -> None:
+    """Following a crop is not built, so a fill whose rect is not the whole
+    source is refused where it is read — reported in the table, not guessed."""
+    ops.canvas(project.root, size="1080x1920")
+    manifest = project.read_manifest()
+    manifest[ops.REFRAME_KEY] = [{"clip_id": "cold-open", "rect": [0, 0, 459, 816], "fill": "blur"}]
+    project.write_manifest(manifest)
+
+    entry = _clip(ops.reframe(project.root), "cold-open")
+
+    assert entry["crop"] is None
+    assert "not the whole source" in entry["error"]
+
+
+def test_the_plan_writes_no_fill(project: Project) -> None:
+    ops.canvas(project.root, size="1080x1920")
+    result = ops.reframe(project.root, "cold-open", fill="blur", plan=True)
+
+    assert result["written"] is False
+    assert _clip(result, "cold-open")["windows"][0]["fill"] == "blur"
+    assert ops.REFRAME_KEY not in project.read_manifest()

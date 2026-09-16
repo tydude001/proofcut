@@ -7546,8 +7546,13 @@ def _fit_rect_to_canvas(
 
 #: One stored window: where in the source it starts, the rect asked for, the
 #: second rect when that window is drawn as a stacked split, and whether it
-#: slides in from the previous window instead of stepping to it.
-StoredWindow = tuple[float, tuple[int, int, int, int], tuple[int, int, int, int] | None, bool]
+#: slides in from the previous window instead of stepping to it, and whether it
+#: is drawn blur-filled (PLAN.md § Blur-fill).
+StoredWindow = tuple[float, tuple[int, int, int, int], tuple[int, int, int, int] | None, bool, bool]
+
+#: The one fill mode there is. A string on the record rather than `true`, so a
+#: second treatment is a new value rather than a second key.
+FILL_MODES = ("blur",)
 
 
 def _stored_reframes(project: Project) -> dict[str, list[StoredWindow]]:
@@ -7571,13 +7576,30 @@ def _stored_reframes(project: Project) -> dict[str, list[StoredWindow]]:
     means the window steps rather than slides, which is what every window
     written before the keyframed move existed meant and still means. PLAN.md
     § Per-shot framing, refused section; § The keyframed move.
+
+    `fill` is the fourth: absent means the window crops. A fill window's
+    `rect` is the whole source, which is what its foreground shows; a fill
+    whose rect is anything else is refused in `_clip_reframe` rather than
+    read as a crop to contain, since following a crop is not built.
     """
     stored: dict[str, list[StoredWindow]] = {}
     for record in project.read_manifest().get(REFRAME_KEY, []):
         at = float(record.get("src_start") or 0.0)
         pane = record.get("pane")
+        fill = record.get("fill")
+        if fill is not None and fill not in FILL_MODES:
+            raise ProjectError(
+                f"clip {record.get('clip_id')!r} has a reframe window with fill {fill!r} — "
+                f"the fills there are {', '.join(FILL_MODES)}"
+            )
         stored.setdefault(str(record["clip_id"]), []).append(
-            (at, _parse_rect(record["rect"]), _parse_rect(pane) if pane else None, bool(record.get("interp")))
+            (
+                at,
+                _parse_rect(record["rect"]),
+                _parse_rect(pane) if pane else None,
+                bool(record.get("interp")),
+                fill is not None,
+            )
         )
     for series in stored.values():
         series.sort(key=lambda entry: entry[0])
@@ -7674,7 +7696,23 @@ def _clip_reframe(
     upper, _lower = mlt.pane_boxes(resolution)
     pane_shape = (upper[2], upper[3])
 
-    def fit(at: float, rect: tuple[int, int, int, int], pane: object) -> tuple[int, int, int, int]:
+    whole = (0, 0, *source)
+
+    def fit(
+        at: float, rect: tuple[int, int, int, int], pane: object, _interp: bool = False, fill: bool = False
+    ) -> tuple[int, int, int, int]:
+        if fill:
+            if tuple(rect) != whole:
+                raise ProjectError(
+                    f"clip {clip.get('clip_id')!r} has a blur-fill window at {at}s whose rect "
+                    f"is {_rect_text(rect)}, not the whole source {_rect_text(whole)} — a fill "
+                    "shows the whole frame; reset the window and set it again"
+                )
+            if pane:
+                raise ProjectError(
+                    f"clip {clip.get('clip_id')!r}'s window at {at}s is both a split and a fill"
+                )
+            return whole
         if pane:
             return _fit_pane_rect(rect, source, pane_shape)
         return _fit_rect_to_canvas(rect, source, resolution)
@@ -7688,15 +7726,23 @@ def _clip_reframe(
             "there is nothing before the head of the source to slide from; only "
             "a later window can carry `interp`"
         )
-    crop = mlt.centre_crop(source, resolution) if head is None else fit(*head[:3])
-    later = tuple((when, fit(when, rect, pane)) for when, rect, pane, _interp in series)
+    crop = mlt.centre_crop(source, resolution) if head is None else fit(*head)
+    later = tuple((window[0], fit(*window)) for window in series)
     panes = tuple(
         (when, _fit_pane_rect(pane, source, pane_shape))
-        for when, _rect, pane, _interp in ([head] if head else []) + series
+        for when, _rect, pane, _interp, _fill in ([head] if head else []) + series
         if pane is not None
     )
-    interp = tuple(when for when, _rect, _pane, flag in series if flag)
-    return mlt.Reframe(source=source, crop=crop, later=later, panes=panes, interp=interp)
+    interp = tuple(when for when, _rect, _pane, flag, _fill in series if flag)
+    fills = tuple(when for when, _rect, _pane, _interp, fill in ([head] if head else []) + series if fill)
+    try:
+        return mlt.Reframe(
+            source=source, crop=crop, later=later, panes=panes, interp=interp, fills=fills
+        )
+    except mlt.MLTError as error:
+        # A combination only a hand edit reaches (a slide into a fill); read
+        # paths report a `ProjectError`, as for two windows at one in-point.
+        raise ProjectError(f"clip {clip.get('clip_id')!r}: {error}") from error
 
 
 def _reframe_map(project: Project, resolution: tuple[int, int]) -> dict[str, mlt.Reframe]:
@@ -7728,6 +7774,7 @@ def reframe(
     pane: str | None = None,
     src_start: float | None = None,
     interp: bool = False,
+    fill: str | None = None,
     reset: bool = False,
     plan: bool = False,
 ) -> dict[str, Any]:
@@ -7785,7 +7832,30 @@ def reframe(
     window needs `src_start` after 0, and it cannot also carry
     `pane`: a split's lower half has no interpolation of its own, so the two
     would move out of step.
+
+    **`fill="blur"` draws that window blur-filled** instead of cropping it:
+    the whole source contained in the frame, over a blurred, darkened copy of
+    the same moment covering the canvas (PLAN.md § Blur-fill). It takes no
+    `rect` — the window shows the whole frame, and its record stores the whole
+    source as its rect — and no `pane` or `interp`, since the background steps
+    at every window boundary.
     """
+    if fill is not None:
+        if fill not in FILL_MODES:
+            raise ProjectError(f"fill {fill!r} is not one this build draws — {', '.join(FILL_MODES)}")
+        if rect is not None or pane is not None:
+            raise ProjectError(
+                "a blur-fill window shows the whole source, so it takes no rect or pane"
+            )
+        if interp:
+            raise ProjectError(
+                "a blur-fill window cannot slide — its background steps at the join "
+                "while the picture would travel"
+            )
+        if reset:
+            raise ProjectError("pass `fill` or `reset`, not both")
+        if clip_id is None:
+            raise ProjectError("a fill needs a clip_id — a window indexes one clip's source")
     if rect is not None and reset:
         raise ProjectError("pass a rect or `reset`, not both")
     if pane is not None and rect is None:
@@ -7799,7 +7869,7 @@ def reframe(
         raise ProjectError(
             "an in-point needs a clip_id — a window indexes one clip's own source"
         )
-    if src_start is not None and rect is None and not reset:
+    if src_start is not None and rect is None and fill is None and not reset:
         raise ProjectError("an in-point needs a rect to put there, or `reset` to drop one")
     if interp and rect is None:
         raise ProjectError(
@@ -7846,7 +7916,21 @@ def reframe(
         )
 
     asked = _stored_reframes(project)
-    if rect is not None:
+    if fill is not None:
+        whole = (0, 0, *_clip_source(clips[clip_id]))  # type: ignore[arg-type,misc]
+        series = [entry for entry in asked.get(str(clip_id), []) if entry[0] != at]
+        # A slide into the window after this one would move the picture off a
+        # fill while its background snaps; `mlt.Reframe` refuses it, and so
+        # does this, at the keyboard.
+        following = [entry for entry in series if entry[0] > at]
+        if following and following[0][3]:
+            raise ProjectError(
+                f"the window at {following[0][0]}s slides in from this one, and a "
+                "blur-fill cannot be slid out of — clear its interp first"
+            )
+        series.append((at, whole, None, False, True))  # type: ignore[arg-type]
+        asked[str(clip_id)] = sorted(series, key=lambda entry: entry[0])
+    elif rect is not None:
         # Resolved before it is stored, so an impossible rect is refused at the
         # keyboard rather than at the render an hour later.
         source = _clip_source(clips[clip_id])  # type: ignore[arg-type]
@@ -7862,7 +7946,13 @@ def reframe(
         else:
             _fit_rect_to_canvas(parsed, source, resolution)  # type: ignore[arg-type]
         series = [entry for entry in asked.get(str(clip_id), []) if entry[0] != at]
-        series.append((at, parsed, parsed_pane, bool(interp)))
+        preceding = [entry for entry in series if entry[0] < at]
+        if interp and preceding and preceding[-1][4]:
+            raise ProjectError(
+                f"the window before {at}s is a blur-fill, and a fill cannot be slid "
+                "out of — its background steps at the join while the picture would travel"
+            )
+        series.append((at, parsed, parsed_pane, bool(interp), False))
         asked[str(clip_id)] = sorted(series, key=lambda entry: entry[0])
     elif reset:
         if clip_id is None:
@@ -7881,12 +7971,12 @@ def reframe(
             else:
                 asked.pop(clip_id, None)
 
-    write = (rect is not None or reset) and not plan
+    write = (rect is not None or fill is not None or reset) and not plan
     if write:
         manifest = project.read_manifest()
         records = []
         for key, series in sorted(asked.items()):
-            for window_at, window_rect, window_pane, window_interp in series:
+            for window_at, window_rect, window_pane, window_interp, window_fill in series:
                 record: dict[str, Any] = {"clip_id": key, "rect": list(window_rect)}
                 # The head window writes the record it wrote before per-shot
                 # framing existed, so an unwindowed project's manifest is
@@ -7899,6 +7989,8 @@ def reframe(
                     record["pane"] = list(window_pane)
                 if window_interp:
                     record["interp"] = True
+                if window_fill:
+                    record["fill"] = "blur"
                 records.append(record)
         if records:
             manifest[REFRAME_KEY] = records
@@ -7932,7 +8024,7 @@ def reframe(
             )
             continue
         assert entry is not None
-        overrides = {when: rect for when, rect, _pane, _interp in asked.get(key, [])}
+        overrides = {window[0]: window[1] for window in asked.get(key, [])}
         report.append(
             {
                 "clip_id": key,
@@ -7972,6 +8064,8 @@ def reframe(
                         # from — and for every window written before this
                         # existed.
                         "interp": entry.is_interp(window_at),
+                        # `fill` appears only on a blur-filled window (below),
+                        # absent-means-a-crop like the manifest record.
                         "kept": round(
                             (
                                 window_crop[2] * window_crop[3]
@@ -7985,6 +8079,7 @@ def reframe(
                             4,
                         ),
                     }
+                    | ({"fill": "blur"} if entry.is_fill(window_at) else {})
                     for window_at, window_crop in entry.windows()
                 ],
                 "error": None,
