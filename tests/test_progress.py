@@ -66,10 +66,12 @@ def test_a_listener_that_fails_is_dropped_and_the_work_goes_on() -> None:
 def test_run_streams_both_pipes_and_returns_what_subprocess_run_would() -> None:
     """Lines arrive while the child is still running — the second is printed
     only after the first has been read — and a carriage return ends a line,
-    as melt's redrawn counter needs. The returned streams match `text=True`."""
+    as melt's redrawn counter needs. The returned streams fold `\\r\\n` as
+    `text=True` does and keep a lone `\\r`. The child writes bytes, since a
+    text stdout on Windows would turn its `\\r\\n` into `\\r\\r\\n` first."""
     child = (
         "import sys, time\n"
-        "sys.stdout.write('out one\\r\\nout two\\n'); sys.stdout.flush()\n"
+        "sys.stdout.buffer.write(b'out one\\r\\nout two\\n'); sys.stdout.buffer.flush()\n"
         "sys.stderr.write('tick 1\\rtick 2\\r'); sys.stderr.flush()\n"
         "time.sleep(0.3)\n"
         "sys.stderr.write('tail'); sys.exit(3)\n"
