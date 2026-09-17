@@ -16671,15 +16671,41 @@ download a Python 3.12, which would otherwise read as something setup left
 behind.
 - **Measured here, on Linux only:** the driver ran the demo to 7 of 7
   `trial_check` passes (−16.1 LUFS, 289 of 289 frames, similarity 0.971),
-  and the uninstall comparison matched.
-- **Setup installed nothing on that run,** because this box's doctor already
-  passes. So the run proves the driver works, not the new routes.
-- **A first run stopped at the render.** The session had no display, and
-  `export` refused correctly; `QT_QPA_PLATFORM=offscreen` was the fix. That
-  is Linux's rule and does not apply to the two runners.
-- **Unmeasured:** whether the runners already carry an ffmpeg that passes
-  doctor, which setup would then leave alone. The report's `setup --plan`
-  step shows which pieces a run actually installed.
+  and the uninstall comparison matched. Setup installed nothing on that run,
+  because this box's doctor already passes, so it proved the driver and not
+  the new routes.
+- **A first local run stopped at the render.** The session had no display,
+  and `export` refused correctly; `QT_QPA_PLATFORM=offscreen` was the fix.
+  That is Linux's rule and does not apply to the two runners.
+
+**Both runners passed, on 2026-09-17** (GitHub run 35253282680, `b49de49`).
+Neither had any of the four pieces — `before setup` listed an empty
+`~/.local/bin`, an empty deps folder and no uv tools on both — so each route
+installed **ffmpeg, whisper, auto-editor and melt** from nothing, and doctor
+then passed every required row. `trial_check` passed all seven checks on
+each: the master at −16.1 LUFS, the score 10.2 dB clear of its best wrong
+second, 289 of 289 frames, similarity 0.971 with 34 of 34 words, and both
+frames within 3 of their clip's colour. The uninstall comparison matched on
+both.
+- Setup took 104 s on the Intel Mac; the Mac's transcription took 177 s
+  against Windows' 47 s, and `make_demo` 41 s against 5 s.
+- **Windows resolves what setup installed exactly as designed:** doctor read
+  ffmpeg and ffprobe from `C:\Users\runneradmin\.local\bin` (the moved
+  `.exe`s), auto-editor and `Shotcut\melt.exe` from
+  `%LOCALAPPDATA%\proofcut\deps`. The Mac read ffmpeg off its
+  `~/.local/bin` symlinks and melt from inside the copied `Shotcut.app`.
+- **The first two runs failed, and neither failure was setup's.** The
+  workflow read `runner.temp` in job-level `env`, which is not a context
+  available there; then on Windows the driver started a bare `ffmpeg` for
+  its two still frames, and **Windows looks a bare name up on the parent's
+  own PATH rather than the environment handed to the child**, so setup's
+  `~/.local/bin` was not searched. Everything before that step had already
+  passed, which is why a job can go red on two missing images with the
+  render itself checked and clean.
+- **Still unmeasured:** a machine that already has one of the four. Both
+  runners had none, so nothing exercised setup leaving a working tool alone
+  off Linux. The report's `setup --plan` step is where a run says which
+  pieces it installed.
 
 The unit tests (`test_install.py`) fake each OS. Three existing tests stated
 that setup installs on Linux only, and they were retargeted to the case that
