@@ -1338,14 +1338,15 @@ built; docs/plans/INSTALL.md):
         session bus (a container, CI, SSH without a login) the scope fails
         before melt starts and read as "melt rendered nothing".
         `picture.user_bus` decides, and the render runs uncapped with a note.
-    - So **a session with no desktop behind it cannot run the seven
-      melt-rendering tests in `test_server_stdio.py`** without that variable — `export` refuses with
-      "no display for MLT's Qt module to open", correctly, and they fail as a
-      `JSONDecodeError` on the refusal text. Seven failures there and nowhere
-      else is the environment, not a regression; confirm by stashing `src/`
-      and re-running, rather than by hunting. (Four when this was written,
-      five when it was next read; the count is `grep -c '@needs_melt'`, and
-      writing it here has gone stale twice.)
+    - So **a session with no desktop behind it cannot run the melt-rendering
+      tests in `test_server_stdio.py`** (`grep -c '@needs_melt'`; a count
+      written here went stale three times) — `export` refuses with "no
+      display for MLT's Qt module to open", correctly. **Exporting
+      `QT_QPA_PLATFORM=offscreen` to pytest does not help**: the SDK's stdio
+      client hands the server only `get_default_environment()`'s allow-list,
+      and the variable is not on it (measured 2026-09-17, when the session
+      ended mid-run). Failures there and nowhere else are the environment,
+      not a regression; confirm with an existing melt test as the control.
 - **A caption's look is project state (`caption_style`), and ASS is never
   written by hand** — three of its fields mean the opposite of what they read
   as, `\k` is a left-to-right fill rather than a per-word step, and grouping
