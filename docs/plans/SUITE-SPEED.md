@@ -15,9 +15,9 @@ Status lives in the wiki's Open items table (`proofcut-suite-speed`).
   - Its cost is real work: the stdio tests start a server process each and
     render through melt, ffmpeg and magick. No per-test breakdown has been
     taken.
-- **The box has 20 cores**, and pytest runs on one.
-- **`pytest-xdist` is not installed.** The dev group is `pytest` and `ruff`
-  only.
+- **The box has 20 cores**, and a plain `pytest` runs on one.
+- **`pytest-xdist` was not installed when this was written**; it joined the
+  dev group once step 2 had measured it.
 - **Isolation already looks good:**
   - Every test that touches `picture.RENDER_SCRATCH` patches it to
     `tmp_path`.
