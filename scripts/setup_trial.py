@@ -197,10 +197,13 @@ def main() -> int:
             if not log.step(what, argv, env):
                 break
     video = demo / "demo.mp4"
-    if video.is_file():
+    # Resolved against the children's PATH: Windows looks a bare name up on
+    # this process's own PATH, which lacks ~/.local/bin (the first Windows run).
+    ffmpeg = shutil.which("ffmpeg", path=env["PATH"])
+    if video.is_file() and ffmpeg:
         for second in (3, 10):
             subprocess.run(
-                ["ffmpeg", "-v", "error", "-y", "-ss", str(second), "-i", str(video), "-frames:v", "1",
+                [ffmpeg, "-v", "error", "-y", "-ss", str(second), "-i", str(video), "-frames:v", "1",
                  str(work / f"frame-{second}s.png")],
                 env=env, check=False,
             )
