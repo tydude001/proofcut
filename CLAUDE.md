@@ -1338,6 +1338,10 @@ built; docs/plans/INSTALL.md):
         session bus (a container, CI, SSH without a login) the scope fails
         before melt starts and read as "melt rendered nothing".
         `picture.user_bus` decides, and the render runs uncapped with a note.
+        Its bus may be logind's `/run/user/<uid>`, which `systemd-run` never
+        finds on its own, so a capped render exports that `XDG_RUNTIME_DIR`
+        — without it every headless stdio render died the same way.
+        HISTORY.md § The capped render with no runtime dir.
     - So **a session with no desktop behind it cannot run the melt-rendering
       tests in `test_server_stdio.py`** (`grep -c '@needs_melt'`; a count
       written here went stale three times) — `export` refuses with "no
@@ -1345,8 +1349,11 @@ built; docs/plans/INSTALL.md):
       `QT_QPA_PLATFORM=offscreen` to pytest does not help**: the SDK's stdio
       client hands the server only `get_default_environment()`'s allow-list,
       and the variable is not on it (measured 2026-09-17, when the session
-      ended mid-run). Failures there and nowhere else are the environment,
-      not a regression; confirm with an existing melt test as the control.
+      ended mid-run). A pytest plugin that widens
+      `mcp.client.stdio.get_default_environment` does help — that is how all
+      of them ran headless the same day. Failures there and nowhere else are
+      the environment, not a regression; confirm with an existing melt test
+      as the control.
 - **A caption's look is project state (`caption_style`), and ASS is never
   written by hand** — three of its fields mean the opposite of what they read
   as, `\k` is a left-to-right fill rather than a per-word step, and grouping

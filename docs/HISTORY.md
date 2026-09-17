@@ -16151,3 +16151,25 @@ Two findings, neither fixed:
 - **A lower third and burned captions share the bottom band.** On the demo
   the preview's caption line ran through the footnote. Nothing checks for
   this.
+
+## The capped render with no runtime dir — 2026-09-17
+
+The melt-rendering stdio tests were re-run with no desktop session, the
+server handed `QT_QPA_PLATFORM=offscreen` through a scratch pytest plugin
+(the SDK's allow-list drops it). All 14 exports failed with "melt rendered
+nothing" while the same document rendered by hand under the same variable.
+
+The cause was the memory cap. `user_bus` found the bus at `/run/user/<uid>/bus`
+by falling back to logind's directory, so the render ran under
+`systemd-run --user`. But `systemd-run` does not fall back: with no
+`XDG_RUNTIME_DIR` it refuses ("$XDG_RUNTIME_DIR not defined") before melt
+starts. The SDK's stdio client passes no runtime dir, and `display_env`
+exports one only beside a display, so every headless render from a stdio
+server failed this way. That is the unattended route the offscreen platform
+exists for.
+
+The fix: a capped render exports the runtime dir `user_bus` found
+(`picture.user_runtime_dir`), unless a bus address is already named.
+`test_a_capped_render_hands_systemd_run_the_runtime_dir_it_found_the_bus_in`
+failed first. After it, all 15 `@needs_melt` tests pass headless, including
+the overlay render test, which had not completed a run before.

@@ -189,10 +189,19 @@ def user_bus(env: dict[str, str]) -> bool:
             None,
         )
         return path is None or Path(path.split(",")[0]).exists()
-    runtime = env.get("XDG_RUNTIME_DIR") or (
-        f"/run/user/{os.getuid()}" if hasattr(os, "getuid") else ""
-    )
-    return bool(runtime) and (Path(runtime) / "bus").exists()
+    runtime = user_runtime_dir(env)
+    return runtime is not None and (runtime / "bus").exists()
+
+
+#: Where logind puts a user's runtime directory when nobody names it.
+USER_RUNTIME_ROOT = Path("/run/user")
+
+
+def user_runtime_dir(env: dict[str, str]) -> Path | None:
+    """`$XDG_RUNTIME_DIR`, else logind's `/run/user/<uid>` — or None."""
+    if env.get("XDG_RUNTIME_DIR"):
+        return Path(env["XDG_RUNTIME_DIR"])
+    return USER_RUNTIME_ROOT / str(os.getuid()) if hasattr(os, "getuid") else None
 
 
 #: The names melt goes by on PATH, unambiguous ones first. Fedora's `mlt`
@@ -870,6 +879,11 @@ def render(
     has_systemd_run = shutil.which("systemd-run") is not None
     capped = bool(max_memory) and has_systemd_run and user_bus(env)
     if capped:
+        # `user_bus` falls back to logind's directory; systemd-run does not, and
+        # an MCP stdio server with no desktop is handed no XDG_RUNTIME_DIR.
+        runtime = user_runtime_dir(env)
+        if runtime is not None and not env.get("DBUS_SESSION_BUS_ADDRESS"):
+            env = {**env, "XDG_RUNTIME_DIR": str(runtime)}
         command = [
             "systemd-run", "--user", "--scope", "--quiet",
             "-p", f"MemoryMax={max_memory}",

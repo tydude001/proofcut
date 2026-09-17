@@ -395,6 +395,53 @@ def test_the_memory_cap_needs_a_user_bus_not_just_systemd_run(
         assert any("user session bus" in n for n in result["notes"])
 
 
+def test_a_capped_render_hands_systemd_run_the_runtime_dir_it_found_the_bus_in(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The MCP SDK's stdio client passes no `XDG_RUNTIME_DIR`, and with no
+    desktop nothing else exports it. `user_bus` finds `/run/user/<uid>/bus`
+    anyway, but `systemd-run` never looks there on its own ("$XDG_RUNTIME_DIR
+    not defined"), so every headless render from a stdio server died before
+    melt started, reported as "melt rendered nothing". Measured 2026-09-17."""
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setenv("PROOFCUT_MELT", "melt")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.delenv("DBUS_SESSION_BUS_ADDRESS", raising=False)
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.setattr(picture, "qt_draws", lambda env: True)
+    monkeypatch.setattr(os, "getuid", lambda: 4242, raising=False)
+    monkeypatch.setattr(picture, "USER_RUNTIME_ROOT", tmp_path / "run-user")
+    runtime = tmp_path / "run-user" / "4242"
+    runtime.mkdir(parents=True)
+    (runtime / "bus").write_bytes(b"")
+    monkeypatch.setattr(picture, "RENDER_SCRATCH", tmp_path / "scratch")
+    monkeypatch.setattr(picture.shutil, "which", lambda name: f"/usr/bin/{name}")
+    calls: list[tuple[list[str], dict[str, str]]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        calls.append((command, kwargs["env"]))  # type: ignore[arg-type]
+        target = next(a for a in command if a.startswith("avformat:")).removeprefix("avformat:")
+        Path(target).write_bytes(b"a render")
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(picture.subprocess, "run", fake_run)
+    monkeypatch.setattr(picture.media, "probe", lambda p: _PROBE)
+    monkeypatch.setattr(
+        picture.media,
+        "count_frames",
+        lambda p: {"frames": 150, "container_frames": 150, "duration": 5.0, "has_video": True},
+    )
+    project = tmp_path / "timeline.mlt"
+    project.write_text("<mlt/>", encoding="utf-8")
+
+    picture.render(project, tmp_path / "out.mp4", expect_frames=150)
+    command, env = calls[0]
+    assert command[0] == "systemd-run"
+    assert env.get("XDG_RUNTIME_DIR") == str(runtime)
+
+
 # -- auto-editor -------------------------------------------------------------
 
 
