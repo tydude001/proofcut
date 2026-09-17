@@ -93,6 +93,9 @@ if [ "${1:-}" = "--uninstall" ]; then
     fi
     find_brew
     export PATH="$HOME/.local/bin:$PATH"
+    # brew uninstall also autoremoves every orphaned dependency, the tester's own included — 8 on
+    # the dev box's Linuxbrew, none of them the test's. Only what installed.txt names goes.
+    export HOMEBREW_NO_AUTOREMOVE=1
     entries() { grep "^$1 " "$MANIFEST" | cut -d' ' -f2- | sort -u; }
     formulae="$(entries brew | tr '\n' ' ')"
     brew_itself=$(grep -c '^homebrew-itself$' "$MANIFEST")

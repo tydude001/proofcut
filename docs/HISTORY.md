@@ -16481,3 +16481,13 @@ The branches were exercised on Linux with stubbed `uname`/`sysctl`. The
 `brew`, and it installed the four formulae and the Shotcut cask for real.
 **A dry run of this kit off a Mac needs a `brew` stub on PATH, not only
 `PROOFCUT_TRIAL_BREW`.**
+
+Removing it again showed a defect in `--uninstall`. `brew uninstall`
+autoremoves orphaned dependencies, and it took eight that were on this box
+before the run and appear nowhere in `installed.txt` (boost, libnghttp2/3,
+brotli, icu4c@78, lz4, zstd, and the xz 5.8.4 the install had brought in
+beside 5.8.3). `brew missing` stayed empty, so nothing broke, but a tester's
+own orphans would go the same way. `--uninstall` now sets
+`HOMEBREW_NO_AUTOREMOVE`. One gap is left: an install still upgrades a
+dependency the tester already had, as it did xz here, and `installed.txt`
+does not record that.
