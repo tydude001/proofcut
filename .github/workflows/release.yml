@@ -1,0 +1,76 @@
+# Publish a version: PyPI first, then the MCP registry, off a `v*` tag.
+#
+# Both logins are GitHub's own OIDC token, so no secret is stored anywhere:
+# PyPI trusts this workflow as a "trusted publisher" (a one-time form on
+# pypi.org), and the registry grants `io.github.tydude001/*` to any workflow
+# in a tydude001 repo. The order is the one HISTORY.md § The registry entry
+# names its PyPI package records: the registry reads the `mcp-name` marker
+# off PyPI's README, so it cannot go first.
+#
+# A tag reaches GitHub only through Gitea's push mirror, so a release goes
+# out on the mirror's next sync. `workflow_dispatch` is for a tag already on
+# GitHub — one pushed before this file existed runs the workflow file of its
+# own commit, which had none.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish, e.g. v0.31.0"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: astral-sh/setup-uv@v10.0.1
+
+      # The version is a hand-typed literal in six places
+      # (tests/test_version.py holds them together); a tag naming another
+      # version would publish a wheel the tag does not describe.
+      - name: Tag matches the version
+        run: |
+          uv sync --locked
+          uv run pytest -q tests/test_version.py
+          version=$(uv run python -c 'import proofcut; print(proofcut.__version__)')
+          test "v$version" = "$TAG" || { echo "tag $TAG is not v$version"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - run: uv build
+      - name: Publish to PyPI
+        run: uv publish --trusted-publishing always dist/proofcut-"$VERSION"*
+
+      # PyPI's JSON answers 404 for a few seconds after an upload.
+      - name: Wait for PyPI to list it
+        run: |
+          for _ in $(seq 30); do
+            curl -sf "https://pypi.org/pypi/proofcut/$VERSION/json" >/dev/null && exit 0
+            sleep 10
+          done
+          echo "PyPI never listed $VERSION"; exit 1
+
+      - name: Install mcp-publisher 1.8.1
+        run: |
+          curl -sSLo mp.tgz https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz
+          echo "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc  mp.tgz" | sha256sum -c
+          tar xzf mp.tgz mcp-publisher
+      - name: Publish to the MCP registry
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

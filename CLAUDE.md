@@ -890,13 +890,13 @@ built; docs/plans/INSTALL.md):
   `importlib.metadata` version reads the *installed* dist-info, so an
   editable checkout reports whatever the last `uv sync` wrote. Bump the minor
   when something new becomes callable, `uv sync` behind it, tag, and name the
-  HISTORY.md `##` section in the annotation. **proofcut is on PyPI since
-  0.29.0**, and the upload is Tyler's hand, in his own terminal (it takes a
-  token): `uv publish dist/proofcut-<version>*`, never a bare `uv publish`,
-  which uploads every stale version left in `dist/`. PyPI goes before the MCP
-  registry, which reads the `mcp-name` marker off PyPI's README. PyPI
-  never takes a second file for a version, so README.md — its project page,
-  whose links must stay absolute — is settled before it. There is no `CHANGELOG.md` on
+  HISTORY.md `##` section in the annotation. **A pushed `v*` tag publishes
+  itself**: Gitea's mirror syncs on commit, and `release.yml` uploads to PyPI
+  (trusted publisher, no token) and then the MCP registry, which reads the
+  `mcp-name` marker off PyPI's README. So a tag is a release — never tag a
+  version not meant to ship. PyPI never takes a second file for a version,
+  so README.md — its project page, whose links must stay absolute — is
+  settled before the tag. There is no `CHANGELOG.md` on
   purpose. HISTORY.md § The version caught up.
   - **A GitHub Release is a hand-written launch post, not a per-tag note, so
     it does not follow a bump** — which is how `v0.23.0` stayed "Latest" two
