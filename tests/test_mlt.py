@@ -635,6 +635,30 @@ def test_a_slide_at_unity_scale_starts_one_pixel_larger() -> None:
     )
 
 
+def test_an_eased_slide_writes_its_operator_and_is_still_nudged_at_unity() -> None:
+    screen = (2560, 1440)
+    reframe = mlt.Reframe(
+        screen,
+        (320, 180, 1920, 1080),
+        later=((10.0, (350, 180, 1920, 1080)),),
+        interp=(10.0,),
+        eases=((10.0, "ease-out"),),
+    )
+
+    assert reframe.rect_property((1920, 1080), RATE) == (
+        "0h=-320 -180 2561 1441 1;300|=-350 -180 2560 1440 1"
+    )
+    assert reframe.ease_at(10.0) == "ease-out"
+    assert reframe.ease_at(0.0) is None
+
+
+def test_an_easing_must_name_a_sliding_window_and_a_known_curve() -> None:
+    with pytest.raises(mlt.MLTError, match="does not slide"):
+        mlt.Reframe(WIDE, LEFT, later=((10.0, RIGHT),), eases=((10.0, "ease"),))
+    with pytest.raises(mlt.MLTError, match="not one this build writes"):
+        mlt.Reframe(WIDE, LEFT, later=((10.0, RIGHT),), interp=(10.0,), eases=((10.0, "spline"),))
+
+
 def test_a_held_window_at_unity_scale_keeps_its_exact_rect() -> None:
     """No slide, no nudge — a step is not a move, and resampling a still
     screen by a pixel would soften its text for nothing."""

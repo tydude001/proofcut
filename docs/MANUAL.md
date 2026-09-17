@@ -634,6 +634,7 @@ proofcut -C myproject reframe cold-open --rect 1400,0,459,816
 proofcut -C myproject reframe cold-open --rect 0,0,459,816 --at 20.4   # from there on
 proofcut -C myproject reframe cold-open --rect 0,0,918,816 --pane 1002,0,918,816
 proofcut -C myproject reframe cold-open --rect 930,0,450,800 --at 7.34 --interp  # slide, don't step
+proofcut -C myproject reframe rec --rect 640,360,1280,720 --event sent --ease ease  # eased, at an event
 proofcut -C myproject reframe cold-open --fill blur --at 12.0   # whole frame, over its own blur
 proofcut -C myproject reframe cold-open --reset        # back to the centre
 proofcut -C myproject reframe-detect                   # propose a window per shot
@@ -648,6 +649,15 @@ it is stored as asked and refit whenever the canvas moves. A rect that is not
 already the canvas's shape is *grown* to it rather than shrunk into it —
 everything named stays on screen — and one that cannot be shown whole is
 refused with the largest rect that can.
+
+A slide (`--interp`) runs across the **whole** of the window before it, from
+that window's start to this one's, and `--ease` gives it a curve: `ease`
+(slow at both ends), `ease-in`, `ease-out`, or the default `linear`. To move
+between two moments, set a window holding the old rect at the first and the
+eased one at the second — `--event` addresses either by a named instant from
+`events` instead of `--at`. The window stores the event's second, and the
+table says `event_moved` if a later import moves that event; it never
+follows.
 
 `--fill blur` is for the shot no crop and no split can hold: that window
 shows the whole frame, contained, over a blurred, darkened copy of the same

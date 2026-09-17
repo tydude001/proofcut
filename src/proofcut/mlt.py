@@ -294,6 +294,7 @@ class Reframe:
     panes: tuple[tuple[float, tuple[int, int, int, int]], ...] = ()
     interp: tuple[float, ...] = ()
     fills: tuple[float, ...] = ()
+    eases: tuple[tuple[float, str], ...] = ()
 
     def __post_init__(self) -> None:
         at = [seconds for seconds, _ in self.later]
@@ -326,6 +327,15 @@ class Reframe:
             raise MLTError(
                 f"reframe cannot flag {stray} to slide — interp names a window "
                 "in `later`, and the head has nothing before it to slide from"
+            )
+        # An easing is the curve of a slide, so it names a sliding window.
+        unslid = sorted(seconds for seconds, _ in self.eases if not self.is_interp(seconds))
+        if unslid:
+            raise MLTError(f"window {unslid} has an easing but does not slide")
+        unknown = sorted({name for _, name in self.eases} - set(EASINGS))
+        if unknown:
+            raise MLTError(
+                f"easing {unknown} is not one this build writes — {', '.join(EASINGS)}"
             )
         # A pane track has no interpolation of its own (`pane_rect_property`
         # always writes `|=`), so a window that is both a split and a slide
@@ -411,6 +421,19 @@ class Reframe:
         `rect_property`'s own docstring).
         """
         return any(abs(seconds - at) < 1e-9 for at in self.interp)
+
+    def ease_at(self, seconds: float) -> str | None:
+        """The curve the window starting here slides in on, or None if it steps.
+
+        `linear` for a slide with no easing named, which is what every slide
+        written before easings existed meant.
+        """
+        if not self.is_interp(seconds):
+            return None
+        for at, name in self.eases:
+            if abs(seconds - at) < 1e-9:
+                return name
+        return "linear"
 
     def is_fill(self, seconds: float) -> bool:
         """Is the window starting exactly here drawn blur-filled?"""
@@ -595,8 +618,9 @@ class Reframe:
             # This key's operator governs the segment *leaving* it, so it is
             # the *next* window's flag that decides — not this one's.
             next_start = windows[index + 1][0] if index + 1 < len(windows) else None
-            operator = "=" if next_start is not None and self.is_interp(next_start) else "|="
-            if operator == "=" and dest[2:] == tuple(self.source):
+            ease = self.ease_at(next_start) if next_start is not None else None
+            operator = "|=" if ease is None else f"{EASINGS[ease]}="
+            if ease is not None and dest[2:] == tuple(self.source):
                 dest = _off_unity(dest)
             values = " ".join(str(value) for value in dest)
             keys.append(f"{round(seconds * rate)}{operator}{values} 1")
@@ -1021,6 +1045,34 @@ def _transition(parent: ET.Element, transition_id: str, properties: dict[str, st
     node = ET.SubElement(parent, "transition", {"id": transition_id})
     for name, value in properties.items():
         _property(node, name, value)
+
+
+#: A slide's curve, by the name `reframe` takes, as MLT's keyframe operator —
+#: the character written before `=` on the key that leaves. Deliberately
+#: short: linear and the cubic family only, because those are curves whose
+#: shape can be reviewed without a render. The cubic in-out was measured
+#: within 0.41px of its formula (`~/proofcut-work/spikes/mlt-retime/`), the
+#: in and out singles through the writer itself (HISTORY.md § Eased slides and
+#: event-addressed windows). The spline (`~`) is left out on purpose: its
+#: shape depends on the keys either side, so a held window after a slide
+#: could pull it past its own target.
+EASINGS: dict[str, str] = {"linear": "", "ease": "i", "ease-in": "g", "ease-out": "h"}
+
+
+def ease_fraction(name: str, t: float) -> float:
+    """How far along a slide on curve `name` is at time fraction `t`.
+
+    The formulas MLT's cubic operators follow — the review sheet's stand-in
+    for the render, exact at both ends like the linear one it replaces.
+    """
+    t = min(max(t, 0.0), 1.0)
+    if name == "ease-in":
+        return t**3
+    if name == "ease-out":
+        return 1 - (1 - t) ** 3
+    if name == "ease":
+        return 4 * t**3 if t < 0.5 else 1 - (-2 * t + 2) ** 3 / 2
+    return t
 
 
 def _off_unity(dest: tuple[int, int, int, int]) -> tuple[int, int, int, int]:

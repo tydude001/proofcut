@@ -758,6 +758,120 @@ def test_the_writer_gets_the_interp_flag(project: Project) -> None:
     assert entry.is_interp(8.0) is True
 
 
+# -- eased slides and event-addressed windows: docs/plans/NATIVE.md § Part B,
+# B2. `ease` is the slide's curve and rides the `interp` value itself (`true`
+# stays linear); `event` addresses a window by a named instant and is kept on
+# the record as provenance, never followed.
+
+
+def test_an_eased_slide_is_stored_as_its_name_and_reaches_the_writer(project: Project) -> None:
+    ops.canvas(project.root, size="1080x1920")
+    ops.reframe(project.root, "cold-open", rect="0,0,459,816", src_start=4.0)
+    ops.reframe(project.root, "cold-open", rect="1461,0,459,816", src_start=8.0, ease="ease")
+
+    record = project.read_manifest()[ops.REFRAME_KEY][-1]
+    assert record["interp"] == "ease"
+    windows = _clip(ops.reframe(project.root), "cold-open")["windows"]
+    assert {w["src_start"]: (w["interp"], w.get("ease")) for w in windows} == {
+        0.0: (False, None), 4.0: (False, None), 8.0: (True, "ease")
+    }
+    entry = ops._reframe_map(project, (1080, 1920))["cold-open"]
+    assert entry.rect_property((1080, 1920), 30.0).split(";")[1].startswith("120i=")
+
+
+def test_linear_is_stored_the_way_interp_always_was(project: Project) -> None:
+    """A linear slide written by name and one written by the old flag are one
+    record, so no manifest changes for a slide that already existed."""
+    ops.canvas(project.root, size="1080x1920")
+    ops.reframe(project.root, "cold-open", rect="1461,0,459,816", src_start=8.0, ease="linear")
+
+    assert project.read_manifest()[ops.REFRAME_KEY][-1]["interp"] is True
+
+
+def test_an_unknown_easing_is_refused_at_the_keyboard_and_on_read(project: Project) -> None:
+    ops.canvas(project.root, size="1080x1920")
+    with pytest.raises(ProjectError, match="easing 'bounce'"):
+        ops.reframe(project.root, "cold-open", rect="1461,0,459,816", src_start=8.0, ease="bounce")
+
+    manifest = project.read_manifest()
+    manifest[ops.REFRAME_KEY] = [
+        {"clip_id": "cold-open", "rect": [1461, 0, 459, 816], "src_start": 8.0, "interp": "bounce"}
+    ]
+    project.write_manifest(manifest)
+    with pytest.raises(ProjectError, match="easing 'bounce'"):
+        ops.reframe(project.root)
+
+
+def _with_events(project: Project, events: list[dict]) -> None:
+    manifest = project.read_manifest()
+    for clip in manifest["clips"]:
+        if clip["clip_id"] == "cold-open":
+            clip[ops.EVENTS_KEY] = events
+    project.write_manifest(manifest)
+
+
+def test_an_event_addresses_the_window_and_is_kept_across_other_writes(project: Project) -> None:
+    """The records are rebuilt from geometry on every write, so the address
+    has to be carried — an unrelated edit must not drop it."""
+    ops.canvas(project.root, size="1080x1920")
+    _with_events(project, [{"name": "sent", "at": 6.5}])
+
+    set_by_event = ops.reframe(
+        project.root, "cold-open", rect="1461,0,459,816", event="sent", ease="ease-out"
+    )
+    ops.reframe(project.root, "cold-open", rect="0,0,459,816", src_start=2.0)
+
+    assert set_by_event["event"]["address"] == "sent#0"
+    records = project.read_manifest()[ops.REFRAME_KEY]
+    assert {r["src_start"]: r.get("event") for r in records} == {2.0: None, 6.5: "sent"}
+    window = next(
+        w for w in _clip(ops.reframe(project.root), "cold-open")["windows"] if w["src_start"] == 6.5
+    )
+    assert (window["event"], window["event_moved"], window["ease"]) == ("sent", False, "ease-out")
+
+
+def test_a_moved_event_is_reported_and_never_followed(project: Project) -> None:
+    ops.canvas(project.root, size="1080x1920")
+    _with_events(project, [{"name": "sent", "at": 6.5}])
+    ops.reframe(project.root, "cold-open", rect="1461,0,459,816", event="sent")
+
+    _with_events(project, [{"name": "sent", "at": 7.0}])
+    window = _clip(ops.reframe(project.root), "cold-open")["windows"][-1]
+
+    assert window["src_start"] == 6.5
+    assert window["event_moved"] is True
+
+
+def test_setting_the_same_window_by_seconds_drops_its_address(project: Project) -> None:
+    ops.canvas(project.root, size="1080x1920")
+    _with_events(project, [{"name": "sent", "at": 6.5}])
+    ops.reframe(project.root, "cold-open", rect="1461,0,459,816", event="sent")
+    ops.reframe(project.root, "cold-open", rect="0,0,459,816", src_start=6.5)
+
+    assert "event" not in project.read_manifest()[ops.REFRAME_KEY][-1]
+
+
+def test_an_event_resets_its_window_and_refuses_beside_src_start(project: Project) -> None:
+    ops.canvas(project.root, size="1080x1920")
+    _with_events(project, [{"name": "sent", "at": 6.5}])
+    ops.reframe(project.root, "cold-open", rect="1461,0,459,816", event="sent")
+
+    with pytest.raises(ProjectError, match="src_start or event"):
+        ops.reframe(project.root, "cold-open", rect="0,0,459,816", event="sent", src_start=1.0)
+    ops.reframe(project.root, "cold-open", event="sent", reset=True)
+    assert ops.REFRAME_KEY not in project.read_manifest()
+
+
+def test_the_sheet_places_an_eased_slide_on_its_curve() -> None:
+    """The review tile follows the same curve the render does — halfway
+    through an ease-in the window has moved an eighth of the way."""
+    assert mlt.ease_fraction("ease-in", 0.5) == 0.125
+    assert mlt.ease_fraction("ease-out", 0.5) == 0.875
+    assert mlt.ease_fraction("ease", 0.5) == 0.5
+    assert mlt.ease_fraction("ease", 0.25) == 0.0625
+    assert ops._lerp_rect((0, 0, 10, 10), (800, 0, 10, 10), 0.125) == (100, 0, 10, 10)
+
+
 # -- blur-fill ---------------------------------------------------------------
 #
 # PLAN.md § Blur-fill: `fill="blur"` makes a window draw the whole source,

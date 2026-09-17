@@ -1550,6 +1550,13 @@ built; docs/plans/INSTALL.md):
     pixel larger; a held window keeps its exact rect. Judge motion by an edge
     position read back per frame, never by the document. HISTORY.md § Events,
     and the pan that snapped to whole pixels.
+  - **A window's `interp` is `true` or an easing name, and `event` rides
+    beside `src_start` as provenance.** Read `interp` for *whether* it slides
+    and `mlt.Reframe.ease_at` for the curve. `reframe` rebuilds every record
+    from the geometry tuples on each write, so a new record field has to be
+    carried across that rebuild the way `event` is (`addressed`), or the
+    next unrelated edit drops it at exit 0. HISTORY.md § Eased slides and
+    event-addressed windows.
   - Its two asymmetries: the **preview** places a shot by the window at its
     `src_start`, so a boundary *inside* a placement previews as the first of
     the two while the render steps mid-shot correctly (`reframe_sheet`'s

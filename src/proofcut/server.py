@@ -1433,6 +1433,17 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "right window at each placement. Omitted, it is the window from the head "
             "of the file."
         ),
+        "ease": (
+            "The curve of this window's slide: linear, ease (slow at both ends), "
+            "ease-in or ease-out. Implies `interp`. The slide runs across the whole "
+            "previous window, so to move between two moments put a window holding "
+            "the old rect at the first."
+        ),
+        "event": (
+            "Start this window at a named instant from `events` (`name` or "
+            "`name#k`) instead of `src_start`. The seconds it resolves to are "
+            "stored; the listing says `event_moved` if the event later moves."
+        ),
         "interp": (
             "Slide into this window from whatever governed before it instead of "
             "stepping to it. It needs `src_start` past 0 — there is nothing before "
@@ -4110,6 +4121,8 @@ def reframe(
     fill: str | None = None,
     reset: bool = False,
     plan: bool = False,
+    ease: str | None = None,
+    event: str | None = None,
 ) -> dict[str, Any]:
     """Read or set which part of each clip survives into the frame.
 
@@ -4124,7 +4137,8 @@ def reframe(
     per-**shot** window, addressed on the source's own clock, so every
     placement of the clip picks it up. `pane` makes that window a stacked
     split for a shot one crop cannot hold; `interp` slides into it rather than
-    stepping; `fill="blur"` draws it whole over a blurred copy of itself
+    stepping, and `ease` names that slide's curve; `event` addresses the window
+    by a named instant instead of seconds; `fill="blur"` draws it whole over a blurred copy of itself
     instead of cropping, for a shot every crop loses something from.
 
     `reset` drops overrides (one clip, one window, or all); `plan` resolves
@@ -4142,6 +4156,8 @@ def reframe(
         fill=fill,
         reset=reset,
         plan=plan,
+        ease=ease,
+        event=event,
     )
 
 

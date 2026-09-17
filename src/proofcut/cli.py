@@ -30,7 +30,7 @@ from proofcut.energy import EnergyError
 from proofcut.finish import FinishError
 from proofcut.graphics import GraphicsError
 from proofcut.media import MediaError
-from proofcut.mlt import MLTError
+from proofcut.mlt import EASINGS, MLTError
 from proofcut.pack import PackError
 from proofcut.picture import PictureError
 from proofcut.project import ProjectError, path_too_long
@@ -1617,10 +1617,20 @@ def _build_parser() -> argparse.ArgumentParser:
         "source to slide from) and cannot be combined with --pane",
     )
     p_reframe.add_argument(
+        "--ease",
+        choices=list(EASINGS),
+        help="the curve of this window's slide; implies --interp",
+    )
+    p_reframe.add_argument(
+        "--event",
+        metavar="NAME[#K]",
+        help="start this window at a named instant from `events`, instead of --at",
+    )
+    p_reframe.add_argument(
         "--reset",
         action="store_true",
         help="drop this clip's overrides, every one of them with no clip_id, or "
-        "just the window named by --at",
+        "just the window named by --at or --event",
     )
     p_reframe.add_argument(
         "--plan", action="store_true", help="resolve and check without writing the manifest"
@@ -2890,6 +2900,8 @@ def _cmd_reframe(args: argparse.Namespace) -> int:
             fill=args.fill,
             reset=args.reset,
             plan=args.plan,
+            ease=args.ease,
+            event=args.event,
         )
     )
 

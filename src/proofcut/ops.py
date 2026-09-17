@@ -7883,7 +7883,10 @@ def _stored_reframes(project: Project) -> dict[str, list[StoredWindow]]:
     `interp` is the third such optional key, for the same reason: absent
     means the window steps rather than slides, which is what every window
     written before the keyframed move existed meant and still means. PLAN.md
-    § Per-shot framing, refused section; § The keyframed move.
+    § Per-shot framing, refused section; § The keyframed move. `true` is a
+    linear slide and a string names its easing (`mlt.EASINGS`) — `fill`'s
+    precedent, a new value rather than a second key — so every reader that
+    asks only *whether* a window slides reads it unchanged.
 
     `fill` is the fourth: absent means the window crops. A fill window's
     `rect` is the whole source, which is what its foreground shows; a fill
@@ -7895,6 +7898,14 @@ def _stored_reframes(project: Project) -> dict[str, list[StoredWindow]]:
         at = float(record.get("src_start") or 0.0)
         pane = record.get("pane")
         fill = record.get("fill")
+        interp = record.get("interp") or False
+        if isinstance(interp, str) and interp not in mlt.EASINGS:
+            raise ProjectError(
+                f"clip {record.get('clip_id')!r} has a reframe window easing {interp!r} — "
+                f"the easings are {', '.join(mlt.EASINGS)}"
+            )
+        if interp == "linear":
+            interp = True
         if fill is not None and fill not in FILL_MODES:
             raise ProjectError(
                 f"clip {record.get('clip_id')!r} has a reframe window with fill {fill!r} — "
@@ -7905,7 +7916,7 @@ def _stored_reframes(project: Project) -> dict[str, list[StoredWindow]]:
                 at,
                 _parse_rect(record["rect"]),
                 _parse_rect(pane) if pane else None,
-                bool(record.get("interp")),
+                interp,
                 fill is not None,
             )
         )
@@ -8042,10 +8053,19 @@ def _clip_reframe(
         if pane is not None
     )
     interp = tuple(when for when, _rect, _pane, flag, _fill in series if flag)
+    eases = tuple(
+        (when, flag) for when, _rect, _pane, flag, _fill in series if isinstance(flag, str)
+    )
     fills = tuple(when for when, _rect, _pane, _interp, fill in ([head] if head else []) + series if fill)
     try:
         return mlt.Reframe(
-            source=source, crop=crop, later=later, panes=panes, interp=interp, fills=fills
+            source=source,
+            crop=crop,
+            later=later,
+            panes=panes,
+            interp=interp,
+            fills=fills,
+            eases=eases,
         )
     except mlt.MLTError as error:
         # A combination only a hand edit reaches (a slide into a fill); read
@@ -8104,6 +8124,8 @@ def reframe(
     fill: str | None = None,
     reset: bool = False,
     plan: bool = False,
+    ease: str | None = None,
+    event: str | None = None,
 ) -> dict[str, Any]:
     """Read or set which part of each clip survives into the frame.
 
@@ -8160,6 +8182,18 @@ def reframe(
     `pane`: a split's lower half has no interpolation of its own, so the two
     would move out of step.
 
+    **`ease` names the slide's curve** (`mlt.EASINGS`: `linear`, `ease`,
+    `ease-in`, `ease-out`) and implies `interp`. The slide still runs across
+    the whole of the previous window, so a move between two moments is a
+    window at the first holding the old rect and an eased window at the
+    second (docs/plans/NATIVE.md § Part B, B2).
+
+    **`event` addresses the window by a named instant** (`events`) instead of
+    `src_start`: it resolves to that event's source second, which is what is
+    stored, and the record keeps the address beside it. Re-importing events
+    never moves a window; the table reports `event_moved` when the address now
+    resolves elsewhere, the stale-mark rule — kept, never applied.
+
     **`fill="blur"` draws that window blur-filled** instead of cropping it:
     the whole source contained in the frame, over a blurred, darkened copy of
     the same moment covering the canvas (PLAN.md § Blur-fill). It takes no
@@ -8167,6 +8201,20 @@ def reframe(
     source as its rect — and no `pane` or `interp`, since the background steps
     at every window boundary.
     """
+    if ease is not None:
+        if ease not in mlt.EASINGS:
+            raise ProjectError(
+                f"easing {ease!r} is not one this build writes — {', '.join(mlt.EASINGS)}"
+            )
+        interp = True
+    if event is not None:
+        if src_start is not None:
+            raise ProjectError(
+                "pass src_start or event, not both — they are two ways of naming "
+                "where the window starts"
+            )
+        if clip_id is None:
+            raise ProjectError("an event needs a clip_id — events belong to one clip's source")
     if fill is not None:
         if fill not in FILL_MODES:
             raise ProjectError(f"fill {fill!r} is not one this build draws — {', '.join(FILL_MODES)}")
@@ -8196,7 +8244,7 @@ def reframe(
         raise ProjectError(
             "an in-point needs a clip_id — a window indexes one clip's own source"
         )
-    if src_start is not None and rect is None and fill is None and not reset:
+    if (src_start is not None or event is not None) and rect is None and fill is None and not reset:
         raise ProjectError("an in-point needs a rect to put there, or `reset` to drop one")
     if interp and rect is None:
         raise ProjectError(
@@ -8219,6 +8267,10 @@ def reframe(
                 f"clip {clip_id!r} has no picture to crop — a reframe indexes video"
             )
 
+    resolved_event = None
+    if event is not None:
+        resolved_event = resolve_event(clips[clip_id], event)
+        src_start = resolved_event["at"]
     at = 0.0 if src_start is None else float(src_start)
     if clip_id is not None and src_start is not None:
         duration = clips[clip_id].get("duration")
@@ -8279,12 +8331,13 @@ def reframe(
                 f"the window before {at}s is a blur-fill, and a fill cannot be slid "
                 "out of — its background steps at the join while the picture would travel"
             )
-        series.append((at, parsed, parsed_pane, bool(interp), False))
+        flag: bool | str = (ease if ease not in (None, "linear") else True) if interp else False
+        series.append((at, parsed, parsed_pane, flag, False))
         asked[str(clip_id)] = sorted(series, key=lambda entry: entry[0])
     elif reset:
         if clip_id is None:
             asked = {}
-        elif src_start is None:
+        elif src_start is None and event is None:
             asked.pop(clip_id, None)
         else:
             series = [entry for entry in asked.get(clip_id, []) if entry[0] != at]
@@ -8297,6 +8350,19 @@ def reframe(
                 asked[clip_id] = series
             else:
                 asked.pop(clip_id, None)
+
+    # The event address a window was set by, carried across every rewrite —
+    # the records are rebuilt from `asked` below, which holds only geometry.
+    addressed = {
+        (str(record.get("clip_id")), float(record.get("src_start") or 0.0)): record["event"]
+        for record in project.read_manifest().get(REFRAME_KEY, [])
+        if record.get("event")
+    }
+    if clip_id is not None and (rect is not None or fill is not None):
+        if event is not None:
+            addressed[(clip_id, at)] = event
+        else:
+            addressed.pop((clip_id, at), None)
 
     write = (rect is not None or fill is not None or reset) and not plan
     if write:
@@ -8315,9 +8381,11 @@ def reframe(
                 if window_pane is not None:
                     record["pane"] = list(window_pane)
                 if window_interp:
-                    record["interp"] = True
+                    record["interp"] = window_interp
                 if window_fill:
                     record["fill"] = "blur"
+                if (key, window_at) in addressed:
+                    record["event"] = addressed[(key, window_at)]
                 records.append(record)
         if records:
             manifest[REFRAME_KEY] = records
@@ -8392,6 +8460,7 @@ def reframe(
                         # existed.
                         "interp": entry.is_interp(window_at),
                         # `fill` appears only on a blur-filled window (below),
+                        # and `ease` only on a sliding one,
                         # absent-means-a-crop like the manifest record.
                         "kept": round(
                             (
@@ -8407,6 +8476,8 @@ def reframe(
                         ),
                     }
                     | ({"fill": "blur"} if entry.is_fill(window_at) else {})
+                    | ({"ease": entry.ease_at(window_at)} if entry.is_interp(window_at) else {})
+                    | _window_event(clip, addressed.get((key, window_at)), window_at)
                     for window_at, window_crop in entry.windows()
                 ],
                 "error": None,
@@ -8420,7 +8491,7 @@ def reframe(
         "written": write,
         "reset": bool(reset),
         "plan": bool(plan),
-    }
+    } | ({"event": resolved_event} if resolved_event is not None else {})
 
 
 #: Where in each placement the sheet samples. Three, and not at the edges: an
@@ -8474,6 +8545,22 @@ def _spread(values: list[float], count: int) -> list[float]:
         return list(values)
     step = (len(values) - 1) / (count - 1) if count > 1 else 0.0
     return [values[round(index * step)] for index in range(count)]
+
+
+def _window_event(clip: dict[str, Any], address: str | None, at: float) -> dict[str, Any]:
+    """A window's event address, and whether that event has since moved.
+
+    Empty for a window set by seconds. The window never follows its event —
+    a re-import that moves one is reported here and left for a person, the
+    way a stale unspoken mark is kept and never applied.
+    """
+    if not address:
+        return {}
+    try:
+        now = resolve_event(clip, address)["at"]
+    except ProjectError as error:
+        return {"event": address, "event_moved": True, "event_error": str(error)}
+    return {"event": address, "event_moved": abs(now - at) > 1e-6}
 
 
 def _is_sliding(entry: mlt.Reframe | None, next_edge: float | None) -> bool:
@@ -8696,7 +8783,7 @@ def _sheet_placements(
 def _lerp_rect(
     start: tuple[int, int, int, int], end: tuple[int, int, int, int], fraction: float
 ) -> tuple[int, int, int, int]:
-    """A straight-line stand-in for MLT's own keyframe interpolation.
+    """A stand-in for MLT's own keyframe interpolation, at an already-eased fraction.
 
     Not a claim of bit-exactness — melt's curve is its own to draw, and this
     is a review tile, not the render. It is exact at `fraction` 0 and 1 (the
@@ -9013,8 +9100,13 @@ def reframe_sheet(
             tile = dest_dir / f"{row:03d}-{index}-{pick['pick']}.png"
             picture.extract_frame(placement["path"], when, tile)
             if sliding:
-                fraction = (when - begin) / (next_edge - begin) if next_edge > begin else 0.0
-                crop = _lerp_rect(from_rect, to_rect, fraction)
+                # MLT's key sits at the window's own start, which a placement
+                # can begin after, so the curve is measured from there.
+                key_at = entry.window_start(begin)
+                fraction = (when - key_at) / (next_edge - key_at) if next_edge > key_at else 0.0
+                crop = _lerp_rect(
+                    from_rect, to_rect, mlt.ease_fraction(entry.ease_at(next_edge) or "linear", fraction)
+                )
                 # The dashed rect is the *other* end — the target while it is
                 # still travelling, the origin once it has arrived, so the
                 # last tile does not dash an identical rect over its own

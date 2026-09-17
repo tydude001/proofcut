@@ -179,10 +179,9 @@ Each step is usable on its own, and each is judged on a served render.
   imported from the recorder's JSON — addressable anywhere a word is.
   Source-indexed like a footage description, so no edit can invalidate one.
   Named `events` (proofcut already has `marks`, and means something else).
-- **B2. Eased camera windows on events.** The judder is measured and fixed
-  — a slide drawn at exactly 1:1 moved in whole pixels, so its key is drawn a
-  pixel larger (HISTORY.md § Events, and the pan that snapped to whole
-  pixels); the easing names and event addresses are still to build.
+- **B2. Eased camera windows on events.** Shipped — see HISTORY.md § Events,
+  and the pan that snapped to whole pixels (the judder) and § Eased slides and
+  event-addressed windows (the rest).
   `reframe` windows gain an easing
   name (a short list over MLT's operators: `linear`, `ease`, `smooth`) and an
   event or word address. First, measure a slow pan at constant zoom for

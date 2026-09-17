@@ -16005,3 +16005,54 @@ largest step down from 1.01 px to 0.38 px.
 Not measured: whether mipmapping lands some *other* scale on a remainder of
 exactly 1 in a newer MLT (the 7.41 build here smoothed every non-unity
 scale tried), and a pan with rotation.
+
+## Eased slides and event-addressed windows — 2026-09-16
+
+The rest of docs/plans/NATIVE.md § Part B, B2. A framing slide can now be
+eased, and a window can be placed at a named instant from `events`.
+
+**`ease`** is `linear`, `ease`, `ease-in` or `ease-out`. These are MLT's
+empty, `i`, `g` and `h` operators, written on the key that leaves
+(`mlt.EASINGS`). It implies `interp`, and it is stored *as* the `interp`
+value, following `fill`'s "a new value rather than a second key" precedent.
+`true` still means linear, so no slide written before this changes on disk,
+and every reader that asks only whether a window slides reads it unchanged.
+The spline (`~`) is left out: its shape depends on the keys either side, so
+a held window after a slide could pull it past its target. The 1:1 nudge
+applies to every curve.
+
+**Measured through `export`**, on the edge video from § Events, and the pan
+that snapped to whole pixels. The head window held and the window at the
+`land` event (9.9 s) slid in 30 px:
+
+| curve | worst error from its formula | mean | worst error from a straight line |
+|---|---|---|---|
+| ease | 0.27 px | 0.03 px | 6.4 px |
+| ease-in | 0.23 px | 0.03 px | 12.0 px |
+| ease-out | 0.24 px | 0.03 px | 11.5 px |
+
+`mlt.ease_fraction` is those formulas, and `reframe_sheet` now places a
+sliding tile on its curve instead of a straight line.
+
+**The sheet measured a slide from the wrong place, and the curve made it
+visible.** MLT's key sits at the *window's* start, but the sheet's fraction
+ran from the start of the *placement*, which a cut can move later. On the
+events project with 21–45 s cut, a slide keyed at `sent` (19.8 s) into
+`words` (46.5 s) is 99.9% done by the time its placement plays at 45 s. The
+sheet used to draw it moving the whole way; it now draws it arrived, which
+is what the render shows.
+
+**`event`** stands in for `src_start` on `reframe` (set, fill or reset).
+The resolved second is what gets stored, and the record keeps the address as
+provenance. A re-import that moves the event is reported (`event_moved`) and
+never followed, the stale-mark rule. The records are rebuilt from geometry
+on every write, so the address is carried across that rebuild explicitly.
+A test writes an unrelated window and checks the address survived. Setting
+the same window by seconds drops it.
+
+**A separate defect, found and not fixed:** `reframe_sheet` fails with
+"ffmpeg could not pull a frame" when a window starts in a clip's last tenth
+of a second. It samples the stretch at 85% of the placement's end, which is
+the container's duration (10.0 s), past the last frame (9.967 s). That is
+the same class as § The phone's black last frame, whose `_timeline_bound`
+the sheet does not use.
