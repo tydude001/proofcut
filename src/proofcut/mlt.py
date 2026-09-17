@@ -274,6 +274,67 @@ def _check_overlay(overlay: Overlay, total_frames: int) -> None:
         )
 
 
+#: The fewest frames a one-shot's file may be: a file MLT counts as one frame
+#: long plays nothing at all, at exit 0 (`~/proofcut-work/spikes/sfx-probe`).
+SOUND_MIN_FRAMES = 2
+
+
+@dataclass(frozen=True)
+class Hit:
+    """A one-shot sound from timeline frame `start`, reading `frames` frames.
+
+    `resource` is a padded copy whose length MLT counts as `frames` exactly
+    (see `document`'s `sounds`); its leading silence carries the sub-frame
+    part of where the sound starts.
+    """
+
+    resource: str
+    start: int
+    frames: int
+    gain_db: float = 0.0
+
+    @property
+    def end(self) -> int:
+        return self.start + self.frames
+
+
+def sound_lanes(hits: list[Hit], total_frames: int, silence: str) -> list[list[Entry]]:
+    """Pack hits onto as few lanes as keep any two from overlapping, padded.
+
+    Greedy first-fit in time order — sound sums, so which lane a hit lands on
+    changes nothing heard. Each lane is padded to `total_frames` with entries
+    of `silence`, which must be at least that long. A hit running past the end
+    is trimmed, never allowed to extend the film.
+    """
+    lanes: list[list[Hit]] = []
+    for hit in sorted(hits, key=lambda h: (h.start, h.resource)):
+        if hit.start < 0 or hit.start >= total_frames or hit.frames < 1:
+            raise MLTError(
+                f"the sound {hit.resource!r} at frame {hit.start} is outside the "
+                f"{total_frames}-frame timeline"
+            )
+        for lane in lanes:
+            if lane[-1].end <= hit.start:
+                lane.append(hit)
+                break
+        else:
+            lanes.append([hit])
+    built: list[list[Entry]] = []
+    for lane in lanes:
+        entries: list[Entry] = []
+        cursor = 0
+        for hit in lane:
+            if hit.start > cursor:
+                entries.append(Entry(silence, 0, hit.start - cursor))
+            frames = min(hit.frames, total_frames - hit.start)
+            entries.append(Entry(hit.resource, 0, frames, gain_db=hit.gain_db))
+            cursor = hit.start + frames
+        if cursor < total_frames:
+            entries.append(Entry(silence, 0, total_frames - cursor))
+        built.append(entries)
+    return built
+
+
 def fit_rect(source: tuple[int, int], resolution: tuple[int, int]) -> tuple[int, int, int, int]:
     """Where MLT puts a source frame when nothing tells it otherwise.
 
@@ -1324,6 +1385,7 @@ def document(
     music2: list[Entry] | None = None,
     holds: list[Entry] | None = None,
     overlays: list[Overlay] | None = None,
+    sounds: list[list[Entry]] | None = None,
     rate: float,
     resolution: tuple[int, int] = DEFAULT_RESOLUTION,
     reframe: dict[str, Reframe] | None = None,
@@ -1397,6 +1459,16 @@ def document(
     multi-stream container before this module ever sees one). Never a
     `qtblend` composite: this lane has nothing on screen to composite, the
     same reason `music` never gets one.
+
+    `sounds` is the one-shot lanes (docs/plans/NATIVE.md § B4): each lane is
+    `music`'s shape — padded to the timeline with real silent entries, its
+    own nodes, playlist pair, tractor and additive `mix` — and there are as
+    many as overlapping hits need. **Every hit entry must read a file whose
+    length MLT counts as exactly the frames the entry claims, and at least
+    two**: a file counted one frame long plays nothing, and an entry claiming
+    past its file shortens the lane so every later hit plays early, both at
+    exit 0 (`~/proofcut-work/spikes/sfx-probe`). The caller's padded copies
+    are what make that true; the writer cannot see a file's length.
     """
     if not audio:
         raise MLTError("an MLT document needs at least one entry on the edit's track")
@@ -1459,7 +1531,20 @@ def document(
     overlays = overlays or []
     for overlay in overlays:
         _check_overlay(overlay, total_frames)
-    for entry in [*audio, *picture, *music, *music2, *holds]:
+    sounds = [lane for lane in (sounds or []) if lane]
+    for number, sound_lane in enumerate(sounds):
+        covered = sum(entry.frames for entry in sound_lane)
+        if covered != total_frames:
+            raise MLTError(
+                f"sound lane {number} covers {covered} frames but the timeline is "
+                f"{total_frames} — `music`'s own discipline: padded with real "
+                "silent entries, never a <blank>"
+            )
+        wrong = [entry.resource for entry in sound_lane if entry.is_image]
+        if wrong:
+            raise MLTError(f"sound lane {number} holds a still ({wrong[0]!r})")
+    sound_entries = [entry for sound_lane in sounds for entry in sound_lane]
+    for entry in [*audio, *picture, *music, *music2, *holds, *sound_entries]:
         if entry.fade_in_frames < 0 or entry.fade_out_frames < 0:
             raise MLTError(f"negative fade frames on {entry.resource!r}")
         if entry.fade_in_frames + entry.fade_out_frames > max(entry.frames - 1, 0):
@@ -1499,7 +1584,7 @@ def document(
     # of the producer, not of the entry — but both point at one bin entry, so
     # `kdenlive:id` is keyed on the resource and not on the node.
     sources: dict[str, Entry] = {}
-    for entry in [*audio, *picture, *music, *music2, *holds]:
+    for entry in [*audio, *picture, *music, *music2, *holds, *sound_entries]:
         sources.setdefault(entry.resource, entry)
     bin_ids = {resource: index + 2 for index, resource in enumerate(sources)}
 
@@ -1807,6 +1892,33 @@ def document(
                 ET.SubElement(track, "track", {"producer": playlist_id, "hide": "audio"})
             overlay_tracks.append(f"tractorO{lane}")
 
+    # The sound lanes: `music`'s audio-only node shape, a node set per lane
+    # (one producer serves one lane per role here, `music2`'s reason), ids in
+    # their own namespace (s<L>chain/splaylist<L>/tractorS<L>) so a document
+    # with no sounds is byte-identical to one built before they existed.
+    sound_tracks: list[str] = []
+    for number, sound_lane in enumerate(sounds):
+        nodes: dict[str, str] = {}
+        for entry in sound_lane:
+            if entry.resource in nodes:
+                continue
+            node_id = f"s{number}chain{len(nodes)}"
+            nodes[entry.resource] = node_id
+            node = _source_node(node_id, entry, bin_ids[entry.resource], rate)
+            _property(node, "set.test_audio", "0")
+            _property(node, "set.test_video", "1")
+            root.append(node)
+        root.append(_playlist(f"splaylist{number}a", sound_lane, nodes))
+        root.append(ET.Element("playlist", {"id": f"splaylist{number}b"}))
+        track = ET.SubElement(
+            root, "tractor", {"id": f"tractorS{number}", "in": "0", "out": str(total_frames - 1)}
+        )
+        _property(track, "kdenlive:timeline_active", "1")
+        _property(track, "kdenlive:track_name", f"Sounds {number + 1}")
+        for playlist_id in (f"splaylist{number}a", f"splaylist{number}b"):
+            ET.SubElement(track, "track", {"producer": playlist_id, "hide": "video"})
+        sound_tracks.append(f"tractorS{number}")
+
     # A deterministic uuid: the same project rebuilt twice should produce the
     # same document, so a diff of two exports shows what actually changed.
     sequence_uuid = f"{{{uuid.uuid5(uuid.NAMESPACE_URL, f'proofcut:{name}')}}}"
@@ -1840,6 +1952,7 @@ def document(
         stack.append("tractorC")
     if holds:
         stack.append("tractorB")
+    stack.extend(sound_tracks)
     for producer in stack:
         ET.SubElement(sequence, "track", {"producer": producer})
 
@@ -1869,6 +1982,7 @@ def document(
         if (
             index == 0
             or producer in ("tractorA", "tractorB", "tractorC")
+            or producer in sound_tracks
             or (producer == "tractor0" and not audio_has_video)
         ):
             continue
@@ -1934,6 +2048,21 @@ def document(
             {
                 "a_track": "0",
                 "b_track": str(stack.index("tractorB")),
+                "mlt_service": "mix",
+                "internal_added": "237",
+                "always_active": "1",
+                "sum": "1",
+            },
+        )
+    # Each sound lane's own mix — the same additive `mix`, one per lane.
+    for sound_track in sound_tracks:
+        extra_mix += 1
+        _transition(
+            sequence,
+            f"transition{extra_mix}",
+            {
+                "a_track": "0",
+                "b_track": str(stack.index(sound_track)),
                 "mlt_service": "mix",
                 "internal_added": "237",
                 "always_active": "1",

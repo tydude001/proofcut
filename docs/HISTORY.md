@@ -16173,3 +16173,66 @@ The fix: a capped render exports the runtime dir `user_bus` found
 `test_a_capped_render_hands_systemd_run_the_runtime_dir_it_found_the_bus_in`
 failed first. After it, all 15 `@needs_melt` tests pass headless, including
 the overlay render test, which had not completed a run before.
+
+## Sounds on events, built — 2026-09-17
+
+docs/plans/NATIVE.md § B4, built as designed with Tyler's eight calls taken,
+and one deviation. The spike is `~/proofcut-work/spikes/sfx-probe/FINDINGS.md`.
+MLT needed nothing new: a hit is an ordinary entry on an audio lane, the
+bed's silent-WAV padding and additive `mix`, with a per-hit `volume` filter.
+
+What shipped:
+- **`sound add/ls/rm/generate`** (and the four `sound_*` tools), in a new
+  optional `sounds` key, with no schema bump.
+  - A record places one or more clips (`assets`) at a word, phrase or event,
+    or at `every` event of one name. So the launch run's keystrokes are one
+    record.
+  - Each hit draws its variant and its `jitter_db` from dice seeded by the
+    record, for every occurrence before any is skipped. A cut re-rolls
+    nothing else.
+  - An `every` run skips cut occurrences (`skipped`) and hits closer than
+    `min_gap` (`thinned`). A single cut hit refuses export.
+  - `reel` drops sounds and names them (`sounds_dropped`), and sounds are
+    `_is_layered`'s tenth trigger.
+- **Placement between frames** (`sounds.place`, `sounds.padded_copy`):
+  - Frame f starts at `floor(f × 48000 / fps)`, and the copy's leading
+    silence carries the rest, rounded to 1 ms.
+  - Each copy is whole frames, at least `mlt.SOUND_MIN_FRAMES` = 2, so it
+    hits neither of melt's exit-0 traps (a one-frame file plays nothing; an
+    entry claiming past its file moves every later hit early).
+  - Copies are cached in `cache/sounds/`, keyed on the source's size and
+    mtime, the lead and the rate.
+- **The writer** (`mlt.Hit`, `mlt.sound_lanes`, `document(sounds=)`) packs
+  hits greedily onto as few lanes as overlaps need. Each lane is padded to
+  the film from one silent file, with its own `tractorS<n>` and `mix`, and a
+  document with no sounds is byte-identical to before.
+- **The generated set** (`sounds.generate`) is `make_sfx.py` ported to the
+  standard library and deterministic.
+  - **The deviation:** `sound generate` writes into the project's
+    `assets/sounds/` and imports the files as `sfx-*`, rather than writing
+    to a folder the caller names. A tool that writes to any path it is
+    handed would escape `-C`'s confinement.
+- **The window** draws an SFX lane of 2 px ticks. A tick is not a
+  `.clip-block`, which cannot draw narrower than its padding. Nothing
+  plays, as with the bed.
+
+How it was judged:
+- `test_a_sound_lands_on_the_sample_its_event_names` reads a real melt
+  render's PCM. It uses a click one sample loud in a 1440-sample file, at
+  1.0 s and at 2.5104 s, and finds both within 2 samples of 48000 and
+  120480.
+  - **The control:** with `SOUND_MIN_FRAMES` set to 1, the click at 1.0 s
+    became a one-frame copy and the render held one click, not two.
+- **An 8 s demo** (`~/proofcut-work/spikes/sfx-web`) used the launch run's
+  first 100 keystrokes with all eight generated keys. It placed 67 hits
+  (33 thinned) plus a send, on 2 lanes from 57 copies, and `frames` agreed
+  at 240.
+- **The window, in headless Chrome:**
+  - 68 ticks; the first sits at 1.0 s to the pixel.
+  - A click on a tick seeks to 3.345 s at 0 and 120 ms dwell.
+  - The console is clean, and the page and the scroll containers are clean
+    at 1400 and 700 px.
+
+**One finding, not fixed:** the 11 generated clips fill the Assets pane
+like footage, each with its own Transcribe button and voiceover/footage
+role chips. Nothing there knows that a clip is a sound.

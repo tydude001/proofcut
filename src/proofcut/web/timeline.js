@@ -941,6 +941,34 @@ function buildOverlayRow(state, pxPerSec, duration) {
   return row;
 }
 
+/** SFX — the one-shot sounds, one tick per hit, from `state.sounds` alone.
+ *
+ * `state.sounds` is `ops._sound_plan` flattened: every hit `export` places,
+ * in Edit seconds, after the cuts skipped and the thinning dropped theirs.
+ * A tick is a mark, not a block — a keystroke is 50 ms, and a run of them is
+ * the rhythm this lane exists to show. Nothing here plays: the preview does
+ * not play the bed either. On `sounds_error` the message is drawn instead,
+ * `buildMusicRow`'s policy.
+ */
+function buildSoundRow(state, pxPerSec, duration) {
+  const row = el("div", "lane lane-sfx");
+  row.style.width = `${Math.max(1, duration * pxPerSec)}px`;
+  if (state.sounds_error) {
+    row.append(el("div", "lane-refusal", `sounds refused — ${state.sounds_error}`));
+    seekOnClick(row, pxPerSec);
+    return row;
+  }
+  for (const hit of state.sounds || []) {
+    if (!Number.isFinite(hit.at)) continue;
+    const tick = el("div", "sound-tick");
+    tick.style.left = `${(hit.at * pxPerSec).toFixed(1)}px`;
+    tick.title = `${hit.asset} at ${fmt(hit.at)} (${hit.address}), ${hit.gain_db} dB — sound ${hit.position}`;
+    row.append(tick);
+  }
+  seekOnClick(row, pxPerSec);
+  return row;
+}
+
 /** Lazily fetches and caches one clip's waveform (`GET
  * /api/waveform/<clip_id>`, contract in PLAN.md § Read-model additions).
  * Triggers one re-render when it lands so the canvas that asked for it
@@ -2277,6 +2305,7 @@ function render() {
   if (clip.has_video) kinds.push("V1");
   kinds.push("A1"); // always — the recording has audio even for a picture clip
   if (state.music || state.music_error) kinds.push("A2"); // only with a bed recorded — never a lane `export` does not mix
+  if ((state.sounds && state.sounds.length) || state.sounds_error) kinds.push("SFX");
   if (state.words && state.words.length) kinds.push("CC"); // captions come out of the timeline (CLAUDE.md) — any transcript is enough to try
 
   // Before any row is built: `laneHeightPx()` and each row's own
@@ -2291,6 +2320,7 @@ function render() {
     if (kind === "OV") note = "overlays, drawn over the film";
     if (kind === "V2") note = "the cue table's picture, over the edit";
     if (kind === "A2") note = "the music bed, mixed under the edit";
+    if (kind === "SFX") note = "one-shot sounds, one tick per hit";
     if (kind === "CC") note = "one block per cue, as the .ass will break them";
     headers.append(header(kind, note));
     const row =
@@ -2300,6 +2330,8 @@ function render() {
         ? buildPictureRow(state, pxPerSec, duration)
         : kind === "A2"
           ? buildMusicRow(state, pxPerSec, duration)
+          : kind === "SFX"
+          ? buildSoundRow(state, pxPerSec, duration)
           : kind === "CC"
             ? buildCaptionRow(captions, pxPerSec, duration)
             : buildLaneRow(kind, state.segments, pxPerSec, duration, state, kind === "V1");

@@ -190,7 +190,8 @@ Each step is usable on its own, and each is judged on a served render.
   A card rendered with alpha and placed on the canvas
   instead of filling it, with an opacity/position animation — a lower third.
   Also useful to the essays. Design below (§ B3, designed).
-- **B4. Sound on events.** A1's cue list plus one-shot effects at events
+- **B4. Sound on events.** Shipped — see HISTORY.md § Sounds on events,
+  built. A1's cue list plus one-shot effects at events
   (`send`, `land`, keystrokes). Design below (§ B4, designed).
 - **B5. Retime.** The hard one, last on purpose: it is the only step that
   changes what "timeline time" means, so captions, cues, holds, `locate`,
@@ -316,7 +317,7 @@ What the launch clip does (`clip.py` § sound):
   run's 36–49 ms gaps into only 33 and 67 ms. Placing them between frames
   cost 2.6 s of melt for 279 hits, against 0.9 s rounded.
 
-**Decisions** (a recommendation on each):
+**Decisions** (a recommendation on each; Tyler took all eight on 2026-09-17):
 
 1. **A sound is an imported clip, and a hit is a record in a new optional
    key, `sounds`** (recommended). The record is `(asset, clip_id, word_index

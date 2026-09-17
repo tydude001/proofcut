@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import random
 import re
 import shutil
 import statistics
@@ -24,6 +25,7 @@ import xml.etree.ElementTree as ET
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
+from fractions import Fraction
 from itertools import pairwise
 from math import ceil, gcd, hypot
 from pathlib import Path
@@ -64,6 +66,7 @@ from proofcut import duck as dk
 # or the function would shadow it at call time — the `describe`/`verify` fix.
 from proofcut import fonts as proofcut_fonts
 from proofcut import pack as pk
+from proofcut import sounds as snd
 from proofcut import speakers as spk
 from proofcut import speech as sp
 from proofcut import timeline as tl
@@ -4543,6 +4546,27 @@ def timeline_view(
         except (ProjectError, tx.TranscriptError, media.MediaError) as exc:
             overlays_error = str(exc)
 
+    # Every sound hit, for the window's tick lane — `overlays_view`'s policy:
+    # a record that cannot resolve is `sounds_error`, never raised. Cheap: the
+    # plan decodes nothing.
+    sounds_view: list[dict[str, Any]] = []
+    sounds_error: str | None = None
+    if project.read_manifest().get(SOUNDS_KEY):
+        try:
+            sounds_view = [
+                {
+                    "position": plan["position"],
+                    "asset": hit["asset"],
+                    "at": round(hit["at"], 4),
+                    "gain_db": hit["gain_db"],
+                    "address": hit["address"],
+                }
+                for plan in _sound_plan(project, edit)
+                for hit in plan["hits"]
+            ]
+        except (ProjectError, tx.TranscriptError, media.MediaError) as exc:
+            sounds_error = str(exc)
+
     # The holds lane's own projection — `music_view`'s policy, per item
     # rather than once, because a project can hold several: each stored
     # hold's live `_hold_plan` resolution, or `hold_error` inline when it
@@ -4653,6 +4677,8 @@ def timeline_view(
         # [] with no overlays; bottom of the stack first. `rise_px` is at a
         # 1080-line canvas, scaled to `canvas` the way the writer scales it.
         "overlays": overlays_view,
+        # [] with no sounds; one item per hit, in Edit seconds.
+        "sounds": sounds_view,
         # Ruling: this view stays Edit-relative — `segments`/`shots`/`seams`
         # below are unchanged by a configured head, because the web player
         # cannot play one yet and shifting this view's clock would desync it
@@ -4674,6 +4700,8 @@ def timeline_view(
         result["music_error"] = music_error
     if overlays_error is not None:
         result["overlays_error"] = overlays_error
+    if sounds_error is not None:
+        result["sounds_error"] = sounds_error
     # A clip can be registered, transcribed, and still not be in the edit — and
     # then every one of its words comes back `present: false`, which is exactly
     # what a clip somebody cut entirely looks like. Reported rather than left to
@@ -13826,6 +13854,370 @@ def overlay_rm(path: Path | str, position: int, *, plan: bool = False) -> dict[s
     return {"removed": removed, "position": int(position), "count": len(remaining), "plan": bool(plan)}
 
 
+# -- sounds ----------------------------------------------------------------
+#
+# docs/plans/NATIVE.md § B4, designed. A sound is an imported clip placed as a
+# one-shot at a word or an event — or at every event of one name, which is how
+# a typed run of 279 keystrokes is one record. Like overlays, nothing stored is
+# a timeline second: each hit resolves through the `Edit` on every build.
+
+SOUNDS_KEY = "sounds"
+
+#: The closest two hits of one `every` run may land, in timeline seconds —
+#: `clip.py`'s thinning of the launch run's keystrokes.
+SOUND_MIN_GAP = 0.045
+
+
+def _stored_sounds(project: Project) -> list[dict[str, Any]]:
+    """Every stored sound record, validated — `_stored_overlays`' discipline."""
+    stored = project.read_manifest().get(SOUNDS_KEY, [])
+    if not isinstance(stored, list):
+        raise ProjectError(f"{project.manifest_path}'s {SOUNDS_KEY!r} must be a JSON array")
+    records: list[dict[str, Any]] = []
+    for item in stored:
+        if not isinstance(item, dict):
+            raise ProjectError(f"{project.manifest_path}'s {SOUNDS_KEY!r} entries must be JSON objects")
+        try:
+            assets = item["assets"]
+            if isinstance(assets, str) or not assets:
+                raise ValueError("assets is a non-empty list of clip ids")
+            record: dict[str, Any] = {
+                "assets": [str(asset) for asset in assets],
+                "clip_id": str(item["clip_id"]),
+                "gain_db": float(item.get("gain_db", 0.0)),
+                "jitter_db": float(item.get("jitter_db", 0.0)),
+            }
+            for key, kind in (("word_index", int), ("event", str), ("every", str), ("min_gap", float)):
+                if item.get(key) is not None:
+                    record[key] = kind(item[key])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ProjectError(
+                f"{project.manifest_path} has a sound that is not "
+                f"(assets, clip_id, an address): {item!r} ({exc})"
+            ) from None
+        if sum(key in record for key in ("word_index", "event", "every")) != 1:
+            raise ProjectError(f"sound {item!r} needs exactly one of word_index, event or every")
+        if "every" in record:
+            record.setdefault("min_gap", SOUND_MIN_GAP)
+        records.append(record)
+    return records
+
+
+def _sound_asset(project: Project, asset: str) -> dict[str, Any]:
+    """A sound's clip, refused unless it is a registered clip with sound."""
+    if asset.startswith("card:"):
+        raise ProjectError(f"{asset!r} is a card — a sound is an imported clip with audio")
+    clip = media.get_clip(project, asset)
+    if not clip.get("has_audio"):
+        raise ProjectError(f"clip {asset!r} has no audio to play as a sound")
+    duration = clip.get("duration")
+    if duration and float(duration) > snd.MAX_SECONDS:
+        raise ProjectError(
+            f"clip {asset!r} is {float(duration):.1f}s — a one-shot is at most "
+            f"{snd.MAX_SECONDS:g}s; place longer sound as a music cue"
+        )
+    return clip
+
+
+def _sound_rng(record: dict[str, Any]) -> random.Random:
+    """The record's own dice: the same record draws the same picks every build."""
+    digest = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).digest()
+    return random.Random(digest)
+
+
+def _sound_draw(record: dict[str, Any], rng: random.Random) -> tuple[str, float]:
+    """One hit's variant and level, off the record's dice."""
+    asset = record["assets"][rng.randrange(len(record["assets"]))]
+    jitter = rng.uniform(-record["jitter_db"], record["jitter_db"]) if record["jitter_db"] else 0.0
+    return asset, round(record["gain_db"] + jitter, 2)
+
+
+def _sound_plan(
+    project: Project,
+    edit: tl.Edit,
+    *,
+    stored: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Every sound record resolved to its hits, in Edit seconds.
+
+    Cheap — no decode, no copy — so `timeline_view` can afford it on every
+    `project-changed`. A single hit whose word or event a cut removed refuses
+    by name (the overlay's rule); an `every` run skips its cut occurrences and
+    counts them (`skipped`), and drops any closer than `min_gap` to the last
+    one it kept (`thinned`). The variant and the jitter are drawn for every
+    occurrence before either, so cutting one keystroke re-rolls no other.
+    """
+    records = _stored_sounds(project) if stored is None else stored
+    plans: list[dict[str, Any]] = []
+    for position, record in enumerate(records):
+        for asset in record["assets"]:
+            _sound_asset(project, asset)
+        clip_id = record["clip_id"]
+        rng = _sound_rng(record)
+        hits: list[dict[str, Any]] = []
+        skipped = thinned = 0
+        echo: Any = None
+        if "every" in record:
+            clip = media.get_clip(project, clip_id)
+            rows = [row for row in _event_rows(clip) if row["name"] == record["every"]]
+            if not rows:
+                known = sorted({row["name"] for row in _event_rows(clip)})
+                raise ProjectError(
+                    f"{clip_id} has no {record['every']!r} events to place a sound at"
+                    + (f" (it has: {', '.join(known)})" if known else " — import some with events source=")
+                )
+            placed: list[tuple[float, str, float, str]] = []
+            for row in rows:
+                asset, gain = _sound_draw(record, rng)
+                at = edit.timeline_time(clip_id, row["at"], closed_end=True)
+                if at is None:
+                    skipped += 1
+                    continue
+                placed.append((at, asset, gain, row["address"]))
+            last = None
+            for at, asset, gain, address in sorted(placed):
+                if last is not None and at - last < record["min_gap"]:
+                    thinned += 1
+                    continue
+                last = at
+                hits.append({"at": at, "asset": asset, "gain_db": gain, "address": address})
+            echo = {"every": record["every"], "occurrences": len(rows)}
+        elif "event" in record:
+            event = resolve_event(media.get_clip(project, clip_id), record["event"])
+            at = edit.timeline_time(clip_id, event["at"], closed_end=True)
+            if at is None:
+                raise ProjectError(
+                    f"a sound is placed at {clip_id!r} event {record['event']!r} "
+                    f"({event['at']}s), which a cut removed from the timeline — move it"
+                )
+            asset, gain = _sound_draw(record, rng)
+            hits.append({"at": at, "asset": asset, "gain_db": gain, "address": event["address"]})
+            echo = event
+        else:
+            parsed = _transcript(project, clip_id)
+            index = int(record["word_index"])
+            if not 0 <= index < len(parsed.words):
+                raise ProjectError(f"{clip_id!r} has no word {index} (it has {len(parsed.words)})")
+            echo = _cue_echo(parsed, index)
+            span = edit.timeline_span(clip_id, echo["start"], echo["end"])
+            if span is None:
+                raise ProjectError(
+                    f"a sound is placed at {clip_id!r} word {index} ({echo['text']!r}), "
+                    "which a cut removed from the timeline — move it"
+                )
+            asset, gain = _sound_draw(record, rng)
+            hits.append({"at": span[0], "asset": asset, "gain_db": gain, "address": f"word {index}"})
+        plans.append(
+            {
+                "position": position,
+                **record,
+                "hits": hits,
+                "skipped": skipped,
+                "thinned": thinned,
+                "echo": echo,
+            }
+        )
+    return plans
+
+
+def _sound_view(plan: dict[str, Any], *, limit: int | None = 3) -> dict[str, Any]:
+    """A sound plan as JSON, its hits counted and the first few shown."""
+    view = {key: value for key, value in plan.items() if key != "hits"}
+    view["hit_count"] = len(plan["hits"])
+    hits = plan["hits"] if limit is None else plan["hits"][:limit]
+    view["hits"] = [{**hit, "at": round(hit["at"], 4)} for hit in hits]
+    return view
+
+
+def _sound_hits(
+    project: Project, plans: list[dict[str, Any]], rate: float, head_frames: int
+) -> list[mlt.Hit]:
+    """The writer's hits: each placed between frames by a padded copy.
+
+    Decodes each asset once per build and writes a copy per distinct lead
+    into `cache/sounds/`, keyed on the file's identity, the lead and the
+    rate — `waveform/`'s size+mtime idiom, since a miss only rewrites a copy.
+    """
+    fraction = mlt._frame_rate(rate)
+    head_seconds = Fraction(head_frames * fraction[1], fraction[0])
+    decoded: dict[str, tuple[Path, bytes]] = {}
+    hits: list[mlt.Hit] = []
+    for plan in plans:
+        for hit in plan["hits"]:
+            asset = hit["asset"]
+            if asset not in decoded:
+                source = media.media_path(project, media.get_clip(project, asset))
+                try:
+                    decoded[asset] = (source, snd.decode(source))
+                except snd.SoundError as exc:
+                    raise ProjectError(str(exc)) from None
+            source, pcm = decoded[asset]
+            frame, lead = snd.place(float(head_seconds) + hit["at"], fraction)
+            stat = source.stat()
+            key = f"{source}|{stat.st_size}|{stat.st_mtime_ns}|{lead}|{fraction[0]}/{fraction[1]}"
+            dest = project.sounds_dir / f"{hashlib.sha256(key.encode()).hexdigest()[:16]}.wav"
+            frames = snd.padded_copy(pcm, dest, lead, fraction, mlt.SOUND_MIN_FRAMES)
+            hits.append(mlt.Hit(str(dest), frame, frames, hit["gain_db"]))
+    return hits
+
+
+def _sound_report(plans: list[dict[str, Any]], lanes: int) -> list[dict[str, Any]]:
+    return [
+        {
+            key: plan[key]
+            for key in ("position", "assets", "clip_id", "word_index", "event", "every", "skipped", "thinned")
+            if key in plan
+        }
+        | {"hits": len(plan["hits"]), "lanes": lanes}
+        for plan in plans
+    ]
+
+
+def sound_add(
+    path: Path | str,
+    assets: list[str] | str,
+    clip_id: str,
+    word_index: int | None = None,
+    *,
+    phrase: str | None = None,
+    after: int = -1,
+    occurrence: int | None = None,
+    event: str | None = None,
+    every: str | None = None,
+    gain_db: float = 0.0,
+    jitter_db: float = 0.0,
+    min_gap: float | None = None,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Place a one-shot sound at a word, an event, or every event of one name.
+
+    `assets` is one clip id or several: with several, each hit draws one, so a
+    typed run does not repeat one sample. `gain_db` is the level (the file's
+    own at 0), and `jitter_db` varies each hit by up to that much either way;
+    both draws are seeded by the record, so every build writes the same film.
+    `every` places the sound at each of `clip_id`'s events of that name,
+    skipping those a cut removed and any closer than `min_gap` seconds
+    (default 0.045) to the last one kept. The start is one of `word_index`,
+    `phrase` (its first word), `event` or `every`.
+
+    Resolved against the live timeline before anything is written, with the
+    word or event it resolved to echoed. `plan=True` writes nothing.
+    """
+    project = Project.open(path)
+    if sum(x is not None for x in (word_index, phrase, event, every)) != 1:
+        raise ProjectError("a sound is placed at one of word_index, phrase, event or every")
+    names = [assets] if isinstance(assets, str) else list(assets)
+    if not names:
+        raise ProjectError("a sound needs at least one asset")
+    if jitter_db < 0:
+        raise ProjectError(f"jitter_db is a spread, not {jitter_db}")
+    if min_gap is not None and every is None:
+        raise ProjectError("min_gap thins an every run; a single hit has nothing to thin")
+    if min_gap is not None and min_gap < 0:
+        raise ProjectError(f"min_gap is a length, not {min_gap}")
+    record: dict[str, Any] = {
+        "assets": [str(name) for name in names],
+        "clip_id": clip_id,
+        "gain_db": float(gain_db),
+        "jitter_db": float(jitter_db),
+    }
+    if every is not None:
+        record["every"] = _event_name(every)
+        record["min_gap"] = SOUND_MIN_GAP if min_gap is None else float(min_gap)
+    elif event is not None:
+        record["event"] = str(event)
+    else:
+        record["word_index"], _ = _resolve_word_or_phrase(
+            _transcript(project, clip_id) if phrase is not None else None,
+            word_index=word_index,
+            phrase=phrase,
+            after=after,
+            occurrence=occurrence,
+            edge="first",
+        )
+    stored = _stored_sounds(project)
+    updated = [*stored, record]
+    plans = _sound_plan(project, _load_edit(project), stored=updated)
+    if not plan:
+        manifest = project.read_manifest()
+        manifest[SOUNDS_KEY] = updated
+        project.write_manifest(manifest)
+    return {
+        "sound": _sound_view(plans[-1]),
+        "position": len(updated) - 1,
+        "count": len(updated),
+        "plan": bool(plan),
+    }
+
+
+def sound_ls(path: Path | str) -> dict[str, Any]:
+    """Every sound record, with how many hits each places now.
+
+    Read-only. Records that cannot resolve are reported rather than raised —
+    `sounds_error`, with the stored records, so the one to fix can be found.
+    """
+    project = Project.open(path)
+    stored = _stored_sounds(project)
+    try:
+        plans = _sound_plan(project, _load_edit(project), stored=stored)
+    except (ProjectError, tl.TimelineError, tx.TranscriptError, media.MediaError) as exc:
+        return {"sounds": stored, "sounds_error": str(exc)}
+    return {"sounds": [_sound_view(p) for p in plans], "sounds_error": None}
+
+
+def sound_rm(path: Path | str, position: int, *, plan: bool = False) -> dict[str, Any]:
+    """Take the sound record at `position` (as `sound_ls` numbers it) off the film.
+
+    The clip stays registered. `plan=True` writes nothing.
+    """
+    project = Project.open(path)
+    stored = _stored_sounds(project)
+    if not 0 <= int(position) < len(stored):
+        raise ProjectError(
+            f"there is no sound at position {position} — there are {len(stored)}"
+            + (f" (0 to {len(stored) - 1})" if stored else "")
+        )
+    removed = stored[int(position)]
+    remaining = [item for i, item in enumerate(stored) if i != int(position)]
+    if not plan:
+        manifest = project.read_manifest()
+        if remaining:
+            manifest[SOUNDS_KEY] = remaining
+        else:
+            manifest.pop(SOUNDS_KEY, None)
+        project.write_manifest(manifest)
+    return {"removed": removed, "position": int(position), "count": len(remaining), "plan": bool(plan)}
+
+
+#: Where `sound_generate` writes the generated set inside a project, and the
+#: prefix of the clip ids it registers them as.
+GENERATED_SOUNDS_DIR = "assets/sounds"
+GENERATED_SOUND_PREFIX = "sfx-"
+
+
+def sound_generate(path: Path | str) -> dict[str, Any]:
+    """Write proofcut's generated UI sounds into the project and import them.
+
+    Eight key ticks (`sfx-key_0` … `sfx-key_7`), `sfx-send`, `sfx-land` and
+    `sfx-strike`, synthesised — no licence question — into
+    `assets/sounds/`. A clip id already registered is left as it is.
+    """
+    project = Project.open(path)
+    folder = project.root / GENERATED_SOUNDS_DIR
+    written = snd.generate(folder)
+    known = _clips_by_id(project)
+    clips = []
+    for wav in written:
+        clip_id = f"{GENERATED_SOUND_PREFIX}{wav.stem}"
+        if clip_id not in known:
+            media.import_media(Project.open(path), wav, clip_id=clip_id)
+            imported = True
+        else:
+            imported = False
+        clips.append({"clip_id": clip_id, "path": str(wav), "imported": imported})
+    return {"folder": str(folder), "clips": clips}
+
+
 def _is_layered(project: Project, edit: tl.Edit) -> bool:
     """Does this timeline need the MLT writer?
 
@@ -13866,6 +14258,8 @@ def _is_layered(project: Project, edit: tl.Edit) -> bool:
         or manifest.get(UNDER_VO_KEY)
         # An overlay is a lane over the picture — ninth trigger, same rule.
         or manifest.get(OVERLAYS_KEY)
+        # A sound is a lane auto-editor cannot write — tenth trigger.
+        or manifest.get(SOUNDS_KEY)
     )
 
 
@@ -14230,6 +14624,18 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         for plan in overlay_plans
     ]
 
+    # The sounds: each hit a padded copy placed between frames, packed onto
+    # as few lanes as overlaps need, every lane padded with one silent file
+    # as long as the film — moved by the head the way the bed is.
+    sound_plans = _sound_plan(project, edit)
+    sound_lanes: list[list[mlt.Entry]] = []
+    if sound_plans:
+        total_frames = sum(entry.frames for entry in audio)
+        hits = _sound_hits(project, sound_plans, rate, head_frames)
+        silence = _tail_silence(project, total_frames / rate)
+        sound_lanes = mlt.sound_lanes(hits, total_frames, str(silence))
+    sounds_report = _sound_report(sound_plans, len(sound_lanes))
+
     resolution = _mlt_resolution(project)
     by_clip = _reframe_map(project, resolution)
     reframes = {
@@ -14242,6 +14648,7 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         music2=music2_lane,
         holds=holds_lane,
         overlays=overlays,
+        sounds=sound_lanes,
         rate=rate,
         resolution=resolution,
         reframe=reframes,
@@ -14271,6 +14678,9 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         # [] with no overlays, or each one the render draws — `music`'s
         # reasoning: an overlay recorded but not drawn is a silent failure.
         "overlays": overlays_report,
+        # [] with no sounds, or each record with the hits the render places —
+        # `music`'s reasoning again.
+        "sounds": sounds_report,
         # What the render will actually crop, named where the render is built
         # rather than left for a pixel probe to discover.
         "reframed": sorted(
@@ -14312,6 +14722,8 @@ def _mlt_reply(built: dict[str, Any], edit: tl.Edit, **extra: Any) -> dict[str, 
         "holds": built["holds"],
         # [] with no overlays, or each one drawn, and on which lane.
         "overlays": built["overlays"],
+        # [] with no sounds, or each record and how many hits it placed.
+        "sounds": built["sounds"],
         # Named on both roads because a crop is a decision about what is on
         # screen, and the render that made it looks entirely plausible.
         "reframed": built["reframed"],
@@ -17222,6 +17634,7 @@ def reel(
     # own type is a decision about the reel — dropped and named, the tail's
     # rule, never carried across.
     overlays_dropped = _stored_overlays(source)
+    sounds_dropped = _stored_sounds(source)
     # Checked here rather than left to `cut_by_time`, at the granularity a reel
     # actually has a boundary at — see `_reel_suspect_edges`. Under `plan` it
     # is reported and never refused, which is `cut_by_time`'s own convention
@@ -17291,6 +17704,7 @@ def reel(
         "holds_dropped": holds_dropped,
         "under_vo_dropped": under_vo_dropped,
         "overlays_dropped": overlays_dropped,
+        "sounds_dropped": sounds_dropped,
         "plan": bool(plan),
     }
     report["over_platform_cap"] = report["duration"] > PLATFORM_CAP
@@ -17329,6 +17743,7 @@ def reel(
         manifest.pop(HOLDS_KEY, None)
         manifest.pop(UNDER_VO_KEY, None)
         manifest.pop(OVERLAYS_KEY, None)
+        manifest.pop(SOUNDS_KEY, None)
         # Provenance, and the answer to the question a hand-made scratch copy
         # could not answer once already: which film is this, and which seconds
         # of it (HISTORY.md § The VO the project was holding). Additive and

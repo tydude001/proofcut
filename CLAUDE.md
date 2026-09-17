@@ -1498,6 +1498,18 @@ built; docs/plans/INSTALL.md):
   drawing the render. A frame melt composites with an overlay reads ~2 luma
   levels brighter all over, so judge an overlay against a baseline frame
   inside its span. HISTORY.md § Overlays, built.
+- **A one-shot sound (`SOUNDS_KEY`, `_is_layered`'s tenth trigger) never
+  plays its own file — it plays a padded copy from `cache/sounds/`.**
+  - melt has two exit-0 traps for a short file: a file it counts as one
+    frame long plays nothing, and an entry claiming more frames than its
+    file has moves every later hit on the lane early.
+  - So a copy is whole frames, at least `mlt.SOUND_MIN_FRAMES`, and its
+    leading silence places the hit between frames. Frame f starts at
+    `floor(f × 48000 / fps)`, measured on both melts.
+  - An `every` run's dice are drawn for every occurrence before any is
+    skipped, so a cut re-rolls no other hit.
+  - Judge a hit by the render's PCM, never by the document.
+  - HISTORY.md § Sounds on events, built.
 - **A channel preset pack is a snapshot, never a live reference to a sibling
   repo's file.** `pack.load_pack` resolves one external JSON file (palette,
   fonts, mark, caption presets, weights) once; `pack_apply` writes the fully-

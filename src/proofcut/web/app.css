@@ -202,6 +202,7 @@
  *                             ramps (timeline.js's `buildMusicRow`)
  *   .overlay-block             one overlay on OV (timeline.js's
  *                             `buildOverlayRow`), banded by its writer lane
+ *   .sound-tick                one hit on SFX (timeline.js's `buildSoundRow`)
  *   .filmstrip / .filmstrip img  V1/V2 thumbnails (timeline.js's
  *                             `buildFilmstrip`, `/api/thumb/<clip_id>`) —
  *                             fixed-width frames reading the block's OWN
@@ -3593,6 +3594,24 @@ textarea {
    entrance and exit. */
 .lane-ov {
   --clip-fill: var(--clip-teal);
+}
+
+/* SFX — one-shot sounds (timeline.js `buildSoundRow`). A tick, not a
+   `.clip-block`: a block cannot draw narrower than its own padding, and a
+   keystroke is a fiftieth of a second. */
+.sound-tick {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--clip-ink);
+  opacity: 0.7;
+}
+
+.sound-tick:hover {
+  opacity: 1;
 }
 
 /* A crossfade: two pieces overlap, so each takes half the row. */

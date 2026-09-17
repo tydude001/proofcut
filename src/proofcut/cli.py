@@ -1457,6 +1457,37 @@ def _build_parser() -> argparse.ArgumentParser:
     p_overlay_rm.add_argument("position", type=int, help="its position, as `overlay ls` numbers it")
     p_overlay_rm.add_argument("--plan", action="store_true", help="report without writing")
 
+    p_sound = sub.add_parser("sound", help="one-shot sounds at words and events (keystrokes, send, land)")
+    sound_sub = p_sound.add_subparsers(dest="sound_command", required=True)
+    p_sound_add = sound_sub.add_parser(
+        "add", help="place a sound at a word, an event, or every event of one name"
+    )
+    p_sound_add.add_argument("clip_id", help="the clip whose words or events say where")
+    p_sound_add.add_argument("word_index", type=int, nargs="?", help="the word it plays at")
+    p_sound_add.add_argument(
+        "--asset", action="append", required=True, dest="assets",
+        help="an imported clip to play; repeat it and each hit draws one",
+    )  # fmt: skip
+    p_sound_add.add_argument("--phrase", help="play at this phrase's first word")
+    p_sound_add.add_argument("--event", help="play at this event (name or name#k)")
+    p_sound_add.add_argument("--every", help="play at every event of this name")
+    p_sound_add.add_argument("--after", type=int, default=-1, help="only match a phrase forward of this word index")
+    p_sound_add.add_argument("--occurrence", type=int, help="pick the Nth phrase match")
+    p_sound_add.add_argument("--gain", type=float, default=0.0, dest="gain_db", help="level in dB (0 is the file's own)")
+    p_sound_add.add_argument("--jitter", type=float, default=0.0, dest="jitter_db", help="vary each hit by up to this many dB")
+    p_sound_add.add_argument(
+        "--min-gap", type=float,
+        help=f"with --every, drop a hit closer than this to the last (default {ops.SOUND_MIN_GAP}s)",
+    )  # fmt: skip
+    p_sound_add.add_argument("--plan", action="store_true", help="resolve and report without writing")
+    sound_sub.add_parser("ls", help="list sound records with how many hits each places")
+    p_sound_rm = sound_sub.add_parser("rm", help="take a sound record off the film (the clip stays)")
+    p_sound_rm.add_argument("position", type=int, help="its position, as `sound ls` numbers it")
+    p_sound_rm.add_argument("--plan", action="store_true", help="report without writing")
+    sound_sub.add_parser(
+        "generate", help="write proofcut's generated UI sounds into the project and import them (sfx-*)"
+    )
+
     p_hold = sub.add_parser(
         "hold", help="film-audio holds — a clean span of a clip's own audio spliced into the VO"
     )
@@ -2833,6 +2864,32 @@ def _cmd_vo_synth(args: argparse.Namespace) -> int:
     )
 
 
+def _cmd_sound(args: argparse.Namespace) -> int:
+    if args.sound_command == "add":
+        return _emit(
+            ops.sound_add(
+                args.project,
+                args.assets,
+                args.clip_id,
+                args.word_index,
+                phrase=args.phrase,
+                after=args.after,
+                occurrence=args.occurrence,
+                event=args.event,
+                every=args.every,
+                gain_db=args.gain_db,
+                jitter_db=args.jitter_db,
+                min_gap=args.min_gap,
+                plan=args.plan,
+            )
+        )
+    if args.sound_command == "ls":
+        return _emit(ops.sound_ls(args.project))
+    if args.sound_command == "generate":
+        return _emit(ops.sound_generate(args.project))
+    return _emit(ops.sound_rm(args.project, args.position, plan=args.plan))
+
+
 def _cmd_overlay(args: argparse.Namespace) -> int:
     if args.overlay_command == "add":
         return _emit(
@@ -3371,6 +3428,7 @@ _COMMANDS = {
     "vo-extend": _cmd_vo_extend,
     "vo-synth": _cmd_vo_synth,
     "overlay": _cmd_overlay,
+    "sound": _cmd_sound,
     "hold": _cmd_hold,
     "reel": _cmd_reel,
     "review": _cmd_review,

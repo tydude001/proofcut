@@ -99,6 +99,10 @@ EXPECTED_TOOLS = {
     "overlay_add",
     "overlay_ls",
     "overlay_rm",
+    "sound_add",
+    "sound_ls",
+    "sound_rm",
+    "sound_generate",
     "finish_check",
     "reel",
     "review_add",
@@ -338,6 +342,39 @@ def test_an_overlay_is_placed_listed_and_removed_over_the_wire(
     assert out["planned"]["count"] == 0 and out["planned"]["plan"] is True
     assert out["removed"]["removed"]["card"] == "lt"
     assert out["after"]["overlays"] == []
+
+
+@needs_ffprobe
+def test_sounds_are_generated_placed_listed_and_removed_over_the_wire(
+    tmp_path: Path, sources: tuple[Path, Path]
+) -> None:
+    """NATIVE B4's four tools, registered and reachable: the generated set
+    imported, a send placed at a phrase, listed, planned off and removed."""
+    audio, transcript = sources
+    project = tmp_path / "proj"
+
+    async def body(session: ClientSession) -> Any:
+        client = Client(session)
+        clip = await _seeded(client, project, audio, transcript)
+        generated = await client.call("sound_generate", path=str(project))
+        added = await client.call(
+            "sound_add", path=str(project), assets=["sfx-send"], clip_id=clip, word_index=1, gain_db=-12.0
+        )
+        listed = await client.call("sound_ls", path=str(project))
+        planned = await client.call("sound_rm", path=str(project), position=0, plan=True)
+        removed = await client.call("sound_rm", path=str(project), position=0)
+        return {"generated": generated, "added": added, "listed": listed, "planned": planned,
+                "removed": removed, "after": await client.call("sound_ls", path=str(project))}
+
+    out = anyio.run(_with_server, body)
+
+    assert len(out["generated"]["clips"]) == 11
+    assert out["added"]["sound"]["echo"]["word_index"] == 1
+    assert out["added"]["sound"]["hits"][0]["gain_db"] == -12.0
+    assert [(s["position"], s["hit_count"]) for s in out["listed"]["sounds"]] == [(0, 1)]
+    assert out["planned"]["count"] == 0 and out["planned"]["plan"] is True
+    assert out["removed"]["removed"]["assets"] == ["sfx-send"]
+    assert out["after"]["sounds"] == []
 
 
 @needs_ffprobe
@@ -676,6 +713,10 @@ TOOL_TO_COMMAND = {
     "overlay_add": "overlay",
     "overlay_ls": "overlay",
     "overlay_rm": "overlay",
+    "sound_add": "sound",
+    "sound_ls": "sound",
+    "sound_rm": "sound",
+    "sound_generate": "sound",
     "finish_check": "finish-check",
     "reel": "reel",
     "review_add": "review",
@@ -7216,6 +7257,74 @@ def test_an_overlay_is_drawn_where_and_as_strongly_as_its_keys_say(visible_tmp: 
     assert abs(_frame_rows(output, 60, top) - source_top) <= 4
 
 
+# -- a sound, read back off a real melt render to the sample ----------------
+
+
+def _pcm(path: Path) -> list[int]:
+    """The left channel of `path`'s audio, 48 kHz 16-bit."""
+    raw = subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-i", str(path),
+         "-f", "s16le", "-ac", "2", "-ar", "48000", "-"],
+        capture_output=True, check=True,
+    ).stdout  # fmt: skip
+    return list(memoryview(raw).cast("h"))[0::2]
+
+
+@needs_melt
+def test_a_sound_lands_on_the_sample_its_event_names(visible_tmp: Path) -> None:
+    """NATIVE B4 against a real melt: a one-sample click, shorter than a
+    frame — the length melt plays nothing of when placed as it is — at two
+    events, one between frames. Each is found in the render's own PCM where
+    the event says, to the millisecond grid the copies are cut on
+    (sfx-probe FINDINGS.md), and at the level asked."""
+    film = visible_tmp / "quiet.mp4"
+    subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-y",
+         "-f", "lavfi", "-i", "color=c=gray:size=320x180:rate=30:duration=4",
+         "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+         "-t", "4", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(film)],
+        capture_output=True, check=True,
+    )  # fmt: skip
+    click = visible_tmp / "click.wav"
+    with wave.open(str(click), "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(48000)
+        out.writeframes((16000).to_bytes(2, "little", signed=True) + bytes(2 * 1439))
+    project = visible_tmp / "proj"
+    output = visible_tmp / "out.mp4"
+
+    async def body(session: ClientSession) -> Any:
+        client = Client(session)
+        await client.call("init", path=str(project))
+        clip = (await client.call("import_media", path=str(project), source=str(film)))["clip_id"]
+        await client.call("import_media", path=str(project), source=str(click))
+        await client.call("seed_timeline", path=str(project), clip_id=clip, remove_silences=False)
+        for at in (1.0, 2.5104):
+            await client.call("events", path=str(project), clip_id=clip, name="hit", at=at)
+        await client.call(
+            "sound_add", path=str(project), assets=["click"], clip_id=clip, every="hit", gain_db=-6.0
+        )
+        return await client.call("export", path=str(project), output=str(output), export_format=None)
+
+    rendered = anyio.run(_with_server, body)
+
+    assert rendered["writer"] == "melt"
+    assert [(s["hits"], s["lanes"]) for s in rendered["sounds"]] == [(2, 1)]
+    pcm = _pcm(output)
+    loud = [i for i, v in enumerate(pcm) if abs(v) > 2000]
+    clusters = [i for k, i in enumerate(loud) if k == 0 or i - loud[k - 1] > 4800]
+    peaks = [max(range(c - 200, c + 200), key=lambda i: abs(pcm[i])) for c in clusters]
+    # 2.5104 s is sample 120499; frame 75 starts at 120000, so the copy's lead
+    # is 499 samples, rounded to the 1 ms grid: 480.
+    assert len(peaks) == 2
+    assert abs(peaks[0] - 48000) <= 2
+    assert abs(peaks[1] - 120480) <= 2
+    # -6 dB of 16000 is 8019; AAC smears a lone sample, so the peak is a
+    # bound, never an equality.
+    assert all(abs(pcm[p]) < 16000 * 10 ** (-3 / 20) for p in peaks)
+
+
 # -- a head's own lead-silence pad, against a real melt render --------------
 #
 # The trap named in CLAUDE.md: `mlt.document`'s validation only checks the
@@ -8217,7 +8326,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
     hung on the parameter in `server.py` that never reached `tools/list` is
     exactly the failure this pins: the two tools whose `path` means *no
     project* (`fonts`, `pack_show`) have to say their own thing, and the
-    other 92 share `ProjectPath`'s sentence."""
+    other 96 share `ProjectPath`'s sentence."""
 
     async def body(session: ClientSession) -> Any:
         return await session.list_tools()
@@ -8235,7 +8344,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
             assert "no project" in description, tool.name
         else:
             assert "bound project" in description, tool.name
-    assert seen == 94
+    assert seen == 98
 
 
 def test_no_tool_advertises_an_argument_with_nothing_said_about_it() -> None:

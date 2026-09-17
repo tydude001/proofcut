@@ -91,6 +91,9 @@ CARDS_DIR = "assets/cards"
 #: first tail was set — so it is not in `_SUBDIRS` either, and `ops._tail_silence`
 #: creates it on demand the way `reframe_sheet` creates `SHEET_DIR`.
 TAIL_DIR = "cache/tail"
+#: The padded one-shot copies the sound lanes read (`ops._sound_copy`) —
+#: `TAIL_DIR`'s precedent: re-derivable, created on demand, not in `_SUBDIRS`.
+SOUNDS_DIR = "cache/sounds"
 #: Per-turn thumbs-up/down log for the agent panel (docs/plans/DAYDREAM.md § Agent
 #: panel) — one JSON line per rating. Lives under `cache/` because it is
 #: derived telemetry, not part of the edit: nothing here is authoritative for
@@ -487,6 +490,10 @@ class Project:
     @property
     def tail_dir(self) -> Path:
         return self.root / TAIL_DIR
+
+    @property
+    def sounds_dir(self) -> Path:
+        return self.root / SOUNDS_DIR
 
     def transcript_path(self, clip_id: str) -> Path:
         return self.transcript_dir / f"{clip_id}.json"

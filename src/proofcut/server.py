@@ -60,7 +60,7 @@ INSTRUCTIONS = (
     "- cut: seed_timeline, then cut_by_transcript / cut_by_time, restore, locate\n"
     "- picture: cue_add (b-roll under a line), broll_brief, shot_sheet, canvas, "
     "reframe, reframe_sheet\n"
-    "- sound: music (the bed), hold_add, vo_extend, vo_synth\n"
+    "- sound: music (the bed), hold_add, vo_extend, vo_synth, sound_add (one-shots at events)\n"
     "- cards and ends: card_templates, card_new, overlay_add (type over the film), head, tail\n"
     "- finish: add_captions, caption_style, export (render with export_format=null)\n"
     "- checks: check_frames, verify, film_check, finish_check; changes (what the last edits did)\n\n"
@@ -342,7 +342,7 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "transcript_checks", "describe_ls", "card_templates", "card_safe_zones",
             "pack_show", "pack_status", "cue_ls", "assets", "unspoken_ls", "build_shots",
             "locate", "timeline_status", "timeline_view", "changes", "properties", "finish_report",
-            "caption_view", "hold_ls", "hold_check", "overlay_ls", "finish_check", "reframe_coverage",
+            "caption_view", "hold_ls", "hold_check", "overlay_ls", "sound_ls", "finish_check", "reframe_coverage",
             "continuity_check", "continuity_ls", "thumbnail", "contact_sheet",
             "broll_brief", "verify", "check_frames", "check_black", "spot_frames",
             "speech_overlap", "review_list",
@@ -354,6 +354,8 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "init", "import_media", "cue_add", "unspoken_add", "continuity_accept",
             # Inserts a record into the stack; never replaces one.
             "overlay_add",
+            # Appends a record; never replaces one.
+            "sound_add",
             # `apply` writes a label only where none is set, and never over one.
             "attribute_speakers",
             # `apply` never writes over an existing override (CLAUDE.md).
@@ -371,6 +373,9 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "add_captions", "caption_style", "canvas", "head", "tail", "music", "reframe",
             "reframe_sheet", "shot_sheet", "footage_sheet", "synopsis", "events", "film_check",
             "import_edit", "review_verdict",
+            # Rewrites the generated WAVs with the same bytes; imports only
+            # the clip ids not yet registered.
+            "sound_generate",
             # Replaces the entry at its address.
             "hold_under",
             # Moved here from EDIT on 2026-09-15: it always re-reads the clip's
@@ -388,7 +393,7 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "clip_rm", "transcribe", "cue_rm", "unspoken_rm", "unspoken_detect",
             "cut_by_transcript", "cut_by_time", "undo", "vo_extend", "vo_synth",
             "hold_add", "hold_rm", "hold_under_rm", "reel", "continuity_reject",
-            "overlay_rm",
+            "overlay_rm", "sound_rm",
             "review_add",
         ],
         _EDIT,
@@ -1654,6 +1659,31 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
     },
     "overlay_rm": {
         "position": "The overlay to remove, by its position in overlay_ls (0 is the bottom).",
+    },
+    "sound_add": {
+        "assets": (
+            "The imported clips to play, by clip_id. With several, each hit draws one, so a "
+            "typed run does not repeat one sample. sound_generate registers a ready set (sfx-*)."
+        ),
+        "clip_id": (
+            "The clip whose words or events say where — the transcript the word index "
+            "indexes, or the recording the events belong to."
+        ),
+        "word_index": "Play as this word starts. One of word_index, phrase, event or every.",
+        "phrase": "Play as this phrase's FIRST word starts, resolved against clip_id's transcript.",
+        "event": "Play at this event of clip_id: `name`, or `name#k` when the name repeats.",
+        "every": (
+            "Play at every event of clip_id with this name (e.g. every keystroke). Events a cut "
+            "removed are skipped and counted."
+        ),
+        "gain_db": "The level in dB; 0 plays the file as it is. The generated set peaks at -3 dBFS.",
+        "jitter_db": "Vary each hit's level by up to this many dB either way. Default 0.",
+        "min_gap": (
+            "With every: drop a hit closer than this many seconds to the last one kept. Default 0.045."
+        ),
+    },
+    "sound_rm": {
+        "position": "The sound record to remove, by its position in sound_ls.",
     },
     "broll_brief": {
         "fps": (
@@ -4713,6 +4743,86 @@ def overlay_rm(path: ProjectPath = None, *, position: int, plan: bool = False) -
     above the removed one move down by one.
     """
     return ops.overlay_rm(path, position, plan=plan)
+
+
+@_tool()
+def sound_add(
+    path: ProjectPath = None,
+    *,
+    assets: list[str],
+    clip_id: str,
+    word_index: int | None = None,
+    phrase: str | None = None,
+    event: str | None = None,
+    every: str | None = None,
+    after: int = -1,
+    occurrence: int | None = None,
+    gain_db: float = 0.0,
+    jitter_db: float = 0.0,
+    min_gap: float | None = None,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Play a one-shot sound at a word, an event, or every event of one name.
+
+    Import the sound first (import_media), or call sound_generate for a ready
+    UI set: eight key ticks, send, land, strike. `every="key"` puts a tick on
+    each keystroke event; pass all eight keys as `assets` so the run does not
+    repeat one sample, and a `jitter_db` of 2-3 to vary them. Hits land to the
+    millisecond, between frames, and are resolved through the timeline on
+    every build: a cut moves them, an `every` hit a cut removed is skipped,
+    and a single hit whose word or event is cut makes export refuse until it
+    is moved. The picks and jitter repeat on every build. Sounds do not duck
+    the music. The reply counts the hits and echoes the first few; `plan=true`
+    writes nothing. Export's reply lists the sounds it placed.
+    """
+    return ops.sound_add(
+        path,
+        assets,
+        clip_id,
+        word_index,
+        phrase=phrase,
+        after=after,
+        occurrence=occurrence,
+        event=event,
+        every=every,
+        gain_db=gain_db,
+        jitter_db=jitter_db,
+        min_gap=min_gap,
+        plan=plan,
+    )
+
+
+@_tool()
+def sound_ls(path: ProjectPath = None) -> dict[str, Any]:
+    """Every sound record, with how many hits each places now.
+
+    Each carries its `position` (as sound_rm takes it), `hit_count`, how many
+    occurrences were `skipped` (cut) and `thinned` (too close), and its first
+    hits. Records that cannot resolve come back as `sounds_error` beside the
+    stored records.
+    """
+    return ops.sound_ls(path)
+
+
+@_tool()
+def sound_rm(path: ProjectPath = None, *, position: int, plan: bool = False) -> dict[str, Any]:
+    """Take one sound record off the film, by its position in sound_ls.
+
+    The clip stays registered. Positions above the removed one move down.
+    """
+    return ops.sound_rm(path, position, plan=plan)
+
+
+@_tool()
+def sound_generate(path: ProjectPath = None) -> dict[str, Any]:
+    """Write proofcut's generated UI sounds into the project and import them.
+
+    Registers `sfx-key_0` … `sfx-key_7` (soft key ticks), `sfx-send` (a click),
+    `sfx-land` (a thump and chime, for a result arriving) and `sfx-strike` (a
+    falling swipe), synthesised, under assets/sounds/. Ids already registered
+    are left alone. Use them with sound_add.
+    """
+    return ops.sound_generate(path)
 
 
 @_tool()

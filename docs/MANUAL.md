@@ -582,6 +582,37 @@ No in-point is stored. The audio reads from wherever the shot showing that
 clip has got to at the span's first word, so it cannot disagree with the
 picture, and a clip that is not on screen there is refused.
 
+### Sounds on events
+
+A screen recording's clicks and keystrokes are events (see *Events* above),
+and a one-shot sound can play at each one: a key tick under typing, a click
+at Send, a chime when a result lands.
+
+```sh
+proofcut -C myproject sound generate        # eight key ticks, send, land, strike, as sfx-* clips
+proofcut -C myproject sound add screen --every key \
+  --asset sfx-key_0 --asset sfx-key_1 --asset sfx-key_2 --asset sfx-key_3 \
+  --gain -15 --jitter 2                      # a tick on every keystroke
+proofcut -C myproject sound add screen --event sent --asset sfx-send --gain -10
+proofcut -C myproject sound add vo --phrase "and cuts it" --asset sfx-strike
+proofcut -C myproject sound ls              # each record and how many hits it places
+proofcut -C myproject sound rm 0            # by position; the clip stays
+```
+
+A sound is any imported clip with audio, up to 30 s. With several `--asset`s,
+each hit draws one, so a run does not repeat one sample, and `--jitter`
+varies each hit's level. Both are seeded by the record, so every export
+writes the same film. `--every` skips the events a cut removed and drops any
+hit closer than `--min-gap` (45 ms) to the last one it kept. `sound ls`
+counts both. A single hit whose word or event is cut makes `export` refuse
+until it is moved.
+
+Hits land to the millisecond, between frames. Each one plays from a padded
+copy in `cache/sounds/`, because melt plays nothing of a file under two
+frames long, at exit 0. Sounds do not duck the music bed, and `--loudness`
+masters them with everything else. The window draws an SFX lane of ticks.
+The preview does not play them, just as it does not play the bed.
+
 ### A cold open
 
 ```sh
