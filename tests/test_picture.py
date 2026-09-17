@@ -117,6 +117,100 @@ def test_a_melt_that_prints_no_document_is_named_and_quoted(
     assert "\\ufeffNot melt 1.0" in message
 
 
+_RACED = "error: Extension org.freedesktop.Platform.GL.default has invalid merge-dirs\n"
+
+
+def test_a_melt_launch_that_lost_flatpaks_race_is_tried_again(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Twenty concurrent renders through the Kdenlive flatpak failed in flatpak's
+    launcher before melt ran, and read as "melt printed no timeline". The call
+    is repeated, because nothing was read or written."""
+    project = tmp_path / "p.mlt"
+    project.write_text("<mlt/>")
+    monkeypatch.setattr(picture, "melt_command", lambda: ["melt"])
+    monkeypatch.setattr(picture, "display_env", dict)
+    monkeypatch.setattr(picture, "LAUNCH_RETRY_PAUSE", 0)
+    answers = [("", _RACED), ("", _RACED), (MELT_XML, "")]
+    calls: list[list[str]] = []
+
+    def fake(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        out, err = answers.pop(0)
+        return subprocess.CompletedProcess(command, 0, out, err)
+
+    monkeypatch.setattr(picture.subprocess, "run", fake)
+    assert picture.project_frames(project) == 361
+    assert len(calls) == 3
+
+
+def test_a_melt_failure_of_its_own_is_not_retried(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Only the launcher's own line is a race. Anything melt says about the
+    project is its answer, and running it again would only say it twice."""
+    project = tmp_path / "p.mlt"
+    project.write_text("<mlt/>")
+    monkeypatch.setattr(picture, "melt_command", lambda: ["melt"])
+    monkeypatch.setattr(picture, "display_env", dict)
+    monkeypatch.setattr(picture, "LAUNCH_RETRY_PAUSE", 0)
+    calls: list[list[str]] = []
+
+    def fake(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "Failed to load project\n")
+
+    monkeypatch.setattr(picture.subprocess, "run", fake)
+    with pytest.raises(picture.PictureError, match="printed no timeline"):
+        picture.project_frames(project)
+    assert len(calls) == 1
+
+
+def test_a_launch_that_keeps_losing_the_race_is_reported_not_looped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The retries are bounded, and the launcher's line reaches the refusal."""
+    project = tmp_path / "p.mlt"
+    project.write_text("<mlt/>")
+    monkeypatch.setattr(picture, "melt_command", lambda: ["melt"])
+    monkeypatch.setattr(picture, "display_env", dict)
+    monkeypatch.setattr(picture, "LAUNCH_RETRY_PAUSE", 0)
+    calls: list[list[str]] = []
+
+    def fake(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "", _RACED)
+
+    monkeypatch.setattr(picture.subprocess, "run", fake)
+    with pytest.raises(picture.PictureError, match="invalid merge-dirs"):
+        picture.project_frames(project)
+    assert len(calls) == 1 + picture.LAUNCH_RETRIES
+
+
+def test_a_render_that_lost_the_launch_race_is_rendered(melt: _FakeMelt, tmp_path: Path) -> None:
+    """The render path retries too: the raced call writes no file."""
+    project = tmp_path / "p.mlt"
+    project.write_text("<mlt/>")
+    picture.LAUNCH_RETRY_PAUSE, pause = 0, picture.LAUNCH_RETRY_PAUSE
+    raced = {"left": 1}
+    real = melt.__call__
+
+    def racing(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if raced["left"]:
+            raced["left"] -= 1
+            return subprocess.CompletedProcess(command, 0, "", _RACED)
+        return real(command, **kwargs)
+
+    try:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(picture.subprocess, "run", racing)
+            result = picture.render(project, tmp_path / "out.mp4", expect_frames=150)
+    finally:
+        picture.LAUNCH_RETRY_PAUSE = pause
+    assert result["agrees"] is True
+    assert (tmp_path / "out.mp4").read_bytes() == b"a render, honestly"
+
+
 def test_a_wayland_socket_travels_with_the_directory_it_lives_in(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

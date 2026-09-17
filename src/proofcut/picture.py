@@ -33,6 +33,7 @@ against the numbers the timeline promised.
 from __future__ import annotations
 
 import os
+import random
 import re
 import shlex
 import shutil
@@ -41,6 +42,7 @@ import sys
 import tempfile
 import time
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -437,6 +439,42 @@ _QT_PROBE = """<?xml version="1.0" encoding="utf-8"?>
 </mlt>
 """
 
+#: What `flatpak run` prints when it loses a startup race with other instances
+#: of the same app, before melt itself runs: nothing is read or written, and
+#: the call looks exactly like a project melt could not load. Measured
+#: 2026-09-17 at 20 concurrent renders (3 rounds of 5 hit it) and never with
+#: 120 concurrent `-version` calls, so it needs another instance doing real
+#: work. docs/plans/SUITE-SPEED.md § Steps 1 and 2, measured.
+FLATPAK_LAUNCH_RACE = "has invalid merge-dirs"
+
+#: How many times a launch that lost that race is tried again, and the pause
+#: before each retry, jittered so that launches racing together separate.
+LAUNCH_RETRIES = 3
+LAUNCH_RETRY_PAUSE = 0.3
+
+
+def launch_raced(completed: subprocess.CompletedProcess[str]) -> bool:
+    """Did this melt call die in flatpak's launcher rather than in melt?"""
+    return FLATPAK_LAUNCH_RACE in (completed.stderr or "")
+
+
+def _retrying_launch(
+    call: Callable[[], subprocess.CompletedProcess[str]],
+) -> subprocess.CompletedProcess[str]:
+    """Run `call`, and again if flatpak's launcher lost its startup race.
+
+    Safe only because the race fails before melt starts; a failure melt
+    itself reports is returned as it came.
+    """
+    completed = call()
+    for _ in range(LAUNCH_RETRIES):
+        if not launch_raced(completed):
+            break
+        time.sleep(LAUNCH_RETRY_PAUSE * (1 + random.random()))
+        completed = call()
+    return completed
+
+
 _qt_draws_cache: dict[tuple[str, ...], bool] = {}
 
 
@@ -552,14 +590,16 @@ def project_frames(project: Path | str) -> int:
         # `check=False` on purpose: melt exits 0 having failed to load a project
         # (see `_TMP_HINT`), so the return code proves nothing either way and the
         # output is the only evidence there is.
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            env=display_env(),
-            timeout=MELT_TIMEOUT,
-            check=False,
-            stdin=subprocess.DEVNULL,
+        completed = _retrying_launch(
+            lambda: subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                env=display_env(),
+                timeout=MELT_TIMEOUT,
+                check=False,
+                stdin=subprocess.DEVNULL,
+            )
         )
     except FileNotFoundError as exc:
         raise PictureError(f"could not run melt: {' '.join(command)}") from exc
@@ -900,16 +940,20 @@ def render(
     # HISTORY.md § The render that never exited.
     try:
         if progress.streamed():
-            completed = _render_reporting(command, env, timeout, expect_frames, destination.name)
+            completed = _retrying_launch(
+                lambda: _render_reporting(command, env, timeout, expect_frames, destination.name)
+            )
         else:
-            completed = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                env=env,
-                timeout=timeout,
-                check=False,
-                stdin=subprocess.DEVNULL,
+            completed = _retrying_launch(
+                lambda: subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=timeout,
+                    check=False,
+                    stdin=subprocess.DEVNULL,
+                )
             )
     except FileNotFoundError as exc:
         raise PictureError(f"could not run melt: {' '.join(command)}") from exc

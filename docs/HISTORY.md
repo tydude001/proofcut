@@ -16236,3 +16236,40 @@ How it was judged:
 **One finding, not fixed:** the 11 generated clips fill the Assets pane
 like footage, each with its own Transcribe button and voiceover/footage
 role chips. Nothing there knows that a clip is a sound.
+
+## The suite in two minutes, and the flatpak launch race — 2026-09-17
+
+Tyler said the suite took too long. docs/plans/SUITE-SPEED.md measured
+before changing anything.
+
+Serial, it was 2408 tests in 13:09. The time was spread thin: the slowest
+100 tests were 32% of it, and the median test took 2 ms. So no handful of
+tests was worth cutting. `test_server_stdio` and `test_webui_http` were 61%
+between them, most of it one server process per test. With `pytest-xdist`
+the suite took about 3:35 at 4 workers, 2:15 at 8 and 1:50 at 20
+(`-n auto`). Eight of the nine runs passed exactly what the serial run
+passed.
+
+The ninth failed one melt test with "melt printed no timeline" and, in its
+stderr, flatpak's `Extension org.freedesktop.Platform.GL.default has invalid
+merge-dirs`. That is `flatpak run` failing before melt starts. It reproduced:
+the 54 melt tests at `-n 20` failed in 3 of 5 rounds, hitting `export` and
+`check_frames` alike. It did not reproduce with 120 concurrent
+`melt -version` launches, so it needs other instances doing real work. The
+same message is reported for a Discord flatpak starting at login. It is a
+product defect, not only a test one: a window export and an agent's
+`check_frames` at the same moment can hit it.
+
+The fix: `picture.project_frames` and `picture.render` try a launch again,
+up to three times with a jittered pause, when stderr carries that line
+(`FLATPAK_LAUNCH_RACE`). The race fails before melt reads or writes
+anything, so a retry repeats no work, and any other failure is returned as
+it was. Four tests in `test_picture.py` failed against the old code. After
+the fix, the same stress passed 8 rounds of 8, and the full suite passed
+2412 in 1:54 at `-n auto`.
+
+Two smaller changes came with it. `tests/conftest.py` passes
+`QT_QPA_PLATFORM` through to the stdio server when it is set, replacing the
+scratch plugin of § The capped render with no runtime dir, so a headless run
+needs only the variable. `pytest-xdist` is in the dev group. CI stays
+serial, since its runners have 2 to 4 cores and nobody has measured them.

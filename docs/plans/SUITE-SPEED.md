@@ -128,6 +128,9 @@ org.freedesktop.Platform.GL.default has invalid merge-dirs`. That is
 
 ## Decisions for Tyler
 
+Taken 2026-09-17: Tyler accepted all three, and all three are built
+(HISTORY.md § The suite in two minutes, and the flatpak launch race).
+
 0. **The flatpak launch race** (actionable now). Recommended: **fix it in
    `picture.py`.** Retry a melt call once when stderr carries flatpak's own
    `invalid merge-dirs` line. The failure happens before melt reads

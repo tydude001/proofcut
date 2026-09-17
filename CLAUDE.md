@@ -73,9 +73,11 @@ written 2026-09-16 off PRIOR-ART.md's FableCut read and built for Linux the
 same day (HISTORY.md § `proofcut setup`, built). It measured **Shotcut's
 portable Linux melt drawing with no X server**, where both distro MLTs need
 `xvfb-run`.
-How to make the 13-minute suite faster — measure first, then xdist with a
-serial control — is [docs/plans/SUITE-SPEED.md](docs/plans/SUITE-SPEED.md),
-written 2026-09-17.
+How the 13-minute suite became two — measured, then xdist against a serial
+control — is [docs/plans/SUITE-SPEED.md](docs/plans/SUITE-SPEED.md), built
+2026-09-17: **run it as `QT_QPA_PLATFORM=offscreen pytest -n auto`, about
+2 minutes**, and CI stays serial (HISTORY.md § The suite in two minutes, and
+the flatpak launch race).
 Open-item status lives in the wiki, not here. **This repo is public: a
 goodsometimes video's production record (versions, renders, creative calls,
 release state) goes in `goodsometimes/ideas/<video>.md`**, and HISTORY.md
@@ -1298,6 +1300,11 @@ built; docs/plans/INSTALL.md):
   output. Anything writing a project for melt to read puts it under `$HOME`,
   and that includes what it *writes*: `picture.render` stages into
   `~/proofcut-render/` and copies out only after the file agrees with the timeline.
+  - **Concurrent flatpak launches can lose a startup race** — stderr says
+    `… has invalid merge-dirs`, melt never ran, and the call reads as "melt
+    printed no timeline". `picture._retrying_launch` retries only on that
+    line; a new melt call site goes through it. HISTORY.md § The suite in
+    two minutes, and the flatpak launch race.
   - **Every melt `subprocess.run` passes `stdin=subprocess.DEVNULL`.** With
     its output captured and a console on stdin, melt writes the whole file
     and never exits — a person's Windows PC hung on it while CI, which has
