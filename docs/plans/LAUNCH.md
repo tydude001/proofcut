@@ -567,6 +567,14 @@ reasoning if anyone wants it, and it is public.
   works); yes for `describe` and `reframe-detect`, both optional and both
   reported as "unavailable" rather than failing.
 
+**Cut a GitHub Release the same day, before posting.** A tag ships to PyPI
+and the registry on its own; the Release is only the page the repo's sidebar
+calls Latest, and on 2026-09-17 that was still `v0.25.0` with tags at
+`v0.35.0`. Write it against the current version, and re-read `v0.25.0`'s
+body for claims that have since gone stale — HISTORY.md § The release nobody
+had cut. The comment's link to `v0.23.0` stays: the uncut runs are attached
+there.
+
 **Done when:** posted, the first comment up within a minute, and every
 question in the thread answered within the day. Whatever the thread finds
 goes into a queue the same way the trial's did.
