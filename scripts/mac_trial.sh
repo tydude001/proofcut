@@ -163,6 +163,23 @@ if [ "${1:-}" = "--uninstall" ]; then
                 [ -n "$left" ] && echo "  Kept (something else on this Mac needs them): $left"
             fi
         fi
+        if [ "$removed_brew" -eq 0 ]; then
+            # A package of theirs the test upgraded goes back to the version they had. Plain
+            # `brew uninstall` removes only the newest keg of several ("xz 5.8.3 is still installed")
+            # and leaves the older one unlinked, with no opt/ link, which is what their own formulae
+            # load it through — so link it again. Only when the newest is still the test's: a later
+            # upgrade of their own is theirs.
+            prefix="$(brew --prefix)"
+            grep '^brew-upgraded ' "$MANIFEST" | sort -u | while read -r _ f v; do
+                newest="$(ls "$prefix/Cellar/$f" 2>/dev/null | sort -V | tail -1)"
+                [ "$newest" = "$v" ] && [ "$(ls "$prefix/Cellar/$f" | wc -l)" -gt 1 ] || continue
+                brew uninstall --ignore-dependencies "$f" || continue
+                old="$(ls "$prefix/Cellar/$f" | sort -V | tail -1)"
+                brew link "$f" >/dev/null 2>&1   # refuses a keg-only formula, which has only opt/
+                [ -e "$prefix/opt/$f" ] || ln -s "../Cellar/$f/$old" "$prefix/opt/$f"
+                echo "  $f is back at $old, the version you had"
+            done
+        fi
     fi
 
     rm -rf "$W"
@@ -278,6 +295,17 @@ step() {  # step "what this is" command args...
 
 record_new_formulae() {  # anything in `brew list` now that was not there before the install
     [ -n "${formulae_before+x}" ] || return 0
+    # A formula the tester had can gain a newer version as a dependency of these, and
+    # HOMEBREW_NO_INSTALL_UPGRADE does not stop that (xz on the dev box's dry run). The old keg stays,
+    # since cleanup is off, so --uninstall can remove the new one and put the old one back.
+    comm -13 <(echo "$versions_before") <(brew list --formula --versions | sort) | while read -r f vs; do
+        echo "$formulae_before" | grep -qx "$f" || continue
+        had=" $(echo "$versions_before" | grep "^$f " | cut -d' ' -f2-) "
+        for v in $vs; do
+            case "$had" in *" $v "*) continue ;; esac
+            grep -qx "brew-upgraded $f $v" "$MANIFEST" || record "brew-upgraded $f $v"
+        done
+    done
     comm -13 <(echo "$formulae_before") <(brew list --formula -1 | sort) | while read -r f; do
         [ -n "$f" ] && ! grep -qx "brew $f" "$MANIFEST" && record "brew $f"
     done
@@ -354,6 +382,7 @@ if [ -z "$brew_bin" ]; then
 fi
 export PATH="$HOME/.local/bin:$PATH"
 
+versions_before="$(brew list --formula --versions | sort)"
 formulae_before="$(brew list --formula -1 | sort)"
 # shellcheck disable=SC2086
 step "install tools (Homebrew)" brew install $FORMULAE

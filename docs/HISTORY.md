@@ -16488,6 +16488,18 @@ before the run and appear nowhere in `installed.txt` (boost, libnghttp2/3,
 brotli, icu4c@78, lz4, zstd, and the xz 5.8.4 the install had brought in
 beside 5.8.3). `brew missing` stayed empty, so nothing broke, but a tester's
 own orphans would go the same way. `--uninstall` now sets
-`HOMEBREW_NO_AUTOREMOVE`. One gap is left: an install still upgrades a
-dependency the tester already had, as it did xz here, and `installed.txt`
-does not record that.
+`HOMEBREW_NO_AUTOREMOVE`. The eight were put back, and marked as
+dependencies again with `brew tab --no-installed-on-request`; boost came back
+as 1.92.0, the only bottle left.
+
+The same cleanup showed the other gap. An install upgrades a dependency the
+tester already had, as it did xz here, and `HOMEBREW_NO_INSTALL_UPGRADE` does
+not stop it. Plain `brew uninstall xz` then removed only the newest keg
+("xz 5.8.3 is still installed") and left 5.8.3 with **no `opt/` link**, which
+is how every other formula loads it, until `brew link xz`. The kit now records
+`brew-upgraded <formula> <version>` from a before/after `brew list --versions`.
+`--uninstall` removes that keg only while it is still the newest, relinks the
+old one (creating the `opt/` link by hand for a keg-only formula, which
+`brew link` refuses), and says which version is back. Checked against a stub
+`brew` over a fake Cellar: the test's formulae went, xz went back to 5.8.3 with
+its link, and a formula of the tester's was left alone.
