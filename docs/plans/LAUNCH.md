@@ -210,12 +210,16 @@ weighed on 2026-09-14 and rejected: self-promotion rules commonly read a
 second post about the same project as spam, so a request posted in a launch
 room spends that room's launch post. Draft:
 
-> **[Testers] A local AI video editor needs its first run on a real Mac.**
+> **[Testers] A local AI video editor needs its first run on an Apple silicon Mac.**
 > proofcut is an MCP server an agent uses to cut video by transcript, then
-> check the render. CI's macOS runner passes; no person has run it. One
-> script installs what it needs, runs a 2-minute demo, zips a report, and
-> `--uninstall` removes exactly what it added. Half an hour, Apple silicon
-> or Intel: https://github.com/tydude001/proofcut/issues/1
+> check the render. An Intel Mac has run it end to end and CI's M1 runner
+> passes, but no person has run it on an M-series Mac. One script installs
+> what it needs, runs a 2-minute demo, zips a report, and `--uninstall`
+> removes exactly what it added. Half an hour:
+> https://github.com/tydude001/proofcut/issues/1
+
+The draft asked for "Apple silicon or Intel" until 2026-09-17, when the
+Intel run below made Intel the wrong ask.
 
 **What comes back is a queue, not a verdict** — the trial's own rule (TRIAL.md
 § The queue). Every ✗ becomes a fix or a documented requirement; every
@@ -269,10 +273,18 @@ first contact with macOS. HISTORY.md § The Mac test in CI.
 queue is closed or recorded, and README.md's "no person has run it on a
 Mac yet" is replaced by what was measured.
 
-**Met 2026-09-17** by a friend's Intel Mac (issue #6), so the gate's
-2026-09-21 tester post is not needed. The run's queue and its numbers are in
-HISTORY.md § An Intel Mac route, without Homebrew. Apple silicon is still
-untried by a person, and README.md says so.
+**Met for Intel 2026-09-17** by a friend's Intel Mac (issue #6); the run's
+queue and its numbers are in HISTORY.md § An Intel Mac route, without
+Homebrew. **That same day this line called the whole step met and the
+tester post unneeded, which was wrong**: the Intel run went through pinned
+downloads, while an Apple silicon Mac installs through Homebrew, a route no
+person has run and CI's runner (Homebrew preinstalled) cannot. HISTORY.md
+§ The first person's Mac run said so that morning, and most of the Show HN
+audience's Macs are Apple silicon. So **the gate stays open for Apple
+silicon**: the tester post goes up now, asking for Apple silicon only,
+rather than waiting for 2026-09-21, and Show HN goes on the first weekday
+morning after an Apple silicon report or 7 days after that post, whichever
+comes first. README.md already says Apple silicon is untried by a person.
 
 ## Step 3 — the flip, and the ten minutes after it
 
