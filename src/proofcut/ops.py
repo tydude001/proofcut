@@ -8634,10 +8634,15 @@ def _sheet_extremes(
         count = min(
             SHEET_PROBE_MAX, max(SHEET_PROBE_MIN, round((stretch_end - begin) * SHEET_PROBE_HZ))
         )
+        # Bounded like the drawn tiles, so a probe the detector reads is a
+        # frame `reframe_sheet` can then draw.
         times = sorted(
             {
-                *dsc.frame_times(begin, stretch_end, count),
-                *(begin + (stretch_end - begin) * moment for moment in at),
+                min(when, placement["last_frame"])
+                for when in (
+                    *dsc.frame_times(begin, stretch_end, count),
+                    *(begin + (stretch_end - begin) * moment for moment in at),
+                )
             }
         )
         probes[row] = times
@@ -8736,10 +8741,27 @@ def _sheet_placements(
     second list rather than being dropped silently: a card is authored at the
     canvas and never cropped, so there is no window to review, and saying so
     is the difference between "nothing to check" and "not checked".
+
+    Each carries `last_frame`, the source second the file's last frame starts
+    at, which bounds every sample: ffmpeg's `-ss t` answers the first frame
+    at or after `t`, so a sample in the last frame's own span gets nothing,
+    and a window in a clip's last tenth of a second refused the whole sheet.
+    `_timeline_bound` is the end, less one of the clip's own frames.
     """
     clips = _clips_by_id(project)
     reframes = _reframe_map(project, resolution)
     rate = _export_fps(clips)
+
+    # Per clip, not per placement: an older clip has no `picture_end`, and
+    # `_timeline_bound` probes the file for it.
+    bounds: dict[str, float] = {}
+
+    def last_frame(clip_id: str) -> float:
+        if clip_id not in bounds:
+            clip = clips[clip_id]
+            bounds[clip_id] = _timeline_bound(project, clip) - 1.0 / float(clip.get("fps") or rate)
+        return bounds[clip_id]
+
     shots, _ = _picture_plan(project, rate)
 
     placements: list[dict[str, Any]] = []
@@ -8758,6 +8780,7 @@ def _sheet_placements(
                     "duration": float(shot["duration"]),
                     "timeline_start": float(shot["start"]),
                     "reframe": reframes.get(str(shot["asset"])),
+                    "last_frame": last_frame(str(shot["asset"])),
                 }
             )
         return placements, skipped
@@ -8775,6 +8798,7 @@ def _sheet_placements(
                 "duration": float(seg["duration"]),
                 "timeline_start": float(seg["timeline_start"]),
                 "reframe": reframes.get(seg["clip_id"]),
+                "last_frame": last_frame(seg["clip_id"]),
             }
         )
     return placements, skipped
@@ -9096,7 +9120,7 @@ def reframe_sheet(
             ]
         samples = []
         for index, pick in enumerate(chosen):
-            when = float(pick["src_time"])
+            when = min(float(pick["src_time"]), placement["last_frame"])
             tile = dest_dir / f"{row:03d}-{index}-{pick['pick']}.png"
             picture.extract_frame(placement["path"], when, tile)
             if sliding:

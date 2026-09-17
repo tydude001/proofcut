@@ -643,3 +643,47 @@ def test_the_sheet_wipes_its_own_tiles_and_not_the_shared_frame_cache(project: P
     # Its own tiles are still swept — 39 rows of the real film is ~120 MB of
     # them, so accumulating is the other way to be wrong here.
     assert not leftover.exists()
+
+
+@needs_tools
+def test_a_window_in_the_clips_last_tenth_draws_its_samples_off_the_last_frame(
+    tmp_path: Path,
+) -> None:
+    """The stretch ends at the clip's end, but a frame is asked for by its
+    start: ffmpeg's `-ss t` answers the first frame at or after `t`, so a
+    sample past the last frame's start gets no frame at all and the whole
+    sheet refused. A window 3 frames from the end put two of its three
+    moments there. Samples are bounded by `_timeline_bound` less a frame."""
+    project = Project.create(tmp_path / "proj")
+    footage = tmp_path / "clipa.mp4"
+    _video(footage)
+    manifest = project.read_manifest()
+    manifest["clips"] = [
+        {
+            "clip_id": "clipa",
+            "source": str(footage),
+            "duration": 8.0,
+            "fps": 30.0,
+            "has_video": True,
+            "has_audio": False,
+            "width": 1920,
+            "height": 816,
+        }
+    ]
+    project.write_manifest(manifest)
+    edit = tl.Edit([tl.Segment("clipa", 0.0, 8.0)])
+    tl.write(
+        tl.to_otio(edit, {c["clip_id"]: c for c in manifest["clips"]}, rate=30.0),
+        project.timeline_path,
+    )
+    ops.canvas(project.root, size="1080x1920")
+    ops.reframe(project.root, "clipa", rect="0,0,459,816")
+    ops.reframe(project.root, "clipa", rect="1461,0,459,816", src_start=7.9)
+
+    rows = ops.reframe_sheet(project.root)["rows"]
+
+    last = rows[-1]
+    assert last["samples"][0]["crop"] == "1461,0,459,816"
+    last_frame = 8.0 - 1 / 30
+    assert all(sample["src_time"] <= round(last_frame, 3) for sample in last["samples"])
+    assert all(Path(sample["png"]).exists() for sample in last["samples"])

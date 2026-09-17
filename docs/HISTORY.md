@@ -16076,3 +16076,24 @@ commit's workflow files, which had none, so 0.31.0 went out through
 `workflow_dispatch` (run 35174101615). PyPI and the registry both list
 0.31.0, and `uvx --isolated --no-cache proofcut@0.31.0 --version` installs
 it. 0.30.0 was never published and will not be.
+
+## The sheet's last frame — 2026-09-16
+
+The defect § Eased slides and event-addressed windows found is fixed.
+`reframe_sheet` asked ffmpeg for a frame 3 frames from the end of a 10 s
+clip and got none. The mechanism is narrower than "past the container's
+end": `-ss t` answers the first frame **at or after** `t`, so any sample
+inside the last frame's own span (after 9.967 s here) is empty. This clip's
+`picture_end` is 10.0, the same as its duration, so `_timeline_bound`
+alone would have left it broken. The bound is **`_timeline_bound` less one
+of the clip's own frames**, the last frame's start. `_sheet_placements`
+records it per placement as `last_frame`, and both the drawn tiles and the
+`extremes` probe grid are clamped to it. The bound is cached per clip,
+because an older clip with no `picture_end` is probed for it.
+
+`test_a_window_in_the_clips_last_tenth_draws_its_samples_off_the_last_frame`
+failed first on "ffmpeg could not pull a frame" and passes now. On the
+eased-pan project (`~/proofcut-work/spikes/eased-pan/sheetrepro`, a copy),
+the sheet draws the 9.9 s window at 9.915, 9.95 and 9.967 s. The copy's
+footage is one static frame, so the tile cannot say *which* frame it is;
+the timestamp and the ffmpeg probe carry that.
