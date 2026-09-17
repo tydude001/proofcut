@@ -80,9 +80,64 @@ cheapest first.
   unattended run renders without it being remembered. That is a separate
   small change, and worth making in any case.
 
+## Steps 1 and 2, measured — 2026-09-17
+
+Logs and junit files: `~/proofcut-work/spikes/suite-speed/`. Every run used
+`QT_QPA_PLATFORM=offscreen`, which `tests/conftest.py` now passes through to
+the stdio server, so all the melt tests ran.
+
+**Step 1, serial: 2408 passed in 13:09**, at 131% CPU.
+- **The time is spread thin.** The slowest 10 tests are 7% of it, the
+  slowest 100 are 32%, and it takes 250 to reach half. The median test takes
+  2 ms. No small set of slow tests is worth cutting, so a "slow" marker would
+  not buy much.
+- **Two files are 61% of the time.** `test_server_stdio` is 39% (310 s, 237
+  tests), and most of that is starting a server process for each test.
+  `test_webui_http` is 21% (169 s). Next is `test_ops_reframe_sheet` at 8%.
+
+**Step 2, xdist** (`uv run --with pytest-xdist`, three runs each; the dev
+group is unchanged):
+
+| workers | wall times | failures |
+|---|---|---|
+| `-n 4` | 3:38, 3:37, 3:28 | none |
+| `-n 8` | 1:59, 2:22, 2:22 | none |
+| `-n auto` (20) | 1:50, 1:50, 1:46 | 1, in the third run |
+
+In the other eight runs, the set of passing and failing tests matched the
+serial run exactly.
+
+**The one failure names a shared resource: the flatpak launcher.** melt
+printed nothing, and its stderr said `error: Extension
+org.freedesktop.Platform.GL.default has invalid merge-dirs`. That is
+`flatpak run` failing before melt starts.
+- **It reproduces.** Running only the 54 melt tests at `-n 20` failed in 3
+  of 5 rounds (4 failures in all), each with the same message. It hit
+  `export` and `check_frames` alike.
+- **Plain launches don't trigger it.** 120 concurrent
+  `flatpak run … melt -version` calls (5 rounds of 4, 5 rounds of 20) never
+  failed. So it needs a launch to overlap other instances of the app that
+  are doing real work.
+- **It is a known flatpak startup race.** The same message is reported for a
+  Discord flatpak starting at login, with healthy extension metadata
+  (hyperlapse122/dotfiles#379).
+- **This is a product defect as well as a test one.** Two renders at once
+  through the Kdenlive flatpak can fail this way: a window export while an
+  agent runs `check_frames`, say. The failure is reported as "melt printed
+  no timeline" or "melt rendered nothing".
+
 ## Decisions for Tyler
 
-1. **Add `pytest-xdist` as a dev dependency** if step 2 shows a real gain
-   with no new failures (recommended). The alternative is to keep the suite
-   serial and cut only the slowest tests.
+0. **The flatpak launch race** (actionable now). Recommended: **fix it in
+   `picture.py`.** Retry a melt call once when stderr carries flatpak's own
+   `invalid merge-dirs` line. The failure happens before melt reads
+   anything, so a retry repeats no work. Then re-run the 20-worker melt
+   stress as the check. The alternative, a test-only fix, is an
+   `xdist_group("melt")` that serialises the melt tests. That hides the race
+   from the suite and leaves it in the product.
+
+1. **Add `pytest-xdist` as a dev dependency, once 0 is fixed**
+   (recommended). Step 2 showed 13:09 → 1:50 at `-n auto`, about 7x, and no
+   failure other than 0. The alternative is to keep the suite serial and cut
+   only the slowest tests, but step 1 found no small set worth cutting.
 2. **Keep CI serial** (recommended) until it is measured on the runners.

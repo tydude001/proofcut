@@ -202,7 +202,8 @@ Each step is usable on its own, and each is judged on a served render.
   can write, and still renders a ramp rather than steps. Refuse any map that
   runs the recording backwards (`clip.py` already had to). Source audio in a
   stretch that is not 1x is muted by default — `clip.py`'s own choice, with a
-  separate VO — and `pitch=1` stays available.
+  separate VO — and `pitch=1` stays available. Design below (§ B5,
+  designed); its eight decisions wait on Tyler.
 - **B6. Inset.** The render drawn into a rectangle of the recording, following
   the camera: composite onto the recording's own track, then frame the
   composite. A nested tractor with the camera filter on it — measure before
@@ -368,6 +369,118 @@ What the launch clip does (`clip.py` § sound):
    - A test finds each hit's onset in the rendered PCM, to the sample.
 
 Name: `sound` (`sound add/list/remove`, tools `sound_add` …).
+
+### B5, designed — 2026-09-17
+
+The spike is `~/proofcut-work/spikes/retime-compose/FINDINGS.md`, on top of
+the link-alone spike above. Every number was read back from renders on both
+the flatpak melt and Shotcut's portable melt, and the two agreed on every
+case. **MLT needs nothing new: one `timeremap` link per Edit segment.**
+
+What the launch clip does (`clip.py` § TIME): the recording is played through
+one smooth ramp from output time to recording time. It is PCHIP through
+hand-placed `(output s, recording s)` knots, and it refuses a map that runs
+the recording backwards. The camera, the type and the sounds are all timed in
+*output* seconds. Sounds sit at `to_output(event)`, and the music is never
+retimed. The recording's own audio is not used.
+
+**Findings the build has to hold to:**
+- **MLT's `~` spline runs the launch clip's map backwards.** On `clip.py`'s
+  knot shape, 1x beside ~30x, it made 52 backward steps, the worst jumping
+  from source frame 1361 back to 1352. That happens at exit 0, with the
+  frame count right. The four-key map in the earlier spike stayed monotone
+  only because it was simple. **The writer never emits `~` in a
+  `time_map`.**
+- **Per-frame linear keys, sampled from proofcut's own PCHIP, are exact
+  enough and cost nothing.** 900 keys over 900 frames made no backward step
+  and were never more than 1 frame off (a rounding difference). melt took
+  3.18 s, against 3.15 s for 16 keys.
+- **A remapped chain's positions are output frames.** An entry's `in`, a
+  `qtblend` key and a `volume` key all count them. An opacity key at 75
+  switched at output 75, not at 62.5, where source frame 75 plays. With
+  `in=30` it switched at 45, which is the existing `src_in` rule. **So a
+  reframe window on a retimed segment is keyed in output frames, and a slide
+  eases in output time**, which is what `clip.py`'s camera does.
+- **One remapped chain per segment is exact** (0 frames off). Its declared
+  length agrees through `melt -consumer xml`, so `declared_frames` needs no
+  exception.
+
+**The shape.** A retime is a **warp**: a monotone map from render time to
+Edit time. It is the head's constant offset (`head_seconds`) generalised to
+a curve.
+- **It is stored as stretches in a new optional key, `retime`.** A stretch is
+  `(clip_id, from, to, seconds)`. `from` and `to` are a word or an event
+  address. They are resolved through the `Edit` on every build and never
+  stored as seconds (the music bed's rule). Time outside every stretch plays
+  at 1x.
+- **The warp is PCHIP through the knots the stretches make.** The knots are
+  in `(render s, Edit s)`, the orientation `clip.py` uses. It is sampled once
+  per output frame.
+- **Only the Edit track is remapped.** Each segment's chain gets the slice of
+  the warp that covers it, with keys from 0.
+- **Everything on another lane keeps its own speed.** Overlays, sounds, the
+  bed, holds and captions are still planned in Edit seconds, as today, then
+  moved to the render time the warp gives their start (and their end, where
+  that is an address). An overlay's animation and the music play at 1x.
+- **It is `_is_layered`'s eleventh trigger**, because auto-editor cannot
+  retime.
+
+**Decisions** (a recommendation on each):
+
+1. **Stretches, PCHIP between them** (recommended; the unit was taken
+   2026-09-15). A stretch says "from `sent` to `words` in 1.0 s". The ramp in
+   and out of it is the curve's, as in the approved clip. The alternative is
+   an explicit `ease` per stretch, with exact 1x between stretches. That is
+   more predictable but is not the look that was approved.
+2. **The Edit's own audio is muted wherever the speed is not 1x**
+   (recommended). "Not 1x" means more than 5% off, with a 40 ms fade at each
+   edge. This is `clip.py`'s choice: its recording is silent, and speech is
+   placed separately. The mute is `volume` keys on the segment's chain, in
+   output frames (finding above). The alternative, `pitch=1`, keeps the
+   sound at the earlier spike's ~20% level loss. It could be a per-stretch
+   `audio: "pitch"` later.
+3. **A picture cue over a retimed stretch is refused for now** (recommended),
+   by name. Does b-roll under a retimed stretch play at 1x or retime with the
+   Edit? That is a question about a film nobody has cut yet, and the launch
+   clip has no b-roll. The window widens when the model does.
+4. **Reframe windows follow the warp** (recommended, and the only option
+   that matches `clip.py`). A window addressed by an event or `src_start`
+   takes effect at that moment's render frame. Its keys are written in
+   output frames on the segment's chain, and so are its blur-fill and pane
+   nodes.
+5. **The clocks** (recommended, the head's precedent):
+   - `timeline_view`, `locate`, `status` and `caption_view` stay in Edit
+     time. They gain a `retime` field listing the resolved stretches.
+   - `export`, `check_frames`, `add_captions`, `verify` and `finish_check`
+     map through the warp.
+   - `verify` drops the expected words that fall inside a muted stretch and
+     reports how many (`retimed_words_dropped`), next to its diff. That keeps
+     the stretch from hiding a real miss, which is the `unspoken` rule.
+   - Captions skip muted words too.
+6. **The window previews at 1x and says so** (recommended). A chip reads
+   "retimed — preview plays 1x", and the timeline draws each stretch as a
+   band on the Edit lane. Playing the render is already `/api/output`'s job.
+   The alternative is stepping `playbackRate` per stretch. That is an
+   approximation of a curve that the preview would then claim to be.
+7. **Refusals** (recommended):
+   - A stretch whose address a cut removed refuses, by the overlay's rule.
+   - `from` must come before `to`, and `seconds` must be positive.
+   - Two stretches must not overlap.
+   - A warp that runs backwards anywhere refuses, checked on the sampled
+     frames the way `clip.py` checks its grid. This cannot happen with
+     monotone knots and PCHIP, and the check is there because the spline
+     finding shows it can happen at exit 0.
+   - `reel` drops the retime and names it (`retime_dropped`), the tail's
+     rule.
+8. **The check** (recommended, as in B3 and B4):
+   - `export` reports each stretch's Edit span, its render span and its
+     speed.
+   - A real-melt test decodes a self-identifying source and asserts every
+     output frame against the warp, within 1 frame.
+   - A second real-melt test asserts that a sound at an event inside a
+     stretch lands on the event's retimed frame.
+
+Name: `retime` (`retime add/list/remove`, tools `retime_add` …).
 
 ## Decisions for Tyler
 

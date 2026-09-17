@@ -1352,9 +1352,10 @@ built; docs/plans/INSTALL.md):
       `QT_QPA_PLATFORM=offscreen` to pytest does not help**: the SDK's stdio
       client hands the server only `get_default_environment()`'s allow-list,
       and the variable is not on it (measured 2026-09-17, when the session
-      ended mid-run). A pytest plugin that widens
-      `mcp.client.stdio.get_default_environment` does help — that is how all
-      of them ran headless the same day. Failures there and nowhere else are
+      ended mid-run). `tests/conftest.py` widens
+      `mcp.client.stdio.get_default_environment` to pass the variable
+      through when it is set, so `QT_QPA_PLATFORM=offscreen pytest` runs
+      all of them headless. Failures there and nowhere else are
       the environment, not a regression; confirm with an existing melt test
       as the control.
 - **A caption's look is project state (`caption_style`), and ASS is never
