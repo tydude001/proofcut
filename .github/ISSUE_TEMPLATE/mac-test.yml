@@ -57,7 +57,7 @@ body:
       label: Mac
       options:
         - Apple silicon
-        - Intel
+        - Intel (with Homebrew already installed)
     validations:
       required: true
   - type: textarea

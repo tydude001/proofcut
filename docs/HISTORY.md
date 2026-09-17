@@ -16449,3 +16449,35 @@ stroke centred on the box's first column.
 4:3 clip is inset there, and checks the lock on 120 frames, the clip's frame
 counter on the held frames, its colour, and that its tone plays only while it
 does. The advertised-path count went from 101 to 104 for the three tools.
+
+## The first person's Mac run, and Homebrew's Intel refusal — 2026-09-17
+
+The first Mac test by a person, not a runner (GitHub issue #4: macOS 15.7.9,
+an Intel i7-8850H, proofcut `3db89a5`), stopped at the kit's first step in
+0 s. The Mac had no Homebrew, and Homebrew's installer now aborts on
+anything but arm64 — `Homebrew on macOS is only supported on Apple Silicon
+processors!` — with no override. The script in the report matched the
+installer's HEAD byte for byte. It aborts before `sudo`, so nothing was
+installed and nothing was recorded.
+
+So an Intel Mac with no Homebrew now stops **before** the prompt, with a
+plain message and nothing installed. One that already has Homebrew still
+runs, since whether that brew installs the formulae is itself worth a report.
+A Terminal under Rosetta reports `x86_64` on Apple silicon and meets the same
+installer refusal, so `hw.optional.arm64` separates the two and the message
+says how to turn Rosetta off. The installer step is now a function, because
+`step` echoes its argv, and the report had carried the installer's entire
+source, about 1,100 lines, ahead of the one line that mattered.
+
+**An Intel route was checked and not built.** auto-editor 31.6.0 ships
+`macos-x86_64`, Shotcut's dmg is a direct download, and uv installs without
+Homebrew. But torch's last Intel-Mac wheel is 2.2.2 (current 2.14), and
+espeak-ng has no route but MacPorts. Homebrew and PyTorch have both left the
+platform, and a pass there would not prove the Homebrew route an Apple
+silicon Mac takes. The Mac run LAUNCH.md waits on needs Apple silicon.
+
+The branches were exercised on Linux with stubbed `uname`/`sysctl`. The
+"brew present" case reached this box's Linuxbrew through the script's bare
+`brew`, and it installed the four formulae and the Shotcut cask for real.
+**A dry run of this kit off a Mac needs a `brew` stub on PATH, not only
+`PROOFCUT_TRIAL_BREW`.**

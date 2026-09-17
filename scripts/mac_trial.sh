@@ -204,8 +204,27 @@ cat <<'EOF'
   To remove everything it added afterwards, run this same file with --uninstall.
 
 EOF
+# Homebrew's installer aborts on anything but arm64 ("Homebrew on macOS is only supported on Apple
+# Silicon processors!"), with no override — the first Intel run, issue #4, 2026-09-17. So an Intel
+# Mac with no Homebrew stops here, before the prompt, rather than at the first step. One that already
+# has Homebrew goes on: whether that brew still installs these formulae is itself the finding.
+# A Terminal under Rosetta reports x86_64 on Apple silicon too, and the installer reads the same.
 if [ "$(uname -m)" != "arm64" ]; then
-    echo "  Note: this is an Intel Mac. Some tools will compile from source, which is slower."
+    find_brew
+    if [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ]; then
+        echo "  This Mac has Apple silicon, but Terminal is running under Rosetta, as an Intel app."
+        echo "  Homebrew will not install that way. Turn off \"Open using Rosetta\" in Terminal's"
+        echo "  Get Info window, open a new Terminal, and run this again."
+        exit 1
+    elif [ -z "$brew_bin" ]; then
+        echo "  This is an Intel Mac, and the test cannot run on it: Homebrew, which installs the"
+        echo "  tools, no longer supports Intel Macs, and its installer stops straight away."
+        echo "  Nothing has been installed. Thank you for trying. Please say so on"
+        echo "  https://github.com/tydude001/proofcut/issues/1 — an Apple silicon Mac is what's needed."
+        exit 1
+    fi
+    echo "  Note: this is an Intel Mac. Homebrew no longer supports Intel, so the install may stop"
+    echo "  early; the report still says where. Some tools may compile from source, which is slower."
     echo
 fi
 printf "  Press Enter to start, or Ctrl-C to stop. "
@@ -323,7 +342,9 @@ find_brew
 if [ -z "$brew_bin" ]; then
     echo
     echo "Homebrew is not installed. Installing it now — it will ask for your Mac password."
-    step "install Homebrew" /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    # A function, so step's `$ ...` line names it rather than printing the installer's whole source.
+    install_homebrew() { /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; }
+    step "install Homebrew" install_homebrew
     find_brew
     if [ -z "$brew_bin" ]; then fail="install Homebrew"; finish; exit 1; fi
     record homebrew-itself

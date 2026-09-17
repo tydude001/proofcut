@@ -239,6 +239,8 @@ bash proofcut/scripts/mac_trial.sh
 It installs `uv`, `ffmpeg-full`, `espeak-ng` and `auto-editor` with Homebrew
 (and Homebrew itself if you have none), plus the Shotcut app for its renderer
 and whisper. `bash proofcut/scripts/mac_trial.sh --uninstall` removes them.
+It needs an Apple silicon Mac: Homebrew no longer installs on Intel Macs, so
+there the script stops before installing anything.
 Then [file the report](https://github.com/tydude001/proofcut/issues/new?template=mac-test.yml).
 
 On Windows, from PowerShell:
