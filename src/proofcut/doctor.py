@@ -73,11 +73,12 @@ def _by_setup(fix: str) -> str:
     """`fix`, led on Linux by the command that applies it.
 
     `proofcut setup` installs a missing ffmpeg, whisper, auto-editor or melt
-    for this user without sudo, on Linux only (docs/plans/INSTALL.md), so
-    only there is it the first thing to say. The by-hand route stays, since
-    setup installs nothing a working system tool already covers.
+    for this user without sudo or admin, on Linux, Windows and Intel Macs
+    (`deps.setup_installs_here`, docs/plans/INSTALL.md), so only there is it
+    the first thing to say. The by-hand route stays, since setup installs
+    nothing a working system tool already covers.
     """
-    if not sys.platform.startswith("linux"):
+    if not deps.setup_installs_here():
         return fix
     return f"`proofcut setup` installs this for you, with no sudo. By hand: {fix}"
 
@@ -377,6 +378,9 @@ def _melt_entry() -> dict[str, Any]:
         f"{install} Without it, single-source cuts still render through "
         "auto-editor; anything layered (b-roll, cards, music) does not."
     )
+    if not sys.platform.startswith("linux"):
+        # Linux's advice names setup itself, beside the distribution packages.
+        fix = _by_setup(fix)
     try:
         command = picture.melt_command()
     except picture.PictureError as exc:

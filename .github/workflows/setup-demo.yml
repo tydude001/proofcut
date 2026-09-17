@@ -1,0 +1,78 @@
+# `proofcut setup` on Windows and an Intel Mac, judged by a checked render —
+# docs/plans/INSTALL.md § Step 5.
+#
+# windows-demo.yml and mac-demo.yml run the test kits, which install with
+# their own code, so neither says anything about setup. This job starts from a
+# runner with uv and none of proofcut's tools, runs `proofcut setup --yes`,
+# requires `proofcut doctor` to pass, runs docs/DEMO.md through
+# scripts/setup_trial.py (which writes the kits' report shape), and judges the
+# render with scripts/trial_check.py. Then it uninstalls and requires setup's
+# folder, ~/.local/bin and uv's tools and Pythons to be as setup found them.
+#
+# What a runner already has, setup leaves alone — that is its rule — so read
+# the `proofcut setup --plan` step in report.txt for which pieces this run
+# actually installed.
+#
+# Apple silicon is not here: setup refuses it until a person's report from the
+# tester post says where the Homebrew route stops (LAUNCH.md § Step 2).
+
+name: setup-demo
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/proofcut/install.py"
+      - "src/proofcut/deps.py"
+      - "src/proofcut/doctor.py"
+      - "src/proofcut/picture.py"
+      - "src/proofcut/autoeditor.py"
+      - "scripts/setup_trial.py"
+      - "scripts/trial_check.py"
+      - "scripts/make_demo.py"
+      - "scripts/espeak_ng_lib.py"
+      - ".github/workflows/setup-demo.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  demo:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONUTF8: "1"
+      WORK: ${{ runner.temp }}/setup-trial
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
+      - run: uv sync --locked
+      - name: setup, doctor, and the demo
+        run: uv run python scripts/setup_trial.py "$WORK"
+      # setup's ffmpeg is in ~/.local/bin, which the trial put first on its
+      # own children's PATH; the check reads the frames with it too.
+      - name: judge the render
+        if: always()
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          uv run python scripts/trial_check.py "$WORK"
+      - name: uninstall, and compare
+        if: always()
+        run: uv run python scripts/setup_trial.py "$WORK" --uninstall
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: setup-trial-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/setup-trial/report.txt
+            ${{ runner.temp }}/setup-trial/uninstall.txt
+            ${{ runner.temp }}/setup-trial/frame-*.png
+          if-no-files-found: warn

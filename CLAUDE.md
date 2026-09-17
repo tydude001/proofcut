@@ -110,8 +110,10 @@ absent optional capability is "unavailable", never a failure, and never moves
 ✗: no resolver reads the old name, so a stale `60-lucid.conf` otherwise loses what it
 configured — face detection, say — at exit 0. HISTORY.md § `lucid doctor`.
 
-**`proofcut setup` (`install.py`, Linux only) installs what doctor crosses and
-nothing doctor passed, and it is CLI-only on purpose** — never register it as
+**`proofcut setup` (`install.py`; Linux, Windows and Intel Macs —
+`deps.setup_installs_here`, Apple silicon refused until a person's report)
+installs what doctor crosses and nothing doctor passed, and it is CLI-only on
+purpose** — never register it as
 a tool; an agent must not start a 2 GB download or change PATH. Four rules it
 holds to, each measured in a clean container (HISTORY.md § `proofcut setup`,
 built; docs/plans/INSTALL.md):
@@ -130,6 +132,15 @@ built; docs/plans/INSTALL.md):
 - **Everything added is recorded — links, folders, the uv tool, the Python uv
   downloaded for it — and `--uninstall` removes exactly that**; a test
   compares the home's listing before and after.
+- **Off Linux, each route is its test kit's install half, pins included, and
+  the kits are not yet rewired to call setup** — they are the instrument the
+  tester posts hand out. Windows cannot symlink without Developer Mode, so
+  its ffmpeg/ffprobe `.exe`s are *moved* into `~/.local/bin` and recorded by
+  SHA-256; uninstall removes one only while it still hashes the same.
+  `setup-demo.yml` (`scripts/setup_trial.py`) is the only thing that runs
+  either route: judge a change there by that job's `trial_check`, never by
+  the unit tests, which fake the OS. HISTORY.md § `proofcut setup` on
+  Windows and an Intel Mac.
 
 - **The MCP SDK is v2. `FastMCP` no longer exists** — it is `MCPServer`, from
   `mcp.server` (and there is no `mcp.server.fastmcp` module). Training priors

@@ -224,7 +224,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_setup = sub.add_parser(
         "setup",
-        help="install, for this user, what `proofcut doctor` reports missing (Linux, no sudo)",
+        help="install, for this user, what `proofcut doctor` reports missing (Linux, Windows, Intel Mac; no sudo)",
     )
     # Prose, like doctor, and for the same reason: its caller is a person. It
     # is CLI-only on purpose — an agent must not start a 2 GB download or

@@ -244,6 +244,11 @@ says `uvx proofcut setup`. Claim the name sooner only if a squatter shows up.
 
 ## Step 5 — macOS and Windows (after a person's Mac report)
 
+Windows and Intel Mac built — see HISTORY.md § `proofcut setup` on Windows
+and an Intel Mac. Two halves are left: the Apple silicon route, which waits
+on a person's report from the tester post, and rewiring the kits to call
+setup, which waits until the tester posts are answered.
+
 `proofcut setup` grows the other two OSes out of the kits' install halves.
 On Windows that is the portable folder under `%LOCALAPPDATA%`. On an Apple
 silicon Mac it is Homebrew's `ffmpeg-full` and Shotcut.app, and on an Intel

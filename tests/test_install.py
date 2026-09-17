@@ -4,8 +4,9 @@ docs/plans/INSTALL.md is the design. Nothing here downloads: every pin is
 replaced by a `file://` archive built in the test, hashed the way a real one
 is, and doctor's report is handed in rather than probed, so the suite runs the
 same on a box with every tool installed and on one with none. Each test pins
-`sys.platform` to linux, the only OS setup installs on; the link tests skip on
-a real Windows host, where a symlink needs Developer Mode.
+`sys.platform` to linux unless it is about another OS, and then fakes that
+one; the link tests skip on a real Windows host, where a symlink needs
+Developer Mode.
 
 Every test runs in a fake home, since setup's whole job is writing into one.
 """
@@ -19,6 +20,7 @@ import re
 import shutil
 import sys
 import tarfile
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -111,10 +113,13 @@ def pins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, install.P
 # -- the plan --------------------------------------------------------------
 
 
-def test_setup_refuses_off_linux(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """INSTALL.md § Step 5 waits on a person's Mac run; until then, say where to go."""
-    monkeypatch.setattr(sys, "platform", "darwin")
-    with pytest.raises(install.InstallError, match="Linux only"):
+@pytest.mark.parametrize("system", ["darwin", "freebsd14"])
+def test_setup_refuses_where_it_does_not_install(home: Path, monkeypatch: pytest.MonkeyPatch, system: str) -> None:
+    """INSTALL.md § Step 5: Apple silicon waits on a person's report from the
+    tester post, so setup says where to go there rather than installing."""
+    monkeypatch.setattr(sys, "platform", system)
+    monkeypatch.setattr(install.platform, "machine", lambda: "arm64")
+    with pytest.raises(install.InstallError, match="installs on Linux, Windows and Intel Macs"):
         install.plan(_report(failing=("ffmpeg",)))
 
 
@@ -371,16 +376,26 @@ def test_the_resolvers_prefer_what_setup_installed_over_path(home: Path, tmp_pat
 # -- the pins, and the command ---------------------------------------------
 
 
+#: The one pin not on GitHub: no Intel Mac ffmpeg with libass is released
+#: there. evermeet.cx names each build by version, so it is still a pin.
+OFF_GITHUB = {("ffmpeg", "macos-x86_64"): re.compile(r"https://evermeet\.cx/ffmpeg/ff(mpeg|probe)-\d+(\.\d+)+\.zip")}
+
+
 def test_every_pin_is_a_github_release_with_a_sha256() -> None:
-    for name, by_arch in install.PINS.items():
-        for arch, pin in by_arch.items():
-            assert arch in ("x86_64", "aarch64"), name
-            assert pin.url.startswith("https://github.com/") and "/releases/download/" in pin.url, name
-            assert "latest" not in pin.url, f"{name}: a moving tag is not a pin"
-            assert re.fullmatch(r"[0-9a-f]{64}", pin.sha256), name
-            assert pin.size > 1_000_000, name
+    for name, by_target in install.PINS.items():
+        for target, pins in by_target.items():
+            assert target in ("x86_64", "aarch64", "windows-x86_64", "macos-x86_64"), name
+            for pin in pins if isinstance(pins, tuple) else (pins,):
+                if (name, target) in OFF_GITHUB:
+                    assert OFF_GITHUB[name, target].fullmatch(pin.url), (name, target)
+                else:
+                    assert pin.url.startswith("https://github.com/") and "/releases/download/" in pin.url, name
+                assert "latest" not in pin.url, f"{name}: a moving tag is not a pin"
+                assert re.fullmatch(r"[0-9a-f]{64}", pin.sha256), name
+                assert pin.size > 1_000_000, name
     assert set(install.PINS) == {"ffmpeg", "auto-editor", "melt"}
-    assert "x86_64" in install.PINS["melt"]
+    for target in ("x86_64", "windows-x86_64", "macos-x86_64"):
+        assert all(target in install.PINS[name] for name in install.PINS), target
 
 
 def test_setup_with_no_terminal_asks_for_yes_rather_than_installing(
@@ -415,10 +430,192 @@ def test_setup_yes_installs_and_exits_by_what_doctor_says_after(
     assert not deps.root().exists()
 
 
-def test_doctor_leads_with_setup_on_linux_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Setup installs on Linux alone, so a Mac is never told to run it."""
+@pytest.mark.parametrize(
+    ("system", "cpu", "leads"),
+    [("linux", "x86_64", True), ("win32", "AMD64", True), ("darwin", "x86_64", True), ("darwin", "arm64", False)],
+)
+def test_doctor_leads_with_setup_only_where_setup_installs(
+    monkeypatch: pytest.MonkeyPatch, system: str, cpu: str, leads: bool
+) -> None:
+    """An Apple silicon Mac is never told to run a command that refuses it."""
     monkeypatch.setattr(doctor.shutil, "which", lambda name, path=None: None)
-    monkeypatch.setattr(sys, "platform", "linux")
-    assert "`proofcut setup`" in doctor._ffmpeg_entry("ffmpeg", "x")["fix"]
+    monkeypatch.setattr(sys, "platform", system)
+    monkeypatch.setattr(deps.platform, "machine", lambda: cpu)
+    assert ("`proofcut setup`" in doctor._ffmpeg_entry("ffmpeg", "x")["fix"]) is leads
+
+
+# -- Windows and the Intel Mac ---------------------------------------------
+
+
+def _zip(path: Path, files: dict[str, str], mode: int = 0o644) -> Path:
+    with zipfile.ZipFile(path, "w") as zipped:
+        for name, text in files.items():
+            info = zipfile.ZipInfo(name)
+            info.external_attr = mode << 16
+            zipped.writestr(info, text)
+    return path
+
+
+@pytest.fixture
+def windows(home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, install.Pin]:
+    """A faked Windows: its own LOCALAPPDATA, and the kit's archive shapes.
+
+    `shutil.which` is stubbed to a plain PATH walk, since under a faked win32
+    the real one reaches for `_winapi`.
+    """
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(install.platform, "machine", lambda: "AMD64")
+    monkeypatch.setenv("LOCALAPPDATA", str(home / "AppData" / "Local"))
+
+    def which(name: str, mode: int = os.F_OK | os.X_OK, path: str | None = None) -> str | None:
+        for folder in os.environ["PATH"].split(os.pathsep):
+            for candidate in (Path(folder) / name, Path(folder) / f"{name}.exe"):
+                if candidate.is_file():
+                    return str(candidate)
+        return None
+
+    monkeypatch.setattr(shutil, "which", which)
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    ffmpeg = _zip(downloads / "ffmpeg.zip", {
+        "ffmpeg-9-essentials_build/bin/ffmpeg.exe": "ffmpeg\n",
+        "ffmpeg-9-essentials_build/bin/ffprobe.exe": "ffprobe\n",
+        "ffmpeg-9-essentials_build/bin/ffplay.exe": "ffplay\n",
+        "ffmpeg-9-essentials_build/LICENSE": "gpl\n",
+    })
+    auto_editor = downloads / "auto-editor.exe"
+    auto_editor.write_text("auto-editor\n", encoding="utf-8")
+    shotcut = _zip(downloads / "shotcut.zip", {"Shotcut/melt.exe": "melt\n", "Shotcut/avcodec-62.dll": "dll\n"})
+    table = {"ffmpeg": _pin(ffmpeg), "auto-editor": _pin(auto_editor), "melt": _pin(shotcut)}
+    monkeypatch.setattr(install, "PINS", {name: {"windows-x86_64": pin} for name, pin in table.items()})
+    assert home in deps.root().parents and deps.root().parts[-4:-2] == ("AppData", "Local")
+    return table
+
+
+def test_windows_puts_the_ffmpeg_binaries_themselves_on_path_and_takes_them_back(
+    home: Path, windows: dict[str, install.Pin], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A symlink needs Developer Mode there, so the two static .exe files are
+    moved into ~/.local/bin, recorded by hash, and removed only while they
+    are still setup's. Everything else stays in the one folder."""
+    (home / ".local" / "bin").mkdir(parents=True)
+    before = _listing(home)
+    monkeypatch.setattr(install.doctor, "report", _report)
+    steps = install.plan(_report(failing=("ffmpeg", "auto-editor", "melt")))
+    assert [p["name"] for p in steps["pieces"]] == ["ffmpeg", "auto-editor", "melt"]
+    result = install.install(steps, say=lambda line: None)
+    assert result["installed"] == ["ffmpeg", "auto-editor", "melt"], result["failed"]
+    assert not any("PATH" in note for note in result["notes"]), result["notes"]
+
+    local_bin = home / ".local" / "bin"
+    for name in ("ffmpeg.exe", "ffprobe.exe"):
+        assert (local_bin / name).is_file() and not (local_bin / name).is_symlink()
+    assert not (local_bin / "ffplay.exe").exists()
+    assert not list((deps.root() / "ffmpeg").iterdir()), "the rest of the zip is not kept"
+    assert deps.auto_editor() == deps.root() / "auto-editor" / "auto-editor.exe"
+    assert deps.auto_editor().is_file()
+    assert deps.melt() == deps.root() / "melt" / "Shotcut" / "melt.exe"
+    assert deps.melt().is_file()
+
+    install.uninstall()
+    assert _listing(home) == before
+
+
+def test_windows_leaves_an_ffmpeg_that_is_not_setups_any_more(
+    home: Path, windows: dict[str, install.Pin], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(install.doctor, "report", _report)
+    install.install(install.plan(_report(failing=("ffmpeg",))), say=lambda line: None)
+    replaced = home / ".local" / "bin" / "ffmpeg.exe"
+    replaced.write_text("theirs now\n", encoding="utf-8")
+    install.uninstall()
+    assert replaced.read_text() == "theirs now\n"
+    assert not (home / ".local" / "bin" / "ffprobe.exe").exists()
+
+
+def test_windows_never_moves_over_an_ffmpeg_the_user_has(
+    home: Path, windows: dict[str, install.Pin], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    local_bin = home / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    (local_bin / "ffmpeg.exe").write_text("theirs\n", encoding="utf-8")
+    monkeypatch.setattr(install.doctor, "report", _report)
+    result = install.install(install.plan(_report(failing=("ffmpeg",))), say=lambda line: None)
+    assert (local_bin / "ffmpeg.exe").read_text() == "theirs\n"
+    assert any("left" in note and "ffmpeg.exe" in note for note in result["notes"])
+    install.uninstall()
+    assert (local_bin / "ffmpeg.exe").read_text() == "theirs\n"
+
+
+@pytest.mark.parametrize("system", ["win32", "darwin"])
+def test_whisper_off_linux_installs_the_way_its_kit_did(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, system: str
+) -> None:
+    """No `--torch-backend` on either, GPU or not: PyPI's torch there is the
+    CPU build a person ran. The Intel Mac adds numpy 1.x and wheels-only
+    numba/llvmlite, mac_trial.sh's arguments."""
+    monkeypatch.setattr(sys, "platform", system)
+    monkeypatch.setattr(install, "_gpu", lambda: True)
+    argv = install.whisper_argv("uv")
+    assert "--torch-backend" not in argv
+    assert argv[:5] == ["uv", "tool", "install", "--python", "3.12"] and argv[-1] == "openai-whisper"
+    intel = ["--with", "numpy<2", "--no-build-package", "numba", "--no-build-package", "llvmlite"]
+    assert argv[5:-1] == (intel if system == "darwin" else [])
+    # The plan's size follows the same rule. Asked on the Mac only: under a
+    # faked win32 the real `shutil.which` reaches for `_winapi`.
+    if system == "darwin" and os.name != "nt":
+        _fake_uv(tmp_path)
+        steps = install.plan(_report(failing=("whisper",)))
+        assert steps["bytes"] == install.WHISPER_BYTES["cpu"]
+
+
+@links
+def test_an_intel_mac_takes_two_ffmpeg_zips_and_shotcut_off_its_dmg(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """mac_trial.sh's Intel route: evermeet's one-binary zips, linked like
+    Linux's, and Shotcut.app copied off a read-only mount that is detached
+    after. `hdiutil` is a stub that builds the mounted image's app."""
     monkeypatch.setattr(sys, "platform", "darwin")
-    assert "proofcut setup" not in doctor._ffmpeg_entry("ffmpeg", "x")["fix"]
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    ffmpeg = _zip(downloads / "ffmpeg-9.zip", {"ffmpeg": "ffmpeg\n"}, mode=0o755)
+    ffprobe = _zip(downloads / "ffprobe-9.zip", {"ffprobe": "ffprobe\n"}, mode=0o755)
+    dmg = downloads / "shotcut.dmg"
+    dmg.write_text("a disk image\n", encoding="utf-8")
+    log = tmp_path / "hdiutil.txt"
+    write_stub(
+        tmp_path / "usr-bin" / "hdiutil",
+        "import os, sys\n"
+        f"open({str(log)!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
+        "if sys.argv[1] == 'attach':\n"
+        "    mount = sys.argv[sys.argv.index('-mountpoint') + 1]\n"
+        "    app = os.path.join(mount, 'Shotcut.app', 'Contents', 'MacOS')\n"
+        "    os.makedirs(app)\n"
+        "    open(os.path.join(app, 'melt'), 'w').write('melt\\n')\n",
+    )
+    monkeypatch.setenv("PATH", os.pathsep.join([os.environ["PATH"], "/bin", "/usr/bin"]))
+    monkeypatch.setattr(install, "PINS", {
+        "ffmpeg": {"macos-x86_64": (_pin(ffmpeg), _pin(ffprobe))},
+        "melt": {"macos-x86_64": _pin(dmg)},
+        "auto-editor": {},
+    })
+    before = _listing(home)
+    monkeypatch.setattr(install.doctor, "report", _report)
+    steps = install.plan(_report(failing=("ffmpeg", "melt")))
+    assert steps["pieces"][0]["urls"] == [ffmpeg.as_uri(), ffprobe.as_uri()]
+    assert steps["pieces"][0]["bytes"] == ffmpeg.stat().st_size + ffprobe.stat().st_size
+    result = install.install(steps, say=lambda line: None)
+    assert result["installed"] == ["ffmpeg", "melt"], result["failed"]
+
+    for name in ("ffmpeg", "ffprobe"):
+        link = home / ".local" / "bin" / name
+        assert link.is_symlink() and os.access(link.resolve(), os.X_OK)
+    assert deps.melt() == deps.root() / "melt" / "Shotcut.app" / "Contents" / "MacOS" / "melt"
+    assert deps.melt().is_file()
+    calls = log.read_text().splitlines()
+    assert calls[0].startswith("attach -nobrowse -readonly") and calls[1].startswith("detach")
+    assert sorted(p.name for p in (deps.root() / "melt").iterdir()) == ["Shotcut.app"]
+
+    install.uninstall()
+    assert _listing(home) == before

@@ -12,13 +12,18 @@ docs/plans/INSTALL.md is the design. This module holds to its rules:
   BtbN's `latest` moves daily, and its dated daily builds are deleted after a
   few weeks, so the ffmpeg pin is a month-end build, which BtbN keeps.
 - **One folder** (`deps.root()`), plus symlinks in `~/.local/bin` for the
-  names that have to be on PATH. A link is never written over an existing
-  file. Every link, folder and uv tool is recorded, and `uninstall` removes
-  exactly those.
+  names that have to be on PATH — or, on Windows, where a symlink needs
+  Developer Mode, the two ffmpeg binaries themselves, moved there and
+  recorded by hash. Nothing is ever written over an existing file. Every
+  link, file, folder and uv tool is recorded, and `uninstall` removes exactly
+  those.
 - **No sudo, no distribution packages.** A server image missing the desktop
   libraries Shotcut's melt links against is told which ones, and nothing of
   that piece is left installed.
-- **Linux only**, for now (INSTALL.md § Step 5 waits on a person's Mac run).
+- **Linux, Windows and Intel Macs** (`deps.setup_installs_here`). Each
+  non-Linux route is its test kit's install half, pins included, because a
+  person ran each kit to a checked render (INSTALL.md § Step 5). Apple
+  silicon waits on its own report.
 - **CLI only, never an MCP tool.** An agent must not start a 2 GB download
   and change what is on PATH on its own.
 
@@ -35,7 +40,9 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.request
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -58,10 +65,18 @@ class Pin:
     size: int
 
 
-#: Piece → architecture → download. Read off each release's own asset list and
-#: checksums on 2026-09-16 (INSTALL.md § What was measured). Shotcut builds
-#: Linux for x86_64 only, so an aarch64 box gets melt from its distribution.
-PINS: dict[str, dict[str, Pin]] = {
+#: Piece → target (`target()`) → download, or several downloads for one
+#: piece. Linux's were read off each release's own asset list and checksums
+#: on 2026-09-16 (INSTALL.md § What was measured). Shotcut builds Linux for
+#: x86_64 only, so an aarch64 box gets melt from its distribution.
+#:
+#: Windows and the Intel Mac are their test kits' pins
+#: (`scripts/windows_trial.ps1`, `scripts/mac_trial.sh`), each run by a
+#: person to a checked render — except that Windows takes auto-editor 31.6.0,
+#: the version the other two pin, where its kit still pins 31.4.2. The Mac's
+#: ffmpeg is evermeet.cx's, the one pin not on GitHub: no Intel Mac ffmpeg
+#: with libass is released there, and evermeet names each build by version.
+PINS: dict[str, dict[str, Pin | tuple[Pin, ...]]] = {
     "ffmpeg": {
         "x86_64": Pin(
             "n8.1.2 (BtbN autobuild-2026-08-31-13-27)",
@@ -77,6 +92,26 @@ PINS: dict[str, dict[str, Pin]] = {
             "ae5da4f51b9052390f414005f8ab26c1eed1268f327cce7cb79aa076b29bd66e",
             107695184,
         ),
+        "windows-x86_64": Pin(
+            "9.0.1 (gyan.dev essentials build)",
+            "https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-essentials_build.zip",
+            "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9",
+            111253802,
+        ),
+        "macos-x86_64": (
+            Pin(
+                "9.0.1 (evermeet.cx)",
+                "https://evermeet.cx/ffmpeg/ffmpeg-9.0.1.zip",
+                "8a8c9e549983409fe6604b9aa665648b7a5def9407fe814c39c8b2ea7f64a48f",
+                26172529,
+            ),
+            Pin(
+                "9.0.1 (evermeet.cx)",
+                "https://evermeet.cx/ffmpeg/ffprobe-9.0.1.zip",
+                "d13f35db03456b7f65b7edb6437c86e23810fbfe91795e571f5b77211343b4f1",
+                26075757,
+            ),
+        ),
     },
     "auto-editor": {
         "x86_64": Pin(
@@ -91,6 +126,18 @@ PINS: dict[str, dict[str, Pin]] = {
             "0233e4fab698c98709e14ca64782103f40f9b87248853b21dc1cb29b02f98df6",
             29387192,
         ),
+        "windows-x86_64": Pin(
+            "31.6.0",
+            "https://github.com/WyattBlue/auto-editor/releases/download/31.6.0/auto-editor-windows-x86_64.exe",
+            "6e037bc629db4f8b63b6ec6ebc265def3ad82ac63d74bb49d6b22963dc07b348",
+            44560896,
+        ),
+        "macos-x86_64": Pin(
+            "31.6.0",
+            "https://github.com/WyattBlue/auto-editor/releases/download/31.6.0/auto-editor-macos-x86_64",
+            "824405f9e2d28c3bbf30ff27c08dbe631d7137b0fe7c27e1ed647cc3affadf32",
+            36681464,
+        ),
     },
     "melt": {
         "x86_64": Pin(
@@ -100,6 +147,19 @@ PINS: dict[str, dict[str, Pin]] = {
             "c4befab2240964389df6139f00aae0b92949f398fd98083b922f3aabd8b7a844",
             155181712,
         ),
+        "windows-x86_64": Pin(
+            "Shotcut 26.8.1, portable",
+            "https://github.com/mltframework/shotcut/releases/download/v26.8.1/shotcut-win64-26.8.1.zip",
+            "b0148856de01b39add4bf4d6a813bfbc554b4663b65e3ca25cb2589f47555a6a",
+            225002077,
+        ),
+        # A universal build, macOS 12 or later.
+        "macos-x86_64": Pin(
+            "Shotcut 26.8.1",
+            "https://github.com/mltframework/shotcut/releases/download/v26.8.1/shotcut-macos-26.8.1.dmg",
+            "7bab10bd96fe3590bb3ba0461d21d3022681574b324bb1c21366d5432cac5657",
+            208795955,
+        ),
     },
 }
 
@@ -108,6 +168,11 @@ PINS: dict[str, dict[str, Pin]] = {
 #: measurement 6); on Linux it only keeps the two routes the same.
 WHISPER_TOOL = "openai-whisper"
 WHISPER_PYTHON = "3.12"
+
+#: What an Intel Mac's whisper needs besides: torch's last Intel build, 2.2.2,
+#: cannot read a numpy 2 array, and the newest numba has no Intel wheel and
+#: would compile. mac_trial.sh's arguments, and doctor's whisper fix.
+INTEL_MAC_WHISPER = ("--with", "numpy<2", "--no-build-package", "numba", "--no-build-package", "llvmlite")
 
 #: What the whisper install costs on disk, measured on a clean Ubuntu
 #: (HISTORY.md § A stranger's install, on a clean Ubuntu). Approximate: uv
@@ -132,6 +197,24 @@ _ARCH = {"x86_64": "x86_64", "amd64": "x86_64", "aarch64": "aarch64", "arm64": "
 def machine() -> str | None:
     """This CPU in `PINS`' spelling, or None for one no pin covers."""
     return _ARCH.get(platform.machine().lower())
+
+
+def target() -> str | None:
+    """This OS and CPU as a `PINS` key: the bare CPU on Linux, whose keys
+    came first, and `windows-x86_64` / `macos-x86_64` elsewhere."""
+    arch = machine()
+    if arch is None or sys.platform.startswith("linux"):
+        return arch
+    system = {"win32": "windows", "darwin": "macos"}.get(sys.platform)
+    return f"{system}-{arch}" if system else None
+
+
+def pins_for(name: str) -> tuple[Pin, ...]:
+    """Every download `name` takes here, or none when nothing is pinned."""
+    found = PINS[name].get(target() or "")
+    if found is None:
+        return ()
+    return found if isinstance(found, tuple) else (found,)
 
 
 def bin_dir() -> Path:
@@ -213,6 +296,27 @@ def _gpu() -> bool:
     return shutil.which("nvidia-smi") is not None
 
 
+def _cuda_torch() -> bool:
+    """Whether setup's whisper gets CUDA torch.
+
+    Linux only, and only with a driver. Windows and the Intel Mac install as
+    their kits did, with no `--torch-backend`: PyPI's torch for both is the
+    CPU build, and that is the route a person ran.
+    """
+    return sys.platform.startswith("linux") and _gpu()
+
+
+def whisper_argv(uv: str) -> list[str]:
+    """The `uv tool install` that installs whisper on this OS."""
+    argv = [uv, "tool", "install", "--python", WHISPER_PYTHON]
+    if sys.platform == "darwin":
+        argv += INTEL_MAC_WHISPER
+    argv.append(WHISPER_TOOL)
+    if sys.platform.startswith("linux") and not _gpu():
+        argv += ["--torch-backend", "cpu"]
+    return argv
+
+
 def _melt_wanted(report: dict[str, Any], rows: dict[str, dict[str, Any]]) -> str | None:
     """Why this box needs Shotcut's melt, or None.
 
@@ -243,16 +347,16 @@ def plan(report: dict[str, Any] | None = None) -> dict[str, Any]:
     installed whose row is still ✗ is not installed again: that is a finding
     to read (usually PATH order), and reinstalling it would only loop.
     """
-    if not sys.platform.startswith("linux"):
+    if not deps.setup_installs_here():
+        where = "an Apple silicon Mac" if sys.platform == "darwin" else sys.platform
         raise InstallError(
-            "`proofcut setup` installs on Linux only for now. On a Mac or a Windows "
-            "PC, `proofcut doctor` prints the fix under each ✗, and "
-            "scripts/mac_trial.sh or scripts/windows_trial.ps1 installs everything "
-            "for a test run (README.md § Help wanted)."
+            f"`proofcut setup` does not install on {where} yet: it installs on Linux, "
+            "Windows and Intel Macs. `proofcut doctor` prints the fix under each ✗, "
+            "and on a Mac scripts/mac_trial.sh installs everything for a test run "
+            "(README.md § Help wanted)."
         )
     report = report if report is not None else doctor.report()
     rows = _rows(report)
-    arch = machine()
     record = read_record()
     pieces: list[dict[str, Any]] = []
     unavailable: list[dict[str, Any]] = []
@@ -266,15 +370,22 @@ def plan(report: dict[str, Any] | None = None) -> dict[str, Any]:
                 "fix": "read the doctor row above; `proofcut setup --uninstall` removes what setup added",
             })
             return
-        pin = PINS[name].get(arch or "")
-        if pin is None:
+        found = pins_for(name)
+        if not found:
             unavailable.append({
                 "name": name,
                 "why": f"there is no {name} download pinned for {platform.machine() or 'this CPU'}",
                 "fix": "follow the fix `proofcut doctor` prints for it",
             })
             return
-        pieces.append({"name": name, "why": why, "version": pin.version, "url": pin.url, "bytes": pin.size})
+        pieces.append({
+            "name": name,
+            "why": why,
+            "version": found[0].version,
+            "url": found[0].url,
+            "urls": [pin.url for pin in found],
+            "bytes": sum(pin.size for pin in found),
+        })
 
     ffmpeg_rows = [rows[n] for n in ("ffmpeg", "ffprobe") if not rows[n]["ok"]]
     if ffmpeg_rows:
@@ -297,7 +408,7 @@ def plan(report: dict[str, Any] | None = None) -> dict[str, Any]:
                 "fix": f"reinstall it yourself: `uv tool install --reinstall --python {WHISPER_PYTHON} {WHISPER_TOOL}`",
             })
         else:
-            backend = "cuda" if _gpu() else "cpu"
+            backend = "cuda" if _cuda_torch() else "cpu"
             pieces.append({
                 "name": "whisper",
                 "why": _reason(rows["whisper"]),
@@ -362,9 +473,53 @@ def _fetch(pin: Pin, dest: Path, say: Say) -> None:
 
 
 def _unpack(archive: Path, into: Path) -> None:
-    with tarfile.open(archive) as tar:
-        tar.extractall(into, filter="data")
+    """Unpack a tarball or a zip into `into`, then delete the archive.
+
+    A zip keeps no Unix mode through `zipfile`, so each binary a Mac zip holds
+    is made executable by its caller.
+    """
+    if archive.suffix == ".zip":
+        with zipfile.ZipFile(archive) as zipped:
+            zipped.extractall(into)
+    else:
+        with tarfile.open(archive) as tar:
+            tar.extractall(into, filter="data")
     archive.unlink()
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(1 << 20):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _on_path(name: str, placed: Path, notes: list[str]) -> None:
+    """Note it when `name` on PATH is not the one setup just put in `bin_dir()`."""
+    found = shutil.which(name)
+    if found is None or os.path.normcase(os.path.abspath(found)) != os.path.normcase(str(placed)):
+        notes.append(
+            f"{name} on PATH is {found or 'nothing'}, not setup's {placed}: put {bin_dir()} "
+            "ahead of it on PATH (`uv tool update-shell` adds it)"
+        )
+
+
+def _place(source: Path, name: str, entry: dict[str, Any], record: dict[str, Any], notes: list[str]) -> None:
+    """Move `source` into `bin_dir()` as `name`, unless something is already there.
+
+    Windows' form of `_link`: a symlink there needs Developer Mode. The file's
+    hash is recorded, so uninstall removes it only while it is still setup's.
+    """
+    dest = bin_dir() / name
+    if dest.exists() or dest.is_symlink():
+        notes.append(f"left {dest} alone: it already exists, so {Path(name).stem} from setup is not on PATH")
+        return
+    _makedirs(dest.parent, record)
+    digest = _sha256(source)
+    shutil.move(str(source), str(dest))
+    entry["placed"].append({"path": str(dest), "sha256": digest})
+    _on_path(Path(name).stem, dest, notes)
 
 
 def _link(target: Path, name: str, entry: dict[str, Any], record: dict[str, Any], notes: list[str]) -> None:
@@ -376,12 +531,7 @@ def _link(target: Path, name: str, entry: dict[str, Any], record: dict[str, Any]
     _makedirs(link.parent, record)
     link.symlink_to(target)
     entry["links"].append(str(link))
-    found = shutil.which(name)
-    if found != str(link):
-        notes.append(
-            f"{name} on PATH is {found or 'nothing'}, not setup's {link}: put {bin_dir()} "
-            "ahead of it on PATH (`uv tool update-shell` adds it)"
-        )
+    _on_path(name, link, notes)
 
 
 def _missing_libraries(binaries: list[Path], lib_dir: Path | None = None) -> list[str]:
@@ -396,25 +546,49 @@ def _missing_libraries(binaries: list[Path], lib_dir: Path | None = None) -> lis
     return sorted(missing)
 
 
-def _install_ffmpeg(pin: Pin, entry: dict[str, Any], record: dict[str, Any], say: Say, notes: list[str]) -> None:
+def _install_ffmpeg(pins: tuple[Pin, ...], entry: dict[str, Any], record: dict[str, Any], say: Say, notes: list[str]) -> None:
     home = deps.root() / "ffmpeg"
     _makedirs(home, record)
     entry["dir"] = str(home)
-    archive = home / "ffmpeg.tar.xz"
-    _fetch(pin, archive, say)
+    if sys.platform == "darwin":
+        # evermeet.cx: one zip per binary, each holding the bare static binary.
+        binaries = home / "bin"
+        for pin in pins:
+            archive = home / Path(pin.url).name
+            _fetch(pin, archive, say)
+            _unpack(archive, binaries)
+        for name in ("ffmpeg", "ffprobe"):
+            if not (binaries / name).is_file():
+                raise InstallError(f"{pins[0].url} unpacked with no {name} in it")
+            (binaries / name).chmod(0o755)
+            _link(binaries / name, name, entry, record, notes)
+        return
+    windows = sys.platform == "win32"
+    exe = ".exe" if windows else ""
+    archive = home / ("ffmpeg.zip" if windows else "ffmpeg.tar.xz")
+    _fetch(pins[0], archive, say)
     say("  unpacking")
     _unpack(archive, home)
-    found = sorted(home.glob("*/bin/ffmpeg"))
+    found = sorted(home.glob(f"*/bin/ffmpeg{exe}"))
     if not found:
-        raise InstallError(f"{pin.url} unpacked with no bin/ffmpeg in it")
+        raise InstallError(f"{pins[0].url} unpacked with no bin/ffmpeg{exe} in it")
     binaries = found[0].parent
     # ffplay is a third of the download and nothing here plays video.
-    (binaries / "ffplay").unlink(missing_ok=True)
+    (binaries / f"ffplay{exe}").unlink(missing_ok=True)
     for name in ("ffmpeg", "ffprobe"):
-        _link(binaries / name, name, entry, record, notes)
+        if windows:
+            # gyan.dev's builds are static, so each .exe runs alone.
+            _place(binaries / f"{name}{exe}", f"{name}{exe}", entry, record, notes)
+        else:
+            _link(binaries / name, name, entry, record, notes)
+    if windows:
+        # What is left is documentation and presets, and whatever `_place`
+        # declined to move because the user already had one.
+        shutil.rmtree(binaries.parent)
 
 
-def _install_auto_editor(pin: Pin, entry: dict[str, Any], record: dict[str, Any], say: Say, notes: list[str]) -> None:
+def _install_auto_editor(pins: tuple[Pin, ...], entry: dict[str, Any], record: dict[str, Any], say: Say, notes: list[str]) -> None:
+    (pin,) = pins
     target = deps.auto_editor()
     _makedirs(target.parent, record)
     entry["dir"] = str(target.parent)
@@ -430,16 +604,51 @@ def _install_auto_editor(pin: Pin, entry: dict[str, Any], record: dict[str, Any]
         )
 
 
-def _install_melt(pin: Pin, entry: dict[str, Any], record: dict[str, Any], say: Say, notes: list[str]) -> None:
-    home = deps.melt().parent.parent
+def _copy_app_off_dmg(dmg: Path, into: Path) -> None:
+    """Copy `Shotcut.app` off a dmg into `into`, leaving nothing mounted.
+
+    mac_trial.sh's way: mounted read-only at a private mountpoint, copied with
+    `cp -R` (the bundle's frameworks are symlinks), then detached. A download
+    through urllib carries no quarantine flag, so macOS has no first-launch
+    check to make of it.
+    """
+    mount = Path(tempfile.mkdtemp(prefix="proofcut-shotcut-"))
+    try:
+        attached = subprocess.run(
+            ["hdiutil", "attach", "-nobrowse", "-readonly", "-noautoopen", "-mountpoint", str(mount), str(dmg)],
+            capture_output=True, text=True, check=False,
+        )
+        if attached.returncode != 0:
+            raise InstallError(f"hdiutil could not mount {dmg.name}: {attached.stderr.strip()}")
+        try:
+            copied = subprocess.run(["cp", "-R", str(mount / "Shotcut.app"), str(into)], capture_output=True, text=True, check=False)
+        finally:
+            if subprocess.run(["hdiutil", "detach", str(mount)], capture_output=True, check=False).returncode != 0:
+                subprocess.run(["hdiutil", "detach", "-force", str(mount)], capture_output=True, check=False)
+        if copied.returncode != 0:
+            raise InstallError(f"could not copy Shotcut.app off {dmg.name}: {copied.stderr.strip()}")
+    finally:
+        shutil.rmtree(mount, ignore_errors=True)
+    dmg.unlink()
+
+
+def _install_melt(pins: tuple[Pin, ...], entry: dict[str, Any], record: dict[str, Any], say: Say, notes: list[str]) -> None:
+    (pin,) = pins
+    home = deps.root() / "melt"
     _makedirs(home, record)
     entry["dir"] = str(home)
-    archive = home / "shotcut.txz"
+    archive = home / {"win32": "shotcut.zip", "darwin": "shotcut.dmg"}.get(sys.platform, "shotcut.txz")
     _fetch(pin, archive, say)
     say("  unpacking")
-    _unpack(archive, home)
+    if sys.platform == "darwin":
+        _copy_app_off_dmg(archive, home)
+    else:
+        _unpack(archive, home)
     if not deps.melt().is_file():
-        raise InstallError(f"{pin.url} unpacked with no Shotcut.app/melt in it")
+        raise InstallError(f"{pin.url} unpacked with no {deps.melt().relative_to(home)} in it")
+    if not sys.platform.startswith("linux"):
+        # Shotcut's own bundle on both: every library beside the binary.
+        return
     shotcut = deps.melt().parent
     linked = [shotcut / rel for rel in MELT_LINKED]
     if shutil.which("ldd") and (missing := _missing_libraries(linked, shotcut / "lib")):
@@ -482,9 +691,7 @@ def _install_whisper(entry: dict[str, Any], record: dict[str, Any], say: Say, no
     tops = [top for top in (pythons, tools, bin_dir()) if top]
     chain = [d for top in tops for d in (top, *top.parents) if Path.home() in d.parents]
     absent = [d for d in dict.fromkeys(chain) if not d.exists()]
-    argv = [uv, "tool", "install", "--python", WHISPER_PYTHON, WHISPER_TOOL]
-    if not _gpu():
-        argv += ["--torch-backend", "cpu"]
+    argv = whisper_argv(uv)
     say(f"  running {' '.join(argv[1:])}")
     # Not captured: this is minutes of resolver and download output, and the
     # person waiting on it should see it move.
@@ -512,13 +719,13 @@ def install(steps: dict[str, Any], say: Say = print) -> dict[str, Any]:
     for piece in steps["pieces"]:
         name = piece["name"]
         say(f"{name} — {piece['version']}")
-        entry: dict[str, Any] = {"dir": None, "links": [], "uv_tool": None, "version": piece["version"]}
+        entry: dict[str, Any] = {"dir": None, "links": [], "placed": [], "uv_tool": None, "version": piece["version"]}
         try:
             if name == "whisper":
                 _install_whisper(entry, record, say, notes)
             else:
-                _INSTALLERS[name](PINS[name][machine() or ""], entry, record, say, notes)
-        except (InstallError, OSError, tarfile.TarError) as exc:
+                _INSTALLERS[name](pins_for(name), entry, record, say, notes)
+        except (InstallError, OSError, tarfile.TarError, zipfile.BadZipFile) as exc:
             _remove_entry(entry)
             failed.append({"name": name, "why": str(exc)})
             say(f"  failed: {exc}")
@@ -562,6 +769,12 @@ def _remove_entry(entry: dict[str, Any]) -> list[str]:
         if _inside(target, root):
             path.unlink()
             removed.append(link)
+    for placed in entry.get("placed", []):
+        path = Path(placed["path"])
+        # Only a file still byte-identical to the one setup moved there.
+        if path.is_file() and not path.is_symlink() and _sha256(path) == placed["sha256"]:
+            path.unlink()
+            removed.append(placed["path"])
     if entry.get("uv_tool") and (uv := _uv()):
         subprocess.run([uv, "tool", "uninstall", entry["uv_tool"]], check=False)
         removed.append(f"uv tool {entry['uv_tool']}")
@@ -589,7 +802,7 @@ def uninstall_plan() -> dict[str, Any]:
     record = read_record()
     return {
         "root": str(deps.root()),
-        "pieces": {name: {"links": e.get("links", []), "uv_tool": e.get("uv_tool"), "dir": e.get("dir")} for name, e in record["pieces"].items()},
+        "pieces": {name: {"links": e.get("links", []) + [p["path"] for p in e.get("placed", [])], "uv_tool": e.get("uv_tool"), "dir": e.get("dir")} for name, e in record["pieces"].items()},
         "recorded": _record_path().is_file(),
     }
 

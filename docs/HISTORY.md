@@ -16609,3 +16609,84 @@ use a fuller text, since r/sideprojects asks for the problem, the stack and
 the author's relation to the project. The text is in
 `~/proofcut-work/spikes/launch-listings/POSTS.md` § The Apple silicon tester
 posts.
+
+## `proofcut setup` on Windows and an Intel Mac — 2026-09-17
+
+INSTALL.md § Step 5 was gated on a person's report from each OS. Windows had
+one (issue #3) and the Intel Mac now has one (issue #6, § An Intel Mac route,
+without Homebrew), so `proofcut setup` now installs on both. Apple silicon is
+still refused, and doctor does not suggest setup there: its route is
+Homebrew, and no person has run it. That report is what the tester post asks
+for.
+
+**Each route is its kit's install half, pins included.** `PINS` gained a
+`windows-x86_64` and a `macos-x86_64` key. The Linux keys stay as they were,
+a bare CPU name (`install.target`).
+- **Windows:** gyan.dev's essentials ffmpeg zip, auto-editor's `.exe`, and
+  Shotcut's portable zip, whose melt is `Shotcut/melt.exe`. That layout was
+  read from the zip's central directory by range requests, without
+  downloading the whole file. The kit pins auto-editor 31.4.2; setup takes
+  31.6.0, the version the other two OSes pin, hashed here
+  (`6e037bc6…b348`).
+- **Intel Mac:** evermeet.cx's two single-binary zips, each a static Mach-O
+  with mode 755 recorded. This is the one pin not on GitHub, and the pin
+  test names it as the only exception. Also auto-editor's `macos-x86_64`
+  binary, and Shotcut.app copied off its dmg the way the kit does it: a
+  read-only mount at a private mountpoint, `cp -R`, then detach.
+- **whisper:** installed with the kit's exact arguments, with no
+  `--torch-backend`. PyPI's torch is the CPU build on both OSes, and that is
+  what the people ran. An Intel Mac adds `--with 'numpy<2'
+  --no-build-package numba --no-build-package llvmlite`.
+- **Setup's folder:** `%LOCALAPPDATA%\proofcut\deps` on Windows, and
+  `~/.local/share/proofcut/deps` on a Mac, beside uv's own tools.
+
+**Windows cannot take the Linux PATH rule as it stands.** A symlink there
+needs Developer Mode, and proofcut and whisper both call `ffmpeg` bare, so
+something named ffmpeg has to be on PATH. gyan.dev's builds are static, so
+setup moves `ffmpeg.exe` and `ffprobe.exe` into `~/.local/bin`, which is
+where uv's Windows installer points PATH too. It records each file's SHA-256
+and deletes the rest of the zip. Uninstall removes a moved file only while
+its hash is unchanged, and a file the user already had there is never
+overwritten. The Mac keeps Linux's symlinks.
+
+**The kits are unchanged.** Step 5 ends with each kit calling setup, so that
+there is one install code path. The kits are also the instrument the tester
+posts hand out on 2026-09-18 to 09-20, so rewiring them waits until those
+posts are answered.
+
+**Nothing on this box can run either route, so a new CI job does:
+`setup-demo.yml`, on `windows-latest` and `macos-15-intel`.**
+`scripts/setup_trial.py` runs these steps on a runner that has uv and none
+of proofcut's tools:
+- `setup --plan`, then `setup --yes`;
+- `doctor`, which must pass;
+- DEMO.md's commands, logged in the kits' `report.txt` format so that
+  `trial_check.py` judges the render the way it judges a kit run.
+
+A second invocation uninstalls and compares against a listing taken before
+setup ran: setup's folder, `~/.local/bin`, and uv's tools and Pythons. The
+demo's espeak-ng is the Intel kit's `espeak_ng_lib.py` shim on both OSes.
+It runs once before that listing is taken, because its first run may
+download a Python 3.12, which would otherwise read as something setup left
+behind.
+- **Measured here, on Linux only:** the driver ran the demo to 7 of 7
+  `trial_check` passes (−16.1 LUFS, 289 of 289 frames, similarity 0.971),
+  and the uninstall comparison matched.
+- **Setup installed nothing on that run,** because this box's doctor already
+  passes. So the run proves the driver works, not the new routes.
+- **A first run stopped at the render.** The session had no display, and
+  `export` refused correctly; `QT_QPA_PLATFORM=offscreen` was the fix. That
+  is Linux's rule and does not apply to the two runners.
+- **Unmeasured:** whether the runners already carry an ffmpeg that passes
+  doctor, which setup would then leave alone. The report's `setup --plan`
+  step shows which pieces a run actually installed.
+
+The unit tests (`test_install.py`) fake each OS. Three existing tests stated
+that setup installs on Linux only, and they were retargeted to the case that
+is still refused:
+- `test_setup_refuses_where_it_does_not_install` now uses Apple silicon and
+  FreeBSD.
+- The doctor test is now a four-row table: Linux, Windows, Intel Mac, Apple
+  silicon.
+- The pin test accepts the two new keys, with evermeet.cx as its one named
+  exception.
