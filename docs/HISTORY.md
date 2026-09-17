@@ -16056,3 +16056,23 @@ of a second. It samples the stretch at 85% of the placement's end, which is
 the container's duration (10.0 s), past the last frame (9.967 s). That is
 the same class as § The phone's black last frame, whose `_timeline_bound`
 the sheet does not use.
+
+## Releases publish from the tag — 2026-09-16
+
+A release was four hand steps across two logins, one of them five minutes
+long. `.github/workflows/release.yml` now does them on a `v*` tag: it checks
+the tag against `proofcut.__version__` and `tests/test_version.py`, builds,
+uploads with `uv publish --trusted-publishing always`, waits for PyPI's JSON
+to list the version, and runs `mcp-publisher` 1.8.1 (pinned by SHA-256) with
+`login github-oidc`. No secret is stored: PyPI trusts the workflow as a
+publisher (environment `pypi`), and the registry grants
+`io.github.tydude001/*` to the repo's own OIDC token.
+
+Gitea's push mirror was re-added with sync on commit, so a push reaches
+GitHub in seconds, not on the 12-hour interval. The address changed from
+`lucid.git` to `proofcut.git` in the same step. **A tag pushed to Gitea is
+therefore a release.** A tag pushed before the workflow existed runs its own
+commit's workflow files, which had none, so 0.31.0 went out through
+`workflow_dispatch` (run 35174101615). PyPI and the registry both list
+0.31.0, and `uvx --isolated --no-cache proofcut@0.31.0 --version` installs
+it. 0.30.0 was never published and will not be.

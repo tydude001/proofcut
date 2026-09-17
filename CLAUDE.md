@@ -896,7 +896,7 @@ built; docs/plans/INSTALL.md):
   `mcp-name` marker off PyPI's README. So a tag is a release — never tag a
   version not meant to ship. PyPI never takes a second file for a version,
   so README.md — its project page, whose links must stay absolute — is
-  settled before the tag. There is no `CHANGELOG.md` on
+  settled before the tag. HISTORY.md § Releases publish from the tag. There is no `CHANGELOG.md` on
   purpose. HISTORY.md § The version caught up.
   - **A GitHub Release is a hand-written launch post, not a per-tag note, so
     it does not follow a bump** — which is how `v0.23.0` stayed "Latest" two
