@@ -206,9 +206,10 @@ Each step is usable on its own, and each is judged on a served render.
   separate VO — and `pitch=1` stays available. Design below (§ B5,
   designed); Tyler took all eight decisions on 2026-09-17.
 - **B6. Inset.** The render drawn into a rectangle of the recording, following
-  the camera: composite onto the recording's own track, then frame the
-  composite. A nested tractor with the camera filter on it — measure before
-  building.
+  the camera. This plan said to composite onto the recording's own track and
+  then frame the composite, with a nested tractor. Measured, that is the
+  worst route: soft, off by up to 2px, and colour-shifted. The inset is a
+  sibling track that reuses the camera's keys. Design below (§ B6, designed).
 - **B7. Re-cut the launch clip with proofcut**, ideally by an agent through the
   trial harness, and A/B it against `clip-v6.mp4` on Tyler's phone. Then
   LAUNCH.md § Step 1's "not cut with proofcut" line is retired with evidence.
@@ -484,6 +485,124 @@ a curve.
      stretch lands on the event's retimed frame.
 
 Name: `retime` (`retime add/list/remove`, tools `retime_add` …).
+
+### B6, designed — 2026-09-17
+
+The spike is `~/proofcut-work/spikes/inset-probe/FINDINGS.md`. It tried
+seven routes on both melts, and the two agreed on every number. The build
+order above named a route: "composite onto the recording's own track, then
+frame the composite." **That route is the wrong one. MLT needs nothing new,
+and the inset is a sibling track.**
+
+What the launch clip does (`clip.py` § `film`): the camera frames the
+recording first. The agent's `cut.mp4` (960x720) is then pasted, at output
+resolution, into wherever the camera put the preview's rectangle
+(873,252)-(1785,936). It fades in over the window's own playback of the same
+film, and the recording around it dims to 0.55. It starts on the recording
+second where the preview's playback begins, plays at 1x, and its audio plays.
+
+**Findings the build has to hold to:**
+- **A nested tractor renders at the document's profile, not the
+  recording's.** Composite-then-frame scaled the recording to 1920 and the
+  render to 684px before the camera zoomed 1.97x. It kept 38% of the render's
+  detail and 76% of the recording's, and the lock was off by up to 2.1px.
+  **It also shifted colour at exit 0**: the render's (40,200,80) came out
+  (53,225,84) on both melts, while greys stayed the same. **The writer never
+  nests a tractor for an inset.**
+- **A sibling track that reuses the camera's keys locks within 0.88px and is
+  as sharp as `clip.py`** (99% of both sources' detail). The camera keys the
+  rectangle the whole recording is drawn into. The inset's rectangle is a
+  linear function of that one, so the inset uses the same key positions and
+  the same easing operators, with each rectangle mapped through the inset's
+  box. At rest the offset is constant. During a push it moves within ±0.4px
+  and never jumps.
+- **Sampling the curve is worse than copying the keys.** Float keys reached
+  1.19px, and per-frame keys from proofcut's own `ease` reached 1.52px. The
+  writer copies MLT's operators and never re-evaluates them.
+- **An inset entry is an ordinary 1x entry.** Its frames were exact on every
+  route, the `src_in` rule holds for its keys, and it stays 1x on its own
+  lane when the recording is retimed. Its audio plays through the ordinary
+  `mix`. When the camera pushes part of the inset off the frame, the canvas
+  clips it like the recording.
+
+**The shape.**
+- **An inset is `(clip_id, asset, rect, from, until, src_in)`** in a new
+  optional key, `insets`:
+  - `clip_id` is the recording on the Edit lane.
+  - `asset` is a registered clip, such as the render.
+  - `rect` is in the recording's *source* pixels. It is a reframe rect's
+    unit, so no cut and no canvas change can invalidate it.
+  - `from` and `until` are word or event addresses, resolved through the
+    `Edit` on every build.
+  - `src_in` is where in the asset the inset starts (default 0).
+- **It is a track directly above the Edit track and below the picture
+  lane.** A b-roll cue covers the recording, so it covers the inset too.
+- **Its `qtblend` keys are the Edit entry's reframe keys.** They sit at the
+  same positions, moved onto the inset entry's own clock (through the warp
+  when the recording is retimed, since B5 keys the camera in output frames).
+  They keep the same operators, and each destination rectangle is mapped
+  through `rect`. With no reframe, the rectangle is MLT's own fit
+  (`fit_rect`). Ints, as proofcut writes.
+- **It is `_is_layered`'s twelfth trigger.**
+
+**Decisions** (a recommendation on each):
+
+1. **The sibling track** (recommended; the spike leaves no real
+   alternative). The nested route at native size (the `consumer` producer)
+   locks best, at 0.26px. But it draws the render at 912px before zooming,
+   which keeps 79% of its detail in the close view, and it needs a second
+   document file per inset.
+2. **The rect must match the asset's shape, within 1%, or the inset is
+   refused** (recommended). Letterboxing would show the recording's own
+   copy of the film in the bars. `clip.py`'s rect and `cut.mp4` are both
+   exactly 4:3.
+3. **The inset starts at `from` and ends at `until`.** Without `until`, it
+   runs to the asset's end, and it refuses to run past the asset
+   (recommended). `from` is normally an event, such as the moment the
+   preview starts playing, which is how `clip.py` locks the two.
+4. **Refusals** (recommended):
+   - An inset that spans a cut in the recording is refused. The render would
+     play on while the recording under it jumps, and `clip.py`'s recording
+     is continuous.
+   - So is an inset over any frame the warp plays more than 5% off 1x. That
+     is B5's mute threshold. The render plays at 1x, so it would drift from
+     the recording's own playback under it. `clip.py`'s film sits in a 1x
+     stretch.
+   - So is an inset over a split (`pane`) or blur-fill window. The window
+     widens when the model does.
+   - A cut that removes its address refuses, by the overlay's rule.
+   - `reel` drops insets and names them (`insets_dropped`).
+5. **Fade and dim ride on the inset** (recommended):
+   - `enter`/`leave` take `fade` or `none`, plus seconds and an easing.
+     These are the overlay's words, and `rise` is refused.
+   - `dim` darkens the recording around the inset (0 to 1, default 0;
+     `clip.py` uses 0.55). It is a black `color` track at keyed opacity,
+     between the recording and the inset, fading with the inset. It is
+     unmeasured and gets measured at build time.
+6. **The inset's audio plays** (recommended; it is the point in `clip.py`).
+   - `gain_db` sets its level (default 0).
+   - `mute` switches it off.
+   - While an inset with audio plays, it gates the bed out, as a hold does.
+7. **The window draws it** (recommended). A second `<video>` is placed in
+   `#frame` with the same destination math the preview already uses for the
+   recording's window. It plays the asset from `src_in`, using the picture
+   layer's `src_start` machinery. The Edit lane draws the span as a band.
+   The alternative is an outline with a "render only" chip, which is cheaper
+   but hides the one thing the launch clip is about.
+8. **The check** (recommended, as in B3–B5):
+   - `export` reports each inset's render span and its rect at the first and
+     last frame.
+   - `reframe_sheet` draws the inset rect, dashed, on the recording's tiles.
+     That is where a wrong rect gets seen.
+   - A real-melt test on this spike's sources asserts a lock within 1px on
+     all four sides, exact inset frames, and the inset's colour unchanged.
+9. **B5's open question — b-roll under a stretch — is closed as built**
+   (recommended). A picture cue over a stretch speeds up with the film
+   (HISTORY.md § Retime, built). The screen editors surveyed set a constant
+   speed per segment (PRIOR-ART.md), and B7 has no b-roll to argue
+   otherwise. It reopens when a film shows b-roll that should hold 1x.
+
+Name: `inset` (`inset add/list/remove`, tools `inset_add` …).
 
 ## Decisions for Tyler
 
