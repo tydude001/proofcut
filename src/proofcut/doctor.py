@@ -215,7 +215,8 @@ def _ffmpeg_entry(binary: str, what: str) -> dict[str, Any]:
                     "put it first on PATH, since it is keg-only and a plain `ffmpeg` "
                     "(auto-editor installs one) otherwise answers first — "
                     '`export PATH="$(brew --prefix ffmpeg-full)/bin:$PATH"` in your '
-                    "shell profile."
+                    "shell profile. Homebrew no longer installs on an Intel Mac; "
+                    "there, evermeet.cx's ffmpeg has both."
                 ),
             )
     return _entry(binary, what, ok=True, looked_for="PATH", found=found, version=version)
@@ -242,7 +243,10 @@ def _whisper_entry() -> dict[str, Any]:
                 "openai-whisper`, or into any venv) and put its `whisper` on PATH, "
                 "or point PROOFCUT_WHISPER at the binary. proofcut never imports it — "
                 "it is a subprocess, so it does not have to live in proofcut's own "
-                "venv. 3.12 because torch builds for Intel Macs stop there. With no "
+                "venv. 3.12 because torch builds for Intel Macs stop there; on an "
+                "Intel Mac also add `--with 'numpy<2' --no-build-package numba "
+                "--no-build-package llvmlite`, since that last torch cannot read a "
+                "numpy 2 array and the newest numba has no Intel build. With no "
                 "NVIDIA GPU, add `--torch-backend cpu`: the default pulls CUDA "
                 "torch, 5.5 GB against 1.9 GB, for a card that is not there."
             ),

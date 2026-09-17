@@ -16503,3 +16503,50 @@ old one (creating the `opt/` link by hand for a keg-only formula, which
 `brew link` refuses), and says which version is back. Checked against a stub
 `brew` over a fake Cellar: the test's formulae went, xz went back to 5.8.3 with
 its link, and a formula of the tester's was left alone.
+
+## An Intel Mac route, without Homebrew — 2026-09-17
+
+Tyler reversed the call above the same day: the one tester he has owns an
+Intel Mac, and proofcut should run on one. So on Intel the Mac kit no longer
+stops. It takes `windows_trial.ps1`'s shape instead: every tool pinned by URL
+and SHA-256 into `~/proofcut-mac-trial/tools`, uv's caches, Pythons and tools
+and whisper's model pointed into the same folder, `PROOFCUT_MELT` naming the
+renderer, and `--uninstall` deleting the folder. This applies whether or not
+the Mac has a Homebrew, since Homebrew's Intel support is on its way out and
+may compile `ffmpeg-full` rather than pour it. Apple silicon is unchanged.
+Each piece was measured here:
+
+- **ffmpeg** is evermeet.cx's 9.0.1, an x86_64 build whose configure line has
+  libx264, freetype, fontconfig and libass, which are what doctor checks.
+  **auto-editor** is the 31.6.0 `macos-x86_64` release binary.
+- **Shotcut 26.8.1's dmg holds a universal melt** (x86_64 and arm64,
+  `LSMinimumSystemVersion` 12.0). The kit mounts it read-only, copies the app
+  out and detaches. curl sets no quarantine flag, so Gatekeeper has nothing
+  to check.
+- **espeak-ng has no Intel Mac program outside a package manager**, but the
+  `espeakng-loader` 0.2.4 wheel carries libespeak-ng 1.52.0 and its data for
+  x86_64. `scripts/espeak_ng_lib.py` answers `make_demo.py`'s one call,
+  `-w OUT -s RATE TEXT`, through the classic API with the program's own
+  flags. Its wav was **byte-identical** to this box's `espeak-ng` 1.52.0 on a
+  demo line, so whisper hears the same voice on every platform.
+- **whisper needs two pins on Intel.** torch's last x86_64 macOS wheel is
+  2.2.2, and it is built against numpy 1.x. With numpy 2.1.3,
+  `torch.from_numpy` raised `RuntimeError: Numpy is not available`, measured
+  on the same wheel for Linux; with `numpy<2` it returned the tensor. And
+  numba's newest (0.67) has no Intel Mac wheel, so an unpinned resolve would
+  compile llvmlite: `--no-build-package numba --no-build-package llvmlite`
+  resolves to 0.62.1 instead. Doctor's whisper fix now says both.
+- **OpenTimelineIO 0.18.1 has no Intel Mac wheel** (PORTABILITY.md's
+  correction), so `uv sync` compiles it. Its sdist builds self-contained with
+  PyPI's cmake, in 19 s here, but needs a C++ compiler, so the kit checks
+  `xcode-select -p` first and opens Apple's Command Line Tools installer if
+  they are missing. Nothing else in the lock lacks an x86_64 wheel.
+
+The route was dry-run on Linux with stubbed `uname`, `sysctl`, `sw_vers`,
+`xcode-select` and an `hdiutil` that extracts with 7z. All five downloads
+passed their checksums, the app landed in `tools/`, and the run stopped where
+the Mach-O `uv` first had to execute. `--uninstall` listed the five
+downloads and removed the folder. The arm64 branch still reached `brew
+install` through a failing `brew` stub. What only a Mac can answer is left
+to `mac-demo.yml`, which now also runs on `macos-15-intel`, and then to the
+tester.

@@ -148,6 +148,7 @@ def test_homebrews_plain_ffmpeg_is_not_ffmpeg_enough(monkeypatch: pytest.MonkeyP
     assert "freetype and libass" in row["why"]
     assert "brew install ffmpeg-full" in row["fix"]
     assert "brew --prefix ffmpeg-full" in row["fix"]
+    assert "evermeet.cx" in row["fix"]  # Homebrew refuses an Intel Mac (issue #4)
 
 
 @pytest.mark.parametrize(
@@ -221,6 +222,8 @@ def test_the_whisper_fix_pins_the_python_an_intel_mac_can_install(monkeypatch: p
     monkeypatch.setattr(doctor.asr, "whisper_binary", refuse)
     fix = doctor._whisper_entry()["fix"]
     assert "uv tool install --python 3.12 openai-whisper" in fix
+    # torch 2.2.2 under numpy 2 raises "Numpy is not available" (measured 2026-09-17)
+    assert "--with 'numpy<2'" in fix
     assert "--torch-backend cpu" in fix
 
 

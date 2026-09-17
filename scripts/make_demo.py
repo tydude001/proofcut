@@ -124,7 +124,8 @@ def make_voiceover(out: Path) -> Path:
         "espeak-ng",
         "the demo voiceover is synthesised rather than vendored",
         "Install it (`dnf install espeak-ng`, `apt install espeak-ng`, "
-        "`brew install espeak-ng`) — it is a few megabytes and is needed only "
+        "`brew install espeak-ng`; on an Intel Mac, scripts/mac_trial.sh "
+        "stands scripts/espeak_ng_lib.py in for it) — it is a few megabytes and is needed only "
         "to build the demo, never by proofcut itself.",
     )
     _require("ffmpeg", "every media step goes through it", "Install ffmpeg.")

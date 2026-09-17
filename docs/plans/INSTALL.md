@@ -123,6 +123,10 @@ reduces it. See § What this plan deliberately does not do.
    3.12`, from 775e6b8, which gives no reason; this is the likely one.
    **Doctor's whisper fix omits the pin**, so an Intel Mac following doctor
    hits a resolver error. Resolver evidence only: no Intel Mac ran it.
+   *Correction, 2026-09-17: 3.12 is not enough. That torch cannot read a
+   numpy 2 array, and the newest numba has no Intel wheel, so Intel needs
+   `--with 'numpy<2'` and wheels-only numba/llvmlite too. Doctor's fix now
+   carries all three. HISTORY.md § An Intel Mac route, without Homebrew.*
 7. **ffmpeg must be on PATH.** proofcut names it bare across 11
    `src/proofcut` modules, with no override, and openai-whisper's own `audio.py` runs
    `"ffmpeg"` from PATH. So an installed ffmpeg goes on PATH, and a
@@ -241,8 +245,9 @@ says `uvx proofcut setup`. Claim the name sooner only if a squatter shows up.
 ## Step 5 — macOS and Windows (after a person's Mac report)
 
 `proofcut setup` grows the other two OSes out of the kits' install halves.
-On Windows that is the portable folder under `%LOCALAPPDATA%`. On a Mac it is
-Homebrew's `ffmpeg-full` and Shotcut.app. Each kit then calls `proofcut setup`
+On Windows that is the portable folder under `%LOCALAPPDATA%`. On an Apple
+silicon Mac it is Homebrew's `ffmpeg-full` and Shotcut.app, and on an Intel
+Mac the pinned-download folder the kit builds. Each kit then calls `proofcut setup`
 and keeps only its demo and its report, so there is one install code path.
 LAUNCH.md's gate holds here: build it when a report says where a person
 stopped.

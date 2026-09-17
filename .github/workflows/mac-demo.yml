@@ -15,6 +15,10 @@
 #
 # macOS minutes bill at 10x while the repo is private, so this runs only when
 # something the demo exercises changes, and by hand.
+#
+# The Intel runner takes the kit's other route — pinned downloads into one
+# folder, no Homebrew — because Homebrew refuses Intel Macs now (issue #4).
+# It is the only Intel Mac this repo can reach before a person's.
 
 name: mac-demo
 
@@ -26,6 +30,7 @@ on:
       - "scripts/mac_trial.sh"
       - "scripts/trial_check.py"
       - "scripts/make_demo.py"
+      - "scripts/espeak_ng_lib.py"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/mac-demo.yml"
@@ -36,7 +41,11 @@ permissions:
 
 jobs:
   demo:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -47,13 +56,19 @@ jobs:
         env:
           PROOFCUT_TRIAL_REPORT: ${{ runner.temp }}/proofcut-mac-report.zip
         run: bash scripts/mac_trial.sh < /dev/null
+      # On Intel, uv lives in the kit's folder, and its Python there is the one to reuse.
       - name: judge the run
         if: always()
-        run: uv run python scripts/trial_check.py ~/proofcut-mac-trial
+        run: |
+          if [ -x ~/proofcut-mac-trial/tools/bin/uv ]; then
+            export PATH=~/proofcut-mac-trial/tools/bin:$PATH
+            export UV_PYTHON_INSTALL_DIR=~/proofcut-mac-trial/uv/python UV_CACHE_DIR=~/proofcut-mac-trial/uv/cache
+          fi
+          uv run python scripts/trial_check.py ~/proofcut-mac-trial
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: proofcut-mac-report
+          name: proofcut-mac-report-${{ matrix.os }}
           path: |
             ${{ runner.temp }}/proofcut-mac-report.zip
             ~/proofcut-mac-trial/report.txt

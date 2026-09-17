@@ -236,11 +236,12 @@ git clone https://github.com/tydude001/proofcut
 bash proofcut/scripts/mac_trial.sh
 ```
 
-It installs `uv`, `ffmpeg-full`, `espeak-ng` and `auto-editor` with Homebrew
-(and Homebrew itself if you have none), plus the Shotcut app for its renderer
-and whisper. `bash proofcut/scripts/mac_trial.sh --uninstall` removes them.
-It needs an Apple silicon Mac: Homebrew no longer installs on Intel Macs, so
-there the script stops before installing anything.
+On Apple silicon it installs `uv`, `ffmpeg-full`, `espeak-ng` and
+`auto-editor` with Homebrew (and Homebrew itself if you have none), plus the
+Shotcut app for its renderer and whisper. Homebrew no longer installs on
+Intel Macs, so on one the script downloads the same tools into
+`~/proofcut-mac-trial` instead, and needs only Apple's Command Line Tools.
+`bash proofcut/scripts/mac_trial.sh --uninstall` removes what it added.
 Then [file the report](https://github.com/tydude001/proofcut/issues/new?template=mac-test.yml).
 
 On Windows, from PowerShell:
@@ -277,7 +278,7 @@ Shotcut's portable melt, which renders with no display at all
 | **Python 3.13** and [uv](https://docs.astral.sh/uv/) | everything | `uv sync` installs the Python side. The only runtime dependencies are `mcp` and OpenTimelineIO, which holds the timeline and exports it to other editors. |
 | **ffmpeg / ffprobe** built with `libx264`, freetype and libass | cutting, concatenating, captions, rendering | Fedora's default `ffmpeg-free` has no `libx264`: use RPM Fusion's `ffmpeg`. On a Mac, Homebrew's `ffmpeg` lacks freetype and libass: install `ffmpeg-full` and put `$(brew --prefix ffmpeg-full)/bin` first on `PATH` (it is keg-only). |
 | **[auto-editor](https://github.com/WyattBlue/auto-editor) 31+** | silence and bad-take removal, single-source renders | Install the upstream binary. The PyPI package is a stale 29.x. |
-| **whisper** | word-timed transcription (30+ languages), render verification | Any `openai-whisper` install. `uv tool install --python 3.12 openai-whisper` is the short route (3.12 because torch's Intel-Mac builds stop there); add `--torch-backend cpu` without an NVIDIA GPU (1.9 GB instead of 5.5 GB). Found via `PROOFCUT_WHISPER`, then `PATH`. The CPU build transcribed the demo's 19-second voiceover in 33 seconds. |
+| **whisper** | word-timed transcription (30+ languages), render verification | Any `openai-whisper` install. `uv tool install --python 3.12 openai-whisper` is the short route (3.12 because torch's Intel-Mac builds stop there, and on an Intel Mac also `--with 'numpy<2'`, which that last torch needs); add `--torch-backend cpu` without an NVIDIA GPU (1.9 GB instead of 5.5 GB). Found via `PROOFCUT_WHISPER`, then `PATH`. The CPU build transcribed the demo's 19-second voiceover in 33 seconds. |
 | **MLT (`melt`)** | layered renders (b-roll, cards, music) | Your distribution's MLT package (`mlt` on Fedora, whose `melt` package is an unrelated compression tool), or Kdenlive, whose flatpak copy is found automatically. `PROOFCUT_MELT` overrides both. |
 
 Optional. Each unlocks one feature, `proofcut doctor` reports whether it is

@@ -30,6 +30,21 @@
 #   - whisper from `uv tool`, since Homebrew's openai-whisper pulls llvm and pytorch as formulae.
 #   - no ImageMagick: only cards need it and the demo draws none; doctor reports it unavailable.
 #
+# An Intel Mac takes none of that, because Homebrew refuses one (issue #4). It downloads instead,
+# windows_trial.ps1's way: every tool pinned by URL and SHA-256 into $W/tools, uv's caches,
+# Pythons and tools and whisper's model pointed into $W too, so --uninstall is deleting $W.
+#   - uv's standalone build; ffmpeg and ffprobe from evermeet.cx, whose Intel build has libx264,
+#     freetype, fontconfig and libass; auto-editor's macos-x86_64 release binary.
+#   - melt from Shotcut's dmg (a universal build, macOS 12 or later), copied out of the mounted
+#     image and named by PROOFCUT_MELT, since $W/tools is not where proofcut looks for one.
+#   - espeak-ng as scripts/espeak_ng_lib.py over the espeakng-loader wheel's library: no Intel Mac
+#     program exists outside a package manager, and the wheel's output is byte-identical to the
+#     1.52.0 program's.
+#   - whisper, held to numpy 1.x and to wheels for numba/llvmlite: PyTorch's last Intel Mac build
+#     is 2.2.2, compiled against numpy 1.x, and the newest numba has no Intel Mac wheel.
+#   - OpenTimelineIO has no Intel Mac wheel either, so `uv sync` compiles it, which needs Apple's
+#     Command Line Tools; the kit checks for them before it starts.
+#
 # Everything added is written to installed.txt as it happens, and --uninstall reads that, so it
 # never removes a thing the tester already had. Written for the macOS system bash (3.2): no
 # associative arrays, no ${x,,}.
@@ -64,6 +79,15 @@ APPS="${PROOFCUT_TRIAL_APPS:-/Applications}"
 UVPY="${UV_PYTHON_INSTALL_DIR:-$HOME/.local/share/uv/python}"
 WHISPER_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/whisper"
 FORMULAE="uv ffmpeg-full espeak-ng auto-editor"
+TOOLS="$W/tools"
+
+# The Intel route's downloads: url, sha256, file name.
+PIN_UV="https://github.com/astral-sh/uv/releases/download/0.12.13/uv-x86_64-apple-darwin.tar.gz 5e287ef61cb6a9b61b3a83fef124fd143e400468a7dac794230147a810e17119 uv.tar.gz"
+PIN_FFMPEG="https://evermeet.cx/ffmpeg/ffmpeg-9.0.1.zip 8a8c9e549983409fe6604b9aa665648b7a5def9407fe814c39c8b2ea7f64a48f ffmpeg.zip"
+PIN_FFPROBE="https://evermeet.cx/ffmpeg/ffprobe-9.0.1.zip d13f35db03456b7f65b7edb6437c86e23810fbfe91795e571f5b77211343b4f1 ffprobe.zip"
+PIN_AUTO_EDITOR="https://github.com/WyattBlue/auto-editor/releases/download/31.6.0/auto-editor-macos-x86_64 824405f9e2d28c3bbf30ff27c08dbe631d7137b0fe7c27e1ed647cc3affadf32 auto-editor"
+PIN_SHOTCUT="https://github.com/mltframework/shotcut/releases/download/v26.8.1/shotcut-macos-26.8.1.dmg 7bab10bd96fe3590bb3ba0461d21d3022681574b324bb1c21366d5432cac5657 shotcut.dmg"
+ESPEAK_WHEEL="espeakng-loader==0.2.4"
 
 if [ "$(uname -s)" != "Darwin" ]; then
     echo "This is the Mac test. Run it on a Mac." >&2
@@ -109,6 +133,8 @@ if [ "${1:-}" = "--uninstall" ]; then
     [ -n "$(entries uv-python)" ] && echo "    - the Python versions uv downloaded for the test"
     [ -n "$formulae" ] && echo "    - $(echo "$formulae" | wc -w | tr -d ' ') Homebrew packages: $formulae"
     [ "$brew_itself" -gt 0 ] && echo "    - Homebrew itself (you will be asked separately)"
+    downloads="$(entries downloaded)"   # read now: the manifest goes with the folder
+    [ -n "$downloads" ] && echo "$downloads" | while read -r d; do echo "    - $d, downloaded into the folder below"; done
     echo "    - the proofcut-mac-trial folder"
     echo
     ask "  Go ahead?" || exit 0
@@ -186,6 +212,8 @@ if [ "${1:-}" = "--uninstall" ]; then
     echo
     echo "  Done. The report on your Desktop (proofcut-mac-report.zip) is yours to delete once sent."
     grep -q '^__PAYLOAD__$' "$0" || echo "  The proofcut folder you cloned is yours too: delete it when you are finished with it."
+    [ -n "$downloads" ] &&
+        echo "  Its .venv folder used a Python from the removed folder, so run 'uv sync' again if you keep using it."
     [ "$brew_itself" -gt 0 ] && echo "  Apple's Command Line Tools, which Homebrew set up, stay installed; other apps use them."
     exit 0
 fi
@@ -211,7 +239,47 @@ else
     esac
 fi
 
-cat <<'EOF'
+# Homebrew's installer aborts on anything but arm64 ("Homebrew on macOS is only supported on Apple
+# Silicon processors!"), with no override — the first Intel run, issue #4, 2026-09-17. So an Intel
+# Mac takes the download route whether or not it has a Homebrew: one from before the refusal is
+# unsupported, and may compile ffmpeg-full for hours where Apple silicon pours a bottle.
+# A Terminal under Rosetta reports x86_64 on Apple silicon too, and is sent back to arm64.
+INTEL=0
+if [ "$(uname -m)" != "arm64" ]; then
+    if [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ]; then
+        echo "  This Mac has Apple silicon, but Terminal is running under Rosetta, as an Intel app."
+        echo "  Homebrew will not install that way. Turn off \"Open using Rosetta\" in Terminal's"
+        echo "  Get Info window, open a new Terminal, and run this again."
+        exit 1
+    fi
+    INTEL=1
+    if ! xcode-select -p >/dev/null 2>&1; then
+        echo "  This Intel Mac needs Apple's Command Line Tools first: one of proofcut's parts is"
+        echo "  compiled on the spot. A window is opening to install them. When it has finished,"
+        echo "  run this again. Nothing else has been installed."
+        xcode-select --install 2>/dev/null
+        exit 1
+    fi
+fi
+
+if [ "$INTEL" -eq 1 ]; then
+    cat <<EOF
+
+  proofcut — Mac test (Intel)
+  ---------------------------
+  This will:
+    1. download the tools proofcut needs (uv, ffmpeg, auto-editor, espeak-ng, Shotcut's
+       renderer, whisper) into one folder, $(echo "$W" | sed "s#^$HOME#~#")
+       Nothing is installed anywhere else, and it asks for no password.
+    2. make a short test video and let proofcut edit it
+    3. put proofcut-mac-report.zip on your Desktop, with your home folder's name taken out
+
+  It takes 20–40 minutes, mostly downloading. You can leave it running.
+  To remove everything it added afterwards, run this same file with --uninstall.
+
+EOF
+else
+    cat <<'EOF'
 
   proofcut — Mac test
   -------------------
@@ -224,28 +292,6 @@ cat <<'EOF'
   To remove everything it added afterwards, run this same file with --uninstall.
 
 EOF
-# Homebrew's installer aborts on anything but arm64 ("Homebrew on macOS is only supported on Apple
-# Silicon processors!"), with no override — the first Intel run, issue #4, 2026-09-17. So an Intel
-# Mac with no Homebrew stops here, before the prompt, rather than at the first step. One that already
-# has Homebrew goes on: whether that brew still installs these formulae is itself the finding.
-# A Terminal under Rosetta reports x86_64 on Apple silicon too, and the installer reads the same.
-if [ "$(uname -m)" != "arm64" ]; then
-    find_brew
-    if [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ]; then
-        echo "  This Mac has Apple silicon, but Terminal is running under Rosetta, as an Intel app."
-        echo "  Homebrew will not install that way. Turn off \"Open using Rosetta\" in Terminal's"
-        echo "  Get Info window, open a new Terminal, and run this again."
-        exit 1
-    elif [ -z "$brew_bin" ]; then
-        echo "  This is an Intel Mac, and the test cannot run on it: Homebrew, which installs the"
-        echo "  tools, no longer supports Intel Macs, and its installer stops straight away."
-        echo "  Nothing has been installed. Thank you for trying. Please say so on"
-        echo "  https://github.com/tydude001/proofcut/issues/1 — an Apple silicon Mac is what's needed."
-        exit 1
-    fi
-    echo "  Note: this is an Intel Mac. Homebrew no longer supports Intel, so the install may stop"
-    echo "  early; the report still says where. Some tools may compile from source, which is slower."
-    echo
 fi
 printf "  Press Enter to start, or Ctrl-C to stop. "
 read -r _
@@ -267,7 +313,7 @@ record() { echo "$*" >> "$MANIFEST"; }
 listing() { [ -d "$1" ] && find "$1" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort; }
 whisper_before="$(listing "$WHISPER_CACHE")"
 uvpy_before="$(listing "$UVPY")"
-[ -d "${XDG_CACHE_HOME:-$HOME/.cache}/uv" ] || grep -q '^uv-cache$' "$MANIFEST" || record uv-cache
+[ "$INTEL" -eq 1 ] || [ -d "${XDG_CACHE_HOME:-$HOME/.cache}/uv" ] || grep -q '^uv-cache$' "$MANIFEST" || record uv-cache
 # Never upgrade, reinstall or clean up a package the tester already had.
 export HOMEBREW_NO_INSTALL_UPGRADE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1
 
@@ -368,59 +414,146 @@ else
     echo "proofcut checkout: $(echo "$REPO" | sed "s#$HOME#~#")"
 fi
 
-# Homebrew. Its installer asks for the Mac's password and may install Apple's command line tools.
-find_brew
-if [ -z "$brew_bin" ]; then
+pinned() {  # pinned "URL SHA256 NAME" -> $TOOLS/dl/NAME, checked
+    # shellcheck disable=SC2086  # the three fields, split on purpose
+    set -- $1
+    local file="$TOOLS/dl/$3" got try
+    for try in 1 2 3; do
+        curl -fsSL -o "$file" "$1" && break
+        rm -f "$file"
+        [ "$try" -eq 3 ] && { echo "could not download $1"; return 1; }
+        echo "try $try failed, trying again in $((10 * try))s"
+        sleep $((10 * try))
+    done
+    got="$(shasum -a 256 "$file" | cut -d' ' -f1)"
+    if [ "$got" != "$2" ]; then
+        rm -f "$file"
+        echo "$3: SHA-256 is $got, expected $2. Not using it."
+        return 1
+    fi
+    echo "sha256 ok: $got  $3"
+}
+
+download_tools() {
+    local dl="$TOOLS/dl" mnt="$TOOLS/dl/mnt"
+    mkdir -p "$TOOLS/bin" "$dl" || return 1
+    pinned "$PIN_UV" && tar -xzf "$dl/uv.tar.gz" -C "$dl" &&
+        mv "$dl"/uv-x86_64-apple-darwin/uv "$TOOLS/bin/" || return 1
+    record "downloaded uv 0.12.13"
+    pinned "$PIN_FFMPEG" && unzip -q -o "$dl/ffmpeg.zip" -d "$TOOLS/bin" &&
+        pinned "$PIN_FFPROBE" && unzip -q -o "$dl/ffprobe.zip" -d "$TOOLS/bin" || return 1
+    record "downloaded ffmpeg 9.0.1 (evermeet.cx)"
+    pinned "$PIN_AUTO_EDITOR" && mv "$dl/auto-editor" "$TOOLS/bin/" &&
+        chmod +x "$TOOLS/bin/auto-editor" "$TOOLS/bin/ffmpeg" "$TOOLS/bin/ffprobe" || return 1
+    record "downloaded auto-editor 31.6.0"
+    # Copied out of the image, so nothing stays mounted and nothing goes in /Applications. curl sets
+    # no quarantine flag, so macOS has no first-launch check to make of it.
+    pinned "$PIN_SHOTCUT" &&
+        hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$mnt" "$dl/shotcut.dmg" >/dev/null || return 1
+    cp -R "$mnt/Shotcut.app" "$TOOLS/"
+    local rc=$?
+    hdiutil detach "$mnt" >/dev/null || hdiutil detach -force "$mnt" >/dev/null
+    [ $rc -eq 0 ] || return 1
+    record "downloaded Shotcut 26.8.1 (for its melt renderer)"
+    # make_demo.py calls `espeak-ng -w OUT -s RATE TEXT`, and this answers exactly that.
+    cat > "$TOOLS/bin/espeak-ng" <<EOF
+#!/bin/sh
+exec "$TOOLS/bin/uv" run --no-project --python 3.12 --with $ESPEAK_WHEEL python "$REPO/scripts/espeak_ng_lib.py" "\$@"
+EOF
+    chmod +x "$TOOLS/bin/espeak-ng"
+    record "downloaded espeak-ng 1.52.0 (the espeakng-loader library, to build the demo voice)"
+    rm -rf "$dl"
+}
+
+install_by_download() {
+    # Everything uv and whisper would otherwise put under the home folder goes in $W. Only-managed,
+    # or `uv sync` takes a Python the Mac already has and the .venv depends on something outside.
+    export UV_CACHE_DIR="$W/uv/cache" UV_PYTHON_INSTALL_DIR="$W/uv/python"
+    export UV_TOOL_DIR="$W/uv/tools" UV_TOOL_BIN_DIR="$W/uv/bin" UV_PYTHON_PREFERENCE=only-managed
+    export XDG_CACHE_HOME="$W/cache"   # whisper keeps its speech model under here
+    export PATH="$UV_TOOL_BIN_DIR:$TOOLS/bin:$PATH"
+    export PROOFCUT_MELT="$TOOLS/Shotcut.app/Contents/MacOS/melt"
+
+    if ! step "download tools (pinned, checked by SHA-256)" download_tools; then finish; exit 1; fi
+    if ! step "espeak-ng runs from the library" espeak-ng -w "$W/espeak-check.wav" -s 150 "one two three"; then
+        finish; exit 1
+    fi
+    # PyTorch's last Intel Mac wheel is 2.2.2, built against numpy 1.x: under numpy 2 it cannot hand
+    # whisper an array. numba's and llvmlite's newest have no Intel Mac wheel, and would compile.
+    if ! step "install whisper (uv tool)" uv tool install --python 3.12 --with "numpy<2" \
+        --no-build-package numba --no-build-package llvmlite openai-whisper; then
+        finish; exit 1
+    fi
+    record "downloaded whisper (speech-to-text), and the speech model it downloads"
     echo
-    echo "Homebrew is not installed. Installing it now — it will ask for your Mac password."
-    # A function, so step's `$ ...` line names it rather than printing the installer's whole source.
-    install_homebrew() { /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; }
-    step "install Homebrew" install_homebrew
+    echo "melt: $PROOFCUT_MELT"
+    echo "whisper: $(command -v whisper)"
+    echo "ffmpeg: $(command -v ffmpeg)"
+    echo "auto-editor: $(auto-editor --version)"
+    "$UV_TOOL_DIR/openai-whisper/bin/python" -c "import torch, numpy; print('torch', torch.__version__, '· numpy', numpy.__version__)"
+}
+
+install_with_homebrew() {
+    # Homebrew. Its installer asks for the Mac's password and may install Apple's command line tools.
     find_brew
-    if [ -z "$brew_bin" ]; then fail="install Homebrew"; finish; exit 1; fi
-    record homebrew-itself
-fi
-export PATH="$HOME/.local/bin:$PATH"
+    if [ -z "$brew_bin" ]; then
+        echo
+        echo "Homebrew is not installed. Installing it now — it will ask for your Mac password."
+        # A function, so step's `$ ...` line names it rather than printing the installer's whole source.
+        install_homebrew() { /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; }
+        step "install Homebrew" install_homebrew
+        find_brew
+        if [ -z "$brew_bin" ]; then fail="install Homebrew"; finish; exit 1; fi
+        record homebrew-itself
+    fi
+    export PATH="$HOME/.local/bin:$PATH"
 
-versions_before="$(brew list --formula --versions | sort)"
-formulae_before="$(brew list --formula -1 | sort)"
-# shellcheck disable=SC2086
-step "install tools (Homebrew)" brew install $FORMULAE
-brew_rc=$?
-record_new_formulae
-[ $brew_rc -eq 0 ] || { finish; exit 1; }
-# Keg-only: installed but not linked, so without this every `ffmpeg` below is auto-editor's plain one.
-ffmpeg_full="$(brew --prefix ffmpeg-full)"
-export PATH="$ffmpeg_full/bin:$PATH"
+    versions_before="$(brew list --formula --versions | sort)"
+    formulae_before="$(brew list --formula -1 | sort)"
+    # shellcheck disable=SC2086
+    step "install tools (Homebrew)" brew install $FORMULAE
+    brew_rc=$?
+    record_new_formulae
+    [ $brew_rc -eq 0 ] || { finish; exit 1; }
+    # Keg-only: installed but not linked, so without this every `ffmpeg` below is auto-editor's plain one.
+    ffmpeg_full="$(brew --prefix ffmpeg-full)"
+    export PATH="$ffmpeg_full/bin:$PATH"
 
-if [ -d "$APPS/Shotcut.app" ]; then
+    if [ -d "$APPS/Shotcut.app" ]; then
+        echo
+        echo "── Shotcut is already installed; using it"
+    else
+        if ! step "install Shotcut (for its melt renderer)" brew install --cask shotcut; then finish; exit 1; fi
+        record "cask shotcut"
+        # proofcut runs melt from inside the app, never the app itself, so macOS's first-launch prompt has
+        # nowhere to appear. Homebrew has already checked the download against its checksum.
+        xattr -dr com.apple.quarantine "$APPS/Shotcut.app" 2>/dev/null
+    fi
+
+    # A whisper already on PATH is used, never replaced: uv refuses to overwrite one it did not
+    # install ("Executable already exists", measured on the dry run), and it is the tester's anyway.
+    if command -v whisper >/dev/null; then
+        echo
+        echo "── whisper is already installed ($(command -v whisper)); using it"
+    else
+        step "install whisper (uv tool)" uv tool install --python 3.12 openai-whisper
+        whisper_rc=$?
+        uv tool list 2>/dev/null | grep -q '^openai-whisper ' && record "uv-tool openai-whisper"
+        [ $whisper_rc -eq 0 ] || { finish; exit 1; }
+    fi
     echo
-    echo "── Shotcut is already installed; using it"
-else
-    if ! step "install Shotcut (for its melt renderer)" brew install --cask shotcut; then finish; exit 1; fi
-    record "cask shotcut"
-    # proofcut runs melt from inside the app, never the app itself, so macOS's first-launch prompt has
-    # nowhere to appear. Homebrew has already checked the download against its checksum.
-    xattr -dr com.apple.quarantine "$APPS/Shotcut.app" 2>/dev/null
-fi
+    # shellcheck disable=SC2086
+    brew list --versions $FORMULAE
+    echo "shotcut: $(brew list --cask --versions shotcut 2>/dev/null || echo "not from Homebrew")"
+    echo "whisper: $(command -v whisper)"
+    echo "ffmpeg: $(command -v ffmpeg)"
+}
 
-# A whisper already on PATH is used, never replaced: uv refuses to overwrite one it did not
-# install ("Executable already exists", measured on the dry run), and it is the tester's anyway.
-if command -v whisper >/dev/null; then
-    echo
-    echo "── whisper is already installed ($(command -v whisper)); using it"
+if [ "$INTEL" -eq 1 ]; then
+    install_by_download
 else
-    step "install whisper (uv tool)" uv tool install --python 3.12 openai-whisper
-    whisper_rc=$?
-    uv tool list 2>/dev/null | grep -q '^openai-whisper ' && record "uv-tool openai-whisper"
-    [ $whisper_rc -eq 0 ] || { finish; exit 1; }
+    install_with_homebrew
 fi
-echo
-# shellcheck disable=SC2086
-brew list --versions $FORMULAE
-echo "shotcut: $(brew list --cask --versions shotcut 2>/dev/null || echo "not from Homebrew")"
-echo "whisper: $(command -v whisper)"
-echo "ffmpeg: $(command -v ffmpeg)"
 
 cd "$REPO" || { fail="enter repo"; finish; exit 1; }
 if ! step "uv sync" uv sync; then finish; exit 1; fi
