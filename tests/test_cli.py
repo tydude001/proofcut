@@ -25,8 +25,9 @@ from pathlib import Path
 import pytest
 
 from proofcut import ops
+from proofcut import timeline as tl
 from proofcut.cli import _parse_timecode, _slot_assignments, _time_span, main
-from proofcut.project import ProjectError
+from proofcut.project import Project, ProjectError
 
 needs_ffprobe = pytest.mark.skipif(
     shutil.which("ffprobe") is None, reason="ffprobe is not installed"
@@ -403,6 +404,38 @@ def test_locate_phrase_is_a_fourth_mutually_exclusive_mode(
     with pytest.raises(SystemExit) as excinfo:
         main(["-C", str(project), "locate", clip_id, "--words", "0", "--phrase", "w10 w11"])
     assert excinfo.value.code == 2
+
+
+def test_events_import_and_locate_event_from_the_cli(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The CLI hop only: `--import`/`--origin` and `locate --event` reach ops.
+    The op itself is tested in test_ops_events.py."""
+    project = Project.create(tmp_path / "proj")
+    media = tmp_path / "rec.mp4"
+    media.write_bytes(b"x")
+    manifest = project.read_manifest()
+    manifest["clips"] = [
+        {"clip_id": "rec", "source": str(media), "duration": 10.0, "has_video": True,
+         "has_audio": False}
+    ]
+    project.write_manifest(manifest)
+    tl.write(
+        tl.to_otio(tl.Edit([tl.Segment("rec", 0.0, 10.0)]), {"rec": manifest["clips"][0]},
+                   rate=1000.0, name="proj"),
+        project.timeline_path,
+    )
+    marks = tmp_path / "marks.json"
+    marks.write_text(json.dumps({"start": 50.0, "sent": 53.0}), encoding="utf-8")
+
+    root = str(project.root)
+    assert main(["-C", root, "events", "rec", "--import", str(marks), "--origin", "start"]) == 0
+    assert json.loads(capsys.readouterr().out)["count"] == 2
+    assert main(["-C", root, "events", "rec", "--name", "click", "--add", "4.5"]) == 0
+    assert json.loads(capsys.readouterr().out)["resolved"]["address"] == "click#0"
+    assert main(["-C", root, "locate", "rec", "--event", "sent"]) == 0
+    located = json.loads(capsys.readouterr().out)
+    assert (located["mode"], located["timeline_start"]) == ("event", pytest.approx(3.0))
 
 
 # -- `restore` --------------------------------------------------------------

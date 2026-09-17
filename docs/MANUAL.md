@@ -113,6 +113,30 @@ distinguishes that from a time the recording never reached. A range a cut
 split comes back as one piece per survivor, so "half of it is still in there"
 is a readable answer rather than a short one.
 
+## Events — named instants in a screen recording
+
+A screen recording has few words to hang an edit on. What it has is the
+recorder's own log of when things happened. `events` keeps that log on the
+clip, in the recording's own seconds, so a cut can no more invalidate an
+event than a word index:
+
+```sh
+proofcut events rec --import marks.json --origin start           # {"start": …, "sent": …}
+proofcut events rec --import keys.json --name key --offset 1789321344.5   # a bare list of times
+proofcut events rec --name click --add 41.2                      # one by hand
+proofcut events rec                                              # list, with addresses
+proofcut locate rec --event sent                                 # where it plays now
+proofcut locate rec --event 'key#12'                             # the 13th keystroke
+```
+
+A recorder logs wall-clock stamps, so `--origin` names the key holding the
+recording's start (`--offset` subtracts seconds, for a bare list). A set
+with any event outside the clip is refused whole, since a wrong clock moves
+every event by the same amount. An import replaces only the names the file
+brings, so a marks file and a keystroke file combine. A name that repeats
+has to be addressed as `name#k`, counted from 0 in time order, and every
+resolution echoes three events either side.
+
 ## Captions
 
 Captions are generated from the *timeline*, not the transcript, so they stay

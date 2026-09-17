@@ -110,6 +110,7 @@ EXPECTED_TOOLS = {
     "continuity_reject",
     "continuity_ls",
     "synopsis",
+    "events",
     "broll_brief",
     "verify",
     "fonts",
@@ -647,6 +648,7 @@ TOOL_TO_COMMAND = {
     "continuity_reject": "continuity-reject",
     "continuity_ls": "continuity-ls",
     "synopsis": "synopsis",
+    "events": "events",
     "broll_brief": "broll-brief",
     "verify": "verify",
     "fonts": "fonts",
@@ -6358,6 +6360,37 @@ def test_locate_maps_a_word_forward_through_an_earlier_cut(
 
 
 @needs_ffprobe
+def test_an_imported_event_locates_through_a_cut_over_the_wire(
+    tmp_path: Path, sources: tuple[Path, Path]
+) -> None:
+    """`events` registers and `locate` takes its address, end to end: the
+    recorder's wall clock moved by `origin`, then a cut ahead of the event."""
+    audio, transcript = sources
+    project = tmp_path / "proj"
+    marks = tmp_path / "marks.json"
+    marks.write_text(json.dumps({"start": 1000.0, "sent": 1009.5}), encoding="utf-8")
+
+    async def body(session: ClientSession) -> Any:
+        client = Client(session)
+        clip_id = await _seeded(client, project, audio, transcript)
+        imported = await client.call(
+            "events", path=str(project), clip_id=clip_id, source=str(marks), origin="start"
+        )
+        await client.call(
+            "cut_by_transcript", path=str(project), clip_id=clip_id, cut=[[2, 3]]
+        )
+        located = await client.call("locate", path=str(project), clip_id=clip_id, event="sent")
+        return {"imported": imported, "located": located}
+
+    out = anyio.run(_with_server, body)
+
+    assert out["imported"]["count"] == 2
+    assert out["located"]["source_start"] == pytest.approx(9.5)
+    assert out["located"]["timeline_start"] == pytest.approx(9.5 - 1.9)
+    assert out["located"]["event"]["address"] == "sent#0"
+
+
+@needs_ffprobe
 def test_locate_echoes_the_words_and_their_neighbours(
     tmp_path: Path, sources: tuple[Path, Path]
 ) -> None:
@@ -8069,7 +8102,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
     hung on the parameter in `server.py` that never reached `tools/list` is
     exactly the failure this pins: the two tools whose `path` means *no
     project* (`fonts`, `pack_show`) have to say their own thing, and the
-    other 88 share `ProjectPath`'s sentence."""
+    other 89 share `ProjectPath`'s sentence."""
 
     async def body(session: ClientSession) -> Any:
         return await session.list_tools()
@@ -8087,7 +8120,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
             assert "no project" in description, tool.name
         else:
             assert "bound project" in description, tool.name
-    assert seen == 90
+    assert seen == 91
 
 
 def test_no_tool_advertises_an_argument_with_nothing_said_about_it() -> None:

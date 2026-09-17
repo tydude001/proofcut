@@ -15943,3 +15943,65 @@ MANUAL.md's headings, every absolute link names a file in the tree, and
 nothing outside the README links into its anchors, so the merged heading
 cost no reader. Both screenshots are unchanged, so `capture_screenshots.py`
 was not run. PyPI's project page keeps the old README until the next bump.
+
+## Events, and the pan that snapped to whole pixels — 2026-09-16
+
+The first two steps of docs/plans/NATIVE.md § Part B, taken on Tyler's
+go-ahead to build the launch clip's grammar next.
+
+**B1: `events`.** A clip now carries named instants: `[{name, at}]` on its
+record, in source seconds, sorted by time. That is the `synopsis` shape, so
+`clip_rm` and `reel` handle events with no change of their own. One tool,
+`events`, lists, imports, adds one and clears. `locate` takes `event=`, which
+resolves into its existing instant mode, so an event says where it plays now
+and `present: false` when a cut took it. The address is `name`, or `name#k`
+counted from 0 in time order. A bare name that repeats is refused, and every
+resolution echoes three events either side, following the word tools'
+convention. A set with any event outside the clip is refused whole, and a
+value past 10⁶ is called a wall-clock stamp, with `origin` named as the fix.
+Additive and optional, so no schema bump. **No other tool takes an event
+yet**: each later Part B step adds the address where it needs it.
+
+**Found by importing the launch recorder's real files, not by the tests:**
+the recorder writes `marks.json` and `keys.json`, and "an import replaces
+the clip's events" meant the keystrokes erased the marks. An import now
+replaces only the names it brings. On `launch-v4/runs/20260913-174219` the
+pair lands as 289 events (10 marks, 279 keys) against a stand-in for the
+146 s take. With 21–45 s cut, `words` moved from 46.544 to 22.544 while
+`sent`, `typed` and `key#0` stayed where they were
+(`~/proofcut-work/spikes/events-live/`).
+
+**B2's first measurement: a slow pan at constant zoom judders, but only at
+exactly 1:1.** A 2560x1440 video whose only feature is one hard edge was
+placed on a 1080p canvas by a `qtblend` rect moving 30 px in x over 300
+frames. The edge was read back per frame to sub-pixel precision
+(`~/proofcut-work/spikes/eased-pan/`):
+
+| scale | frames standing still, of 299 | largest step | worst error from the line |
+|---|---|---|---|
+| 1.0 (video or still) | 269 | 1.0 px | 0.50 px |
+| 0.75 | 0 | 0.13 px | 0.06 px |
+| 1.333 (video or still) | 0 | 0.16 px | 0.24 px |
+| 1.5 | 0 | 0.15 px | 0.10 px |
+| 2561/2560 | 0 | 0.11 px | 0.01 px |
+
+The retime spike's FINDINGS named whole-pixel stepping for pure translation
+without saying it was a 1:1 case, which its colour producer most likely was,
+rendered at the size it was asked for. Upstream
+`filter_qtblend.cpp` has swscale do the resize and Qt only the remainder,
+so a remainder of exactly 1 is a bare translate, which Qt's raster painter
+puts on the integer grid. Easing does not change it: cubic in-out at 1:1
+also moved in whole pixels.
+
+**That case was already reachable from shipped `interp`**, since a 1080p
+crop of a 1440p screen recording is exactly 1:1. `mlt._off_unity` now draws
+a slide's own key one pixel larger when it is at the source's size. Only
+the key carrying `=` is touched, because it governs the moving segment, so a
+held window keeps its exact rect and every document without a slide is
+byte-identical. Through the real writer and an h264 render, the same slide
+had 266 of 297 frames standing still before the fix and 2 after, with the
+largest step down from 1.01 px to 0.38 px.
+
+Not measured: whether mipmapping lands some *other* scale on a remainder of
+exactly 1 in a newer MLT (the 7.41 build here smoothed every non-unity
+scale tried), and a pan with rotation.

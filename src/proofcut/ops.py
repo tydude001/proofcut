@@ -1237,6 +1237,292 @@ def synopsis(
     }
 
 
+# -- events ----------------------------------------------------------------
+
+#: Named instants in a clip's own source — `typing_started`, `sent`, a
+#: keystroke — the anchor a screen recording has where a talking head has
+#: words. Stored on the clip record as `[{name, at}]` in *source* seconds,
+#: sorted by time, so an event indexes the recording the way a footage
+#: description does and no edit can invalidate one; a derivation copies the
+#: record and inherits them. Additive and optional, so no schema bump.
+#: docs/plans/NATIVE.md § Part B, B1.
+EVENTS_KEY = "events"
+
+#: How many events either side of a resolved one are echoed back, the word
+#: tools' own convention (CLAUDE.md): a neighbour is what shows `key#12` was
+#: meant to be `key#13`.
+EVENT_ECHO = 3
+
+#: A value this large is a wall-clock stamp, not a second into a recording —
+#: the refusal says to pass `origin` rather than listing thousands of
+#: out-of-range events.
+_EPOCH_LIKE = 1e6
+
+
+def _event_rows(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """The clip's events, each with its `address` — `name#k`, k counted per
+    name in time order from 0, the form `resolve_event` accepts."""
+    seen: dict[str, int] = {}
+    rows = []
+    for event in record.get(EVENTS_KEY, []):
+        k = seen.get(event["name"], 0)
+        seen[event["name"]] = k + 1
+        rows.append({"name": event["name"], "at": event["at"], "address": f"{event['name']}#{k}"})
+    return rows
+
+
+def _event_name(name: Any) -> str:
+    text = str(name).strip()
+    if not text or "#" in text or any(ch.isspace() for ch in text):
+        raise ProjectError(
+            f"event name {name!r} must be one token with no '#' — '#' is what "
+            "separates a name from its occurrence in an address like key#3"
+        )
+    return text
+
+
+def _parse_event_file(
+    source: Path, name: str | None, origin: str | None, offset: float
+) -> list[tuple[str, float]]:
+    """Read a recorder's event file into `(name, seconds)` pairs on its own clock.
+
+    Two shapes, both what the launch recorder wrote: an object of
+    `name → seconds` or `name → [seconds, ...]` (`marks.json`), and a bare list
+    of seconds (`keys.json`), which needs `name`. `origin` names a key in the
+    object whose value is the recording's zero — the recorder's clock is the
+    wall clock — and `offset` is subtracted after it, for a recording that
+    started some seconds after that zero.
+    """
+    try:
+        data = json.loads(source.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise ProjectError(f"no event file at {source}") from None
+    except (OSError, ValueError) as exc:
+        raise ProjectError(f"cannot read {source} as JSON: {exc}") from None
+
+    pairs: list[tuple[str, Any]] = []
+    if isinstance(data, list):
+        if name is None:
+            raise ProjectError(
+                f"{source.name} is a bare list of times, so name= has to say what they are"
+            )
+        pairs = [(name, value) for value in data]
+    elif isinstance(data, dict):
+        if name is not None:
+            raise ProjectError(
+                f"{source.name} names its own events; name= is only for a bare list of times"
+            )
+        for key, value in data.items():
+            values = value if isinstance(value, list) else [value]
+            pairs.extend((key, v) for v in values)
+    else:
+        raise ProjectError(
+            f"{source.name} is neither an object of name → seconds nor a list of seconds"
+        )
+
+    zero = 0.0
+    if origin is not None:
+        if not isinstance(data, dict) or origin not in data:
+            raise ProjectError(f"origin {origin!r} is not a key in {source.name}")
+        if isinstance(data[origin], (list, bool)):
+            raise ProjectError(f"origin {origin!r} has to be a single time, not a list")
+        zero = float(data[origin])
+
+    parsed = []
+    for key, value in pairs:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ProjectError(f"event {key!r} has a non-numeric time {value!r}")
+        parsed.append((_event_name(key), float(value) - zero - offset))
+    return parsed
+
+
+def _check_event_times(
+    pairs: list[tuple[str, float]], duration: float, clip_id: str
+) -> None:
+    """Refuse the whole set if any event is outside the clip — never keep the rest.
+
+    An event past the end is a wrong clock, not a stray: every one of them is
+    off by the same amount, so keeping the ones that happen to land inside
+    would index the wrong moments with nothing to say so.
+    """
+    outside = [(n, t) for n, t in pairs if not (0.0 <= t <= duration + 1e-6)]
+    if not outside:
+        return
+    shown = ", ".join(f"{n}={t:.3f}" for n, t in outside[:4])
+    hint = ""
+    if any(abs(t) > _EPOCH_LIKE for _, t in outside):
+        hint = (
+            " — these look like wall-clock stamps: pass origin= naming the key "
+            "that holds the recording's start"
+        )
+    raise ProjectError(
+        f"{len(outside)} of {len(pairs)} events fall outside {clip_id}'s "
+        f"{duration:.3f}s ({shown}){hint}"
+    )
+
+
+def resolve_event(record: dict[str, Any], address: str) -> dict[str, Any]:
+    """Resolve `name` or `name#k` against a clip record, echoing its neighbours.
+
+    A bare name must be unique — a recorder that logs every keystroke as `key`
+    has hundreds, and picking the first silently is the index-one-off failure
+    the echo exists to show. `k` counts that name's events in time order from
+    0, the way word indices count from 0.
+    """
+    clip_id = record["clip_id"]
+    rows = _event_rows(record)
+    if not rows:
+        raise ProjectError(f"{clip_id} has no events — import some with events source=")
+    name, sep, index = str(address).strip().partition("#")
+    matches = [i for i, row in enumerate(rows) if row["name"] == name]
+    if not matches:
+        known = sorted({row["name"] for row in rows})
+        raise ProjectError(f"{clip_id} has no event {name!r} (it has: {', '.join(known)})")
+    if sep:
+        try:
+            k = int(index)
+        except ValueError:
+            raise ProjectError(f"{address!r}: the part after '#' is an occurrence number") from None
+        if not 0 <= k < len(matches):
+            raise ProjectError(
+                f"{clip_id} has {len(matches)} {name!r} events, so {address!r} is out of "
+                f"range (#0 to #{len(matches) - 1})"
+            )
+        pos = matches[k]
+    elif len(matches) > 1:
+        raise ProjectError(
+            f"{clip_id} has {len(matches)} {name!r} events — say which, as "
+            f"{name}#0 to {name}#{len(matches) - 1}"
+        )
+    else:
+        pos = matches[0]
+    lo, hi = max(0, pos - EVENT_ECHO), pos + EVENT_ECHO + 1
+    return {
+        **rows[pos],
+        "clip_id": clip_id,
+        "context": rows[lo:hi],
+    }
+
+
+def events(
+    path: Path | str,
+    clip_id: str | None = None,
+    *,
+    source: Path | str | None = None,
+    name: str | None = None,
+    origin: str | None = None,
+    offset: float = 0.0,
+    at: float | None = None,
+    event: str | None = None,
+    clear: bool = False,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Read, import, add or clear a clip's named instants.
+
+    One entry point, `synopsis`'s shape: no `clip_id` counts every clip's
+    events; `clip_id` alone lists one clip's, each with the `address` other
+    tools take; `event` alone resolves one address and echoes its neighbours;
+    `source` imports a recorder's file and **replaces every event of the names
+    it brings**, leaving other names alone — a recorder writes its marks and its
+    keystrokes to two files, and each import must not erase the other — so a
+    repeat import lands the same set; `name` + `at` adds one (a repeat is a
+    no-op); `clear` removes them all.
+
+    Times are seconds into the clip's own recording. A recorder's file is on
+    its own clock, so `origin`/`offset` move it onto the recording's, and a set
+    with any event outside the clip is refused whole (`_check_event_times`).
+    `plan` resolves and validates without writing.
+    """
+    project = Project.open(path)
+    manifest = project.read_manifest()
+    clips = manifest.get("clips", [])
+
+    if clip_id is None:
+        if any(v is not None for v in (source, name, at, event)) or clear:
+            raise ProjectError("naming a clip_id is what says whose events these are")
+        return {
+            "clips": [
+                {"clip_id": c["clip_id"], "count": len(c.get(EVENTS_KEY, []))}
+                for c in clips
+            ],
+            "total": sum(len(c.get(EVENTS_KEY, [])) for c in clips),
+        }
+
+    record = media.get_clip(project, clip_id)
+    importing = source is not None
+    adding = at is not None
+    if sum([importing, adding, bool(clear), event is not None]) > 1:
+        raise ProjectError(
+            "pass one of source= (import), name= with at= (add one), event= "
+            "(resolve one) or clear — not several"
+        )
+    if not importing and (origin is not None or offset):
+        raise ProjectError("origin= and offset= only move an imported file's clock")
+    if name is not None and not (importing or adding):
+        raise ProjectError("name= goes with at= (add one) or with a bare-list source=")
+
+    if event is not None:
+        return {"resolved": resolve_event(record, event)}
+
+    before = list(record.get(EVENTS_KEY, []))
+    duration = float(record.get("duration") or 0.0)
+    if importing:
+        pairs = _parse_event_file(Path(source).expanduser(), name, origin, float(offset))
+        _check_event_times(pairs, duration, clip_id)
+        brought = {n for n, _ in pairs}
+        after = [e for e in before if e["name"] not in brought]
+        after += [{"name": n, "at": round(t, 6)} for n, t in pairs]
+    elif adding:
+        if name is None:
+            raise ProjectError("at= needs name= — an event is a named instant")
+        pairs = [(_event_name(name), float(at))]
+        _check_event_times(pairs, duration, clip_id)
+        entry = {"name": pairs[0][0], "at": round(pairs[0][1], 6)}
+        after = before if entry in before else [*before, entry]
+    elif clear:
+        after = []
+    else:
+        rows = _event_rows(record)
+        return {"clip_id": clip_id, "events": rows, "count": len(rows)}
+
+    after = sorted(after, key=lambda e: (e["at"], e["name"]))
+    changed = after != before
+    report: dict[str, Any] = {
+        "clip_id": clip_id,
+        "count": len(after),
+        "was": len(before),
+        "names": {n: sum(1 for e in after if e["name"] == n) for n in sorted({e["name"] for e in after})},
+        "written": False,
+        "plan": bool(plan),
+    }
+    if changed and not plan:
+        if after:
+            record[EVENTS_KEY] = after
+        else:
+            record.pop(EVENTS_KEY, None)
+        for index, existing in enumerate(clips):
+            if existing["clip_id"] == clip_id:
+                clips[index] = record
+                break
+        project.write_manifest(manifest)
+        report["written"] = True
+    if adding:
+        report["resolved"] = resolve_event(
+            {"clip_id": clip_id, EVENTS_KEY: after}, _address_of(after, entry)
+        )
+    return report
+
+
+def _address_of(events_list: list[dict[str, Any]], entry: dict[str, Any]) -> str:
+    k = 0
+    for event in events_list:
+        if event == entry:
+            return f"{entry['name']}#{k}"
+        if event["name"] == entry["name"]:
+            k += 1
+    raise AssertionError("entry not in list")
+
+
 # -- cards -----------------------------------------------------------------
 #
 # Step 1 of PLAN.md § Motion graphics and templates: the asset a `card:` cue
@@ -6065,6 +6351,7 @@ def locate(
     phrase: str | None = None,
     after: int = -1,
     occurrence: int | None = None,
+    event: str | None = None,
 ) -> dict[str, Any]:
     """Where does this source word or source time play in the current render?
 
@@ -6080,7 +6367,8 @@ def locate(
     an interval), or `phrase` — a phrase naturally *is* a range, so it
     resolves straight to `first`/`last` with no edge to pick
     (`Transcript.resolve`; `after`/`occurrence` disambiguate a phrase that
-    matches more than once).
+    matches more than once), or `event` — a named instant (`events`), which
+    resolves to `source_start` and is echoed as `event` with its neighbours.
 
     The distinction the payload exists to keep straight is **cut** versus
     **never there**. An interval that has been edited out returns
@@ -6116,16 +6404,17 @@ def locate(
     by_words = first is not None or last is not None
     by_time = source_start is not None or source_end is not None
     by_phrase = phrase is not None
-    if sum([by_words, by_time, by_phrase]) > 1:
+    by_event = event is not None
+    if sum([by_words, by_time, by_phrase, by_event]) > 1:
         raise tl.TimelineError(
-            "pass first/last, source_start/source_end, or phrase — not both "
-            "(or all three) — they are different ways of naming the same "
+            "pass one of first/last, source_start/source_end, phrase or event — "
+            "not both (or more) — they are different ways of naming the same "
             "thing, and a call giving more than one cannot say which it meant"
         )
-    if not by_words and not by_time and not by_phrase:
+    if not (by_words or by_time or by_phrase or by_event):
         raise tl.TimelineError(
             "locate needs something to locate: first= (a word index), "
-            "source_start= (seconds into the recording), or phrase="
+            "source_start= (seconds into the recording), phrase= or event="
         )
     if by_words and first is None:
         raise tl.TimelineError("last= needs first= — a range has to start somewhere")
@@ -6135,6 +6424,12 @@ def locate(
     project = Project.open(path)
     clip = media.get_clip(project, clip_id)
     edit = _load_edit(project)
+
+    resolved_event = None
+    if by_event:
+        resolved_event = resolve_event(clip, event)
+        source_start = resolved_event["at"]
+        by_time = True
 
     parsed: tx.Transcript | None
     if by_words or by_phrase:
@@ -6185,7 +6480,12 @@ def locate(
     requested = hi - lo
     contiguous = all(a.contiguous_with(b) for a, b in pairwise(placements))
 
-    mode = "phrase" if by_phrase else ("words" if by_words else ("instant" if instant else "time"))
+    if by_event:
+        mode = "event"
+    elif by_phrase:
+        mode = "phrase"
+    else:
+        mode = "words" if by_words else ("instant" if instant else "time")
     result: dict[str, Any] = {
         "clip_id": clip_id,
         "mode": mode,
@@ -6204,6 +6504,8 @@ def locate(
         # two-clock note above. 0.0 with no head configured.
         "head_seconds": _head_seconds(project),
     }
+    if resolved_event is not None:
+        result["event"] = resolved_event
 
     # "Cut" and "never recorded" look identical from the placements alone —
     # missing either way — and only the clip's own duration tells them apart.

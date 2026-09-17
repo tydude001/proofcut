@@ -713,6 +713,44 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_synopsis.add_argument("--clear", action="store_true", help="remove this clip's synopsis")
 
+    p_events = sub.add_parser(
+        "events",
+        help="named instants in a recording (sent, typing_started, a keystroke) — "
+        "list, import a recorder's JSON, add one, or clear",
+    )
+    p_events.add_argument("clip_id", nargs="?", help="omit to count every clip's events")
+    p_events.add_argument(
+        "--import",
+        dest="source",
+        metavar="FILE",
+        help="a recorder's JSON (name → seconds, or a bare list with --name); "
+        "replaces this clip's events of the names it brings",
+    )
+    p_events.add_argument(
+        "--origin",
+        help="the key in the imported file holding the recording's start, "
+        "subtracted from every time",
+    )
+    p_events.add_argument(
+        "--offset", type=float, default=0.0, help="seconds subtracted after --origin"
+    )
+    p_events.add_argument("--name", help="the event to --add, or what a bare list's times are")
+    p_events.add_argument(
+        "--add",
+        dest="at",
+        type=_parse_timecode,
+        metavar="TIMECODE",
+        help="add one event, named by --name, at this source instant",
+    )
+    p_events.add_argument(
+        "--resolve",
+        dest="event",
+        metavar="NAME[#K]",
+        help="resolve one address and echo its neighbours",
+    )
+    p_events.add_argument("--clear", action="store_true", help="remove every event on this clip")
+    p_events.add_argument("--plan", action="store_true", help="validate without writing")
+
     p_broll = sub.add_parser(
         "broll-brief",
         help="the whole b-roll question as data: the catalogue, and every position "
@@ -837,6 +875,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_where.add_argument(
         "--phrase", help="resolve against clip_id's transcript — a phrase naturally is a range"
+    )
+    p_where.add_argument(
+        "--event", metavar="NAME[#K]", help="a named instant from `events` (k counts from 0)"
     )
     p_locate.add_argument(
         "--after", type=int, default=-1, help="only match --phrase forward of this word index"
@@ -2385,7 +2426,7 @@ def _cmd_locate(args: argparse.Namespace) -> int:
         source_start, source_end = args.span
     elif args.phrase is not None:
         phrase = args.phrase
-    else:
+    elif args.event is None:
         source_start = args.at
     return _emit(
         ops.locate(
@@ -2398,6 +2439,7 @@ def _cmd_locate(args: argparse.Namespace) -> int:
             phrase=phrase,
             after=args.after,
             occurrence=args.occurrence,
+            event=args.event,
         )
     )
 
@@ -2914,6 +2956,23 @@ def _cmd_synopsis(args: argparse.Namespace) -> int:
     return _emit(ops.synopsis(args.project, args.clip_id, args.text, clear=args.clear))
 
 
+def _cmd_events(args: argparse.Namespace) -> int:
+    return _emit(
+        ops.events(
+            args.project,
+            args.clip_id,
+            source=args.source,
+            name=args.name,
+            origin=args.origin,
+            offset=args.offset,
+            at=args.at,
+            event=args.event,
+            clear=args.clear,
+            plan=args.plan,
+        )
+    )
+
+
 def _cmd_broll_brief(args: argparse.Namespace) -> int:
     return _emit(ops.broll_brief(args.project, fps=args.fps))
 
@@ -3245,6 +3304,7 @@ _COMMANDS = {
     "continuity-ls": _cmd_continuity_ls,
     "reframe-sheet": _cmd_reframe_sheet,
     "synopsis": _cmd_synopsis,
+    "events": _cmd_events,
     "broll-brief": _cmd_broll_brief,
     "verify": _cmd_verify,
     "frames": _cmd_frames,

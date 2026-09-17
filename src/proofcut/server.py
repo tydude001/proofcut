@@ -55,7 +55,7 @@ INSTRUCTIONS = (
     "generates footage.\n\n"
     "Start any project with timeline_status, finish_report and list_media.\n\n"
     "Phases, and the tools to search for in each:\n"
-    "- footage in: init, import_media, list_media, footage_sheet, synopsis\n"
+    "- footage in: init, import_media, list_media, footage_sheet, synopsis, events\n"
     "- transcript: transcribe or attach_transcript; get_transcript with search=\n"
     "- cut: seed_timeline, then cut_by_transcript / cut_by_time, restore, locate\n"
     "- picture: cue_add (b-roll under a line), broll_brief, shot_sheet, canvas, "
@@ -367,7 +367,7 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "card_new", "card_render", "card_reauthor", "pack_apply", "pack_activate",
             "pack_apply_captions", "cue_reresolve", "seed_timeline", "restore", "export",
             "add_captions", "caption_style", "canvas", "head", "tail", "music", "reframe",
-            "reframe_sheet", "shot_sheet", "footage_sheet", "synopsis", "film_check",
+            "reframe_sheet", "shot_sheet", "footage_sheet", "synopsis", "events", "film_check",
             "import_edit", "review_verdict",
             # Replaces the entry at its address.
             "hold_under",
@@ -900,6 +900,10 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         "phrase": (
             "Locate by wording. A phrase is naturally a range, so it resolves "
             "straight to first and last with no edge to pick."
+        ),
+        "event": (
+            "Locate a named instant from `events`, as `name` or `name#k` (k counts "
+            "that name's events from 0). Echoed with its neighbours."
         ),
     },
     "timeline_view": {
@@ -1577,6 +1581,31 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "reading the pixels measurably cannot."
         ),
         "clear": "Remove this clip's synopsis.",
+    },
+    "events": {
+        "clip_id": (
+            "The clip whose events to read or write. Omit it to count every clip's."
+        ),
+        "source": (
+            "A recorder's event file to import: a JSON object of name → seconds (or → "
+            "a list of seconds), or a bare list of seconds with `name`. Replaces this "
+            "clip's events of the names the file brings; other names are kept."
+        ),
+        "name": (
+            "With `at`, the event to add. With a bare-list `source`, what those "
+            "times are. One token, no '#'."
+        ),
+        "origin": (
+            "A key in the imported object holding the recording's zero, subtracted "
+            "from every time — a recorder's clock is usually the wall clock."
+        ),
+        "offset": "Seconds subtracted from every imported time, after `origin`.",
+        "at": "Seconds into the recording for the one event being added.",
+        "event": (
+            "Resolve one address — `name`, or `name#k` when the name repeats — and "
+            "echo it with its neighbours, writing nothing."
+        ),
+        "clear": "Remove every event on this clip.",
     },
     "broll_brief": {
         "fps": (
@@ -3112,6 +3141,7 @@ def locate(
     phrase: str | None = None,
     after: int = -1,
     occurrence: int | None = None,
+    event: str | None = None,
 ) -> dict[str, Any]:
     """Where does a SOURCE word or SOURCE time play in the current render?
 
@@ -3132,7 +3162,7 @@ def locate(
     the recording (omit `source_end` to locate an instant), or `phrase` — a
     phrase naturally *is* a range, so it resolves straight to `first`/`last`
     with no edge to pick (`after`/`occurrence` disambiguate a phrase matching
-    more than once).
+    more than once), or `event` — a named instant from `events`.
 
     Read `present` first. False means the material is not in the render, and
     `beyond_source` distinguishes "you cut it" from "the recording never went
@@ -3154,6 +3184,7 @@ def locate(
         phrase=phrase,
         after=after,
         occurrence=occurrence,
+        event=event,
     )
 
 
@@ -4497,6 +4528,52 @@ def synopsis(
     confident wrong placements rather than an obviously empty catalogue.
     """
     return ops.synopsis(path, clip_id, text, clear=clear)
+
+
+@_tool()
+def events(
+    path: ProjectPath = None,
+    *,
+    clip_id: str | None = None,
+    source: str | None = None,
+    name: str | None = None,
+    origin: str | None = None,
+    offset: float = 0.0,
+    at: float | None = None,
+    event: str | None = None,
+    clear: bool = False,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Named instants in a recording — the anchors a screen recording has instead of words.
+
+    An event is `(name, seconds into the clip's own recording)`: `sent`,
+    `typing_started`, a keystroke. No `clip_id` counts every clip's; `clip_id`
+    alone lists one clip's, each with the `address` other tools take (`name`,
+    or `name#k` when the name repeats, k from 0); `event` resolves one address
+    and echoes three neighbours either side.
+
+    `source` imports a recorder's JSON and REPLACES the clip's events of the
+    names it brings (other names are kept), so a repeat import is a no-op and a
+    marks file and a keystroke file combine. A recorder usually logs wall-clock stamps: pass
+    `origin` naming the key that holds the recording's start. A set with any
+    event outside the clip is refused whole, because a wrong clock moves every
+    event by the same amount. `name` + `at` adds one event by hand.
+
+    Events index the source, so no cut invalidates one; `locate` with `event=`
+    says where one plays now, and `present: false` means it was cut.
+    """
+    return ops.events(
+        path,
+        clip_id,
+        source=source,
+        name=name,
+        origin=origin,
+        offset=offset,
+        at=at,
+        event=event,
+        clear=clear,
+        plan=plan,
+    )
 
 
 @_tool()

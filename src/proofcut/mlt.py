@@ -591,11 +591,14 @@ class Reframe:
         keys = []
         for index, (seconds, crop) in enumerate(windows):
             box = upper if self.pane_at(seconds) is not None else None
-            values = " ".join(str(value) for value in self._window_dest(seconds, crop, resolution, box))
+            dest = self._window_dest(seconds, crop, resolution, box)
             # This key's operator governs the segment *leaving* it, so it is
             # the *next* window's flag that decides — not this one's.
             next_start = windows[index + 1][0] if index + 1 < len(windows) else None
             operator = "=" if next_start is not None and self.is_interp(next_start) else "|="
+            if operator == "=" and dest[2:] == tuple(self.source):
+                dest = _off_unity(dest)
+            values = " ".join(str(value) for value in dest)
             keys.append(f"{round(seconds * rate)}{operator}{values} 1")
         return ";".join(keys)
 
@@ -1018,6 +1021,23 @@ def _transition(parent: ET.Element, transition_id: str, properties: dict[str, st
     node = ET.SubElement(parent, "transition", {"id": transition_id})
     for name, value in properties.items():
         _property(node, name, value)
+
+
+def _off_unity(dest: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    """A slide's start drawn one pixel larger, so its move is never a pure translation.
+
+    `qtblend` draws the source at exactly its own size as a pure translation,
+    and **a pure translation snaps to whole pixels**: a 30px pan over 10s at
+    1:1 moved in 1px jumps every tenth frame, while the same pan at 0.75,
+    1.333 or 1.5 — or at 2561/2560 — moved smoothly, within 0.24px of the
+    line. Reached whenever a crop is the canvas's own size, which is the
+    1080p crop of a 1440p screen recording. Only a slide's own key is grown,
+    so a held window keeps its exact rect and its document stays
+    byte-identical. docs/plans/NATIVE.md § Part B, B2;
+    `~/proofcut-work/spikes/eased-pan/`.
+    """
+    x, y, w, h = dest
+    return (x, y, w + 1, h + 1)
 
 
 def _reframe_filter(

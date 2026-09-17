@@ -1542,6 +1542,14 @@ built; docs/plans/INSTALL.md):
         the subject is area-weighted over every face, so a two-face frame puts
         it between them where nobody is, and the teaser's largest offset (608px)
         is exactly that. HISTORY.md § The sheet samples where the subject is.
+  - **A slide drawn at exactly 1:1 snaps to whole pixels.** `qtblend` draws a
+    pure translation on the integer grid, so a 30px pan over 10s moved in 1px
+    jumps every tenth frame, while any other scale — 0.75, 1.333, 2561/2560 —
+    moved within a quarter pixel of the line. A 1080p crop of a 1440p screen
+    recording is exactly 1:1, so `mlt._off_unity` draws a slide's own key a
+    pixel larger; a held window keeps its exact rect. Judge motion by an edge
+    position read back per frame, never by the document. HISTORY.md § Events,
+    and the pan that snapped to whole pixels.
   - Its two asymmetries: the **preview** places a shot by the window at its
     `src_start`, so a boundary *inside* a placement previews as the first of
     the two while the render steps mid-shot correctly (`reframe_sheet`'s

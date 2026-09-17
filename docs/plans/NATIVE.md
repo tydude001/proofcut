@@ -172,11 +172,18 @@ product names for anything proofcut ships.
 
 Each step is usable on its own, and each is judged on a served render.
 
-- **B1. Events.** An event index per clip — `(clip_id, name, src_seconds)`,
+- **B1. Events.** Shipped — see HISTORY.md § Events, and the pan that
+  snapped to whole pixels; `events` plus `locate --event` so far, and every
+  other tool takes the address as its own step needs it.
+  An event index per clip — `(clip_id, name, src_seconds)`,
   imported from the recorder's JSON — addressable anywhere a word is.
   Source-indexed like a footage description, so no edit can invalidate one.
   Named `events` (proofcut already has `marks`, and means something else).
-- **B2. Eased camera windows on events.** `reframe` windows gain an easing
+- **B2. Eased camera windows on events.** The judder is measured and fixed
+  — a slide drawn at exactly 1:1 moved in whole pixels, so its key is drawn a
+  pixel larger (HISTORY.md § Events, and the pan that snapped to whole
+  pixels); the easing names and event addresses are still to build.
+  `reframe` windows gain an easing
   name (a short list over MLT's operators: `linear`, `ease`, `smooth`) and an
   event or word address. First, measure a slow pan at constant zoom for
   judder; if it judders, a pan is written as a scaling move of the same rect.

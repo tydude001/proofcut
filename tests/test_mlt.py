@@ -620,6 +620,32 @@ def test_interp_on_the_first_later_window_flags_the_head_key() -> None:
     assert reframe.rect_property(VERTICAL, RATE) == "0=0 0 4518 1920 1;300|=-3438 0 4518 1920 1"
 
 
+def test_a_slide_at_unity_scale_starts_one_pixel_larger() -> None:
+    """A 1080p crop of a 1440p recording draws the source at its own size, and
+    `qtblend` snaps a pure translation to whole pixels — a slow pan judders.
+    The slide's own key is grown by a pixel; the held key it slides to is not.
+    Measured: `~/proofcut-work/spikes/eased-pan/` (NATIVE.md § Part B, B2)."""
+    screen = (2560, 1440)
+    reframe = mlt.Reframe(
+        screen, (320, 180, 1920, 1080), later=((10.0, (350, 180, 1920, 1080)),), interp=(10.0,)
+    )
+
+    assert reframe.rect_property((1920, 1080), RATE) == (
+        "0=-320 -180 2561 1441 1;300|=-350 -180 2560 1440 1"
+    )
+
+
+def test_a_held_window_at_unity_scale_keeps_its_exact_rect() -> None:
+    """No slide, no nudge — a step is not a move, and resampling a still
+    screen by a pixel would soften its text for nothing."""
+    screen = (2560, 1440)
+    reframe = mlt.Reframe(screen, (320, 180, 1920, 1080), later=((10.0, (350, 180, 1920, 1080)),))
+
+    assert reframe.rect_property((1920, 1080), RATE) == (
+        "0|=-320 -180 2560 1440 1;300|=-350 -180 2560 1440 1"
+    )
+
+
 def test_interp_must_name_a_later_window_not_the_head() -> None:
     """`interp` marks the window *arriving*, and there is nothing before the
     head of the source for it to slide from — the same "after the head" rule
