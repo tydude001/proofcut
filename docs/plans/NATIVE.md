@@ -188,7 +188,7 @@ Each step is usable on its own, and each is judged on a served render.
   judder; if it judders, a pan is written as a scaling move of the same rect.
 - **B3. Overlays.** A card rendered with alpha and placed on the canvas
   instead of filling it, with an opacity/position animation — a lower third.
-  Also useful to the essays.
+  Also useful to the essays. Design below (§ B3, designed), for review.
 - **B4. Sound on events.** A1's cue list plus one-shot effects at events
   (`send`, `land`, keystrokes).
 - **B5. Retime.** The hard one, last on purpose: it is the only step that
@@ -208,6 +208,82 @@ Each step is usable on its own, and each is judged on a served render.
 - **B7. Re-cut the launch clip with proofcut**, ideally by an agent through the
   trial harness, and A/B it against `clip-v6.mp4` on Tyler's phone. Then
   LAUNCH.md § Step 1's "not cut with proofcut" line is retired with evidence.
+
+### B3, designed — 2026-09-16
+
+The spike is `~/proofcut-work/spikes/overlay-probe/FINDINGS.md`. Every claim
+there was read back from rendered frames against a control, on both the
+flatpak melt and Shotcut's portable melt. **MLT needs nothing new.** An
+overlay is a `qimage` PNG with alpha on a blanked lane (the split pane's
+playlist shape), composited by the writer's ordinary `qtblend` transition.
+It animates with a `qtblend` filter whose `rect` carries opacity as a fifth
+value. Alpha survives (0.998 opaque, 0.50 half), the transparent area is
+untouched, the fade is frame-exact, and two lanes stack in order.
+
+What the launch clip's type does (`clip.py` § `overlay`): a bottom gradient
+scrim fades in and out. A headline rises 24 px while it fades in over
+0.45 s, and a footnote does the same 0.25 s later. A headline handed to the
+next one keeps the scrim up across the join.
+
+**The shape.** An overlay is a **card with no background rect**, recorded in
+`cards` like any other, so `card_new`, `card_reauthor`, variants, the
+measured wrap and the font checks all apply unchanged. It is rendered at the
+full canvas, so the template decides where the type sits. It is placed by a
+new optional manifest key, `overlays`: `(card, start, end, in, out)`.
+`start` and `end` are a word or an event address, resolved live through the
+`Edit` on every build and never stored as seconds (the music bed's rule).
+`in` and `out` are named animations. The writer lays overlays onto as few
+lanes as keep their list order as the stacking order, and puts them above
+the picture lane and its panes. An overlay is `_is_layered`'s ninth trigger.
+
+**Findings the build has to hold to:**
+- **Its entry reads the still from frame 0.** Keys count from the producer,
+  so an entry reading from frame 30 plays 0-based keys early. This is the A2
+  fade trap again.
+- **A moving key is drawn at 1921x1081 and the resting key at exactly the
+  canvas.** A pure 1:1 rise snaps to whole rows (B1's judder). Nudging every
+  key leaves the type resting 0.2–0.7 px off and resampled. Nudging only the
+  leaving key moves continuously and lands on the exact row.
+- **One operator shapes both position and opacity**, so an animation is one
+  curve, as `clip.py`'s is.
+
+**Decisions** (a recommendation on each):
+
+1. **One overlay is one card, and a stagger is two overlays** (recommended).
+   Headline and footnote are separate cards with separate starts, and the
+   scrim is a third (a shipped `scrim` template). The alternative, per-element
+   timing inside one card, needs an animation language inside the SVG.
+2. **Animations are a short named list, not raw keys** (recommended):
+   `fade` and `rise` (24 px at 1080, scaled to the canvas; opacity with it),
+   each with a length (default 0.45 s in and 0.3 s out) and an easing from
+   B2's `EASINGS` (default `ease-out` in and `ease-in` out). Raw keyframes
+   can come later if a real edit asks for them.
+3. **The end is an address or a length** (recommended), e.g. `--until
+   event:land` or `--for 3.2`. A length is resolved from the start's
+   timeline time, so a cut inside it shortens nothing, unlike an end word.
+   Refuse an overlay whose start is cut, as `build_shots` refuses an orphan.
+   A derivation (`reel`) drops overlays and names them (`overlays_dropped`),
+   the tail's rule.
+4. **Templates shipped: `lowerthird` (headline + footnote, bottom left) and
+   `scrim`, each with a portrait variant** (recommended). The portrait
+   lower third sits above the reserved bottom fifth, and `card_safe_zones`
+   reports on it as on any card. `TEMPLATE_BACKGROUND` gains a
+   "none"/transparent entry so that report compares ink against the frame,
+   not against a swatch the card never draws.
+5. **The window draws overlays in the same step** (recommended): an `OV`
+   lane in the timeline, and a preview layer placing the PNG at the canvas
+   rectangle with CSS opacity and translate on the same curve. A film whose
+   preview hides its type is the captions-not-in-the-file shape inverted.
+   The alternative is CLI/MCP/writer first and the window as a follow-up
+   step.
+6. **The check is the export reply plus a readback test, not a new op**
+   (recommended). `export` names the overlays it drew (the `music` field's
+   precedent), and a real-melt test reads one frame at each overlay's
+   plateau and its alpha against the control, as the spike did. A
+   user-facing `overlay_check` is deferred until a real film asks for it.
+
+Name: `overlay` (`overlay add/list/remove`, tools `overlay_add` …). No
+schema bump, because the key is additive and optional.
 
 ## Decisions for Tyler
 
