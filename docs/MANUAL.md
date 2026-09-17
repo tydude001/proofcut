@@ -420,8 +420,9 @@ proofcut -C myproject export assembly.kdenlive         # both lanes, written as 
 
 A card is an SVG under `assets/cards/` and the PNG `card:<name>` resolves to;
 both are kept, so a card is re-edited rather than redrawn. `card new` fills one
-of six templates — `receipt`, `reveal`, `rerate`, `chapter`, `endcard`,
-`bumper` — and `card render` re-rasterises after a hand edit. Five of the six
+of six full-frame templates — `receipt`, `reveal`, `rerate`, `chapter`,
+`endcard`, `bumper` — or one of the two overlay templates below, and `card
+render` re-rasterises after a hand edit. Five of the six full-frame ones
 carry a `mark` slot (`chapter` does not) and every one of them defaults to
 empty: proofcut stays generic and the channel supplies its own mark, usually
 through a preset pack (`proofcut pack`). **Cards generate at the project's own
@@ -442,6 +443,34 @@ proofcut -C myproject card reauthor                    # every stale card, at th
 A card whose files predate the record — drawn elsewhere and copied in — is
 reported by name rather than guessed at, because nothing on disk says what
 made it.
+
+Two more templates, `lowerthird` and `scrim`, draw **overlays**: cards with no
+background, placed *over* the film rather than instead of it. A lower third
+is a headline and an optional amber footnote, bottom left; a scrim is the
+dark gradient the type sits on.
+
+```sh
+proofcut -C myproject card new scrim --template scrim
+proofcut -C myproject card new hears --template lowerthird \
+  --set 'headline=It hears the false start.' --set 'footnote=and cuts it by the words'
+proofcut -C myproject overlay add scrim vo --phrase "false start" --until-phrase "by the words"
+proofcut -C myproject overlay add hears vo --phrase "false start" --for 3.2
+proofcut -C myproject overlay add hears vo --event sent --until-event land --enter fade
+proofcut -C myproject overlay ls                       # the stack, and where each plays
+proofcut -C myproject overlay rm 1                     # by position; the card stays
+```
+
+The span starts at a word, phrase or event and ends at one, or after a length
+(`--for`, which a cut inside it does not shorten). It is resolved through the
+timeline on every export and never stored as seconds, so a cut moves it; a cut
+through its start word makes `export` refuse until it is moved. **The list is
+the stack**: a later overlay draws over an earlier one it overlaps, so place
+the scrim first (or `--position 0`). A footnote that enters after its headline
+is its own `lowerthird` with an empty headline. Each one `--enter`s and
+`--leave`s with `rise`, `fade` or `none` (defaults: a 0.45 s eased rise in, a
+0.3 s fade out). An ordinary card is refused as an overlay — it is opaque and
+would cover the film — and an overlay card is refused as a cue. Mind the bottom
+band: a lower third and burned captions both live there.
 
 A card can also go *after* the last frame, as a `tail` — an end card or a
 bumper, which every earlier cut applied downstream of `export` and so lost on

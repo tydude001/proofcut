@@ -391,6 +391,7 @@ function contentDuration(state, captions) {
     widen(captions.cues[captions.cues.length - 1].end);
   }
   for (const shot of state.shots || []) widen(shot.start + shot.duration);
+  for (const overlay of state.overlays || []) widen(overlay.timeline_end);
   return end;
 }
 
@@ -881,6 +882,61 @@ function buildMusicRow(state, pxPerSec, duration) {
     row.append(block);
   }
 
+  seekOnClick(row, pxPerSec);
+  return row;
+}
+
+/** OV — the overlays, drawn from `state.overlays` and nothing else.
+ *
+ * `state.overlays` is `ops._overlay_plan` — what `export` draws over the
+ * film, bottom of the stack first, each on the writer lane it will occupy.
+ * The row is split into one band per writer lane, lowest lane at the
+ * bottom, so a scrim and the type over it read as two things at once. The
+ * ramps are the entrance and exit lengths. On `overlays_error` the message
+ * is drawn across the lane instead, `buildMusicRow`'s policy: a stack a cut
+ * orphaned is the thing worth walking into this window to find.
+ */
+function buildOverlayRow(state, pxPerSec, duration) {
+  const row = el("div", "lane lane-ov");
+  row.style.width = `${Math.max(1, duration * pxPerSec)}px`;
+  if (state.overlays_error) {
+    row.append(el("div", "lane-refusal", `overlays refused — ${state.overlays_error}`));
+    seekOnClick(row, pxPerSec);
+    return row;
+  }
+  const overlays = state.overlays || [];
+  const bands = Math.max(1, ...overlays.map((o) => (Number.isFinite(o.lane) ? o.lane + 1 : 1)));
+  for (const overlay of overlays) {
+    const span = Math.max(0, overlay.timeline_end - overlay.timeline_start);
+    const block = el("div", "clip-block overlay-block");
+    block.style.left = `${(overlay.timeline_start * pxPerSec).toFixed(1)}px`;
+    block.style.width = `${Math.max(1, span * pxPerSec).toFixed(1)}px`;
+    if (bands > 1) {
+      const lane = overlay.lane || 0;
+      block.style.top = `calc(${(((bands - 1 - lane) / bands) * 100).toFixed(2)}% + 2px)`;
+      block.style.bottom = `calc(${((lane / bands) * 100).toFixed(2)}% + 2px)`;
+    }
+    const enter = overlay.enter === "none" ? 0 : overlay.enter_seconds;
+    const leave = overlay.leave === "none" ? 0 : overlay.leave_seconds;
+    block.title = [
+      `overlay ${overlay.position}: ${overlay.card} — drawn over the film`,
+      `plays ${fmt(overlay.timeline_start)}–${fmt(overlay.timeline_end)}`,
+      enter ? `enters: ${overlay.enter}, ${fmt(enter)}, ${overlay.enter_ease}` : "enters: cut",
+      leave ? `leaves: ${overlay.leave}, ${fmt(leave)}, ${overlay.leave_ease}` : "leaves: cut",
+    ].join("\n");
+    if (enter) {
+      const ramp = el("div", "fade-ramp fade-ramp-in");
+      ramp.style.width = `${(Math.min(enter, span) * pxPerSec).toFixed(1)}px`;
+      block.append(ramp);
+    }
+    if (leave) {
+      const ramp = el("div", "fade-ramp fade-ramp-out");
+      ramp.style.width = `${(Math.min(leave, span) * pxPerSec).toFixed(1)}px`;
+      block.append(ramp);
+    }
+    block.append(el("span", "clip-label", overlay.card));
+    row.append(block);
+  }
   seekOnClick(row, pxPerSec);
   return row;
 }
@@ -2215,6 +2271,8 @@ function render() {
   // (Read above, with the duration it also feeds.)
 
   const kinds = [];
+  // Topmost of all: an overlay is drawn over every picture track.
+  if ((state.overlays && state.overlays.length) || state.overlays_error) kinds.push("OV");
   if (state.shots || state.shots_error) kinds.push("V2"); // topmost: the picture sits over the edit's own track
   if (clip.has_video) kinds.push("V1");
   kinds.push("A1"); // always — the recording has audio even for a picture clip
@@ -2230,12 +2288,15 @@ function render() {
   const waveformDraws = [];
   for (const kind of kinds) {
     let note;
+    if (kind === "OV") note = "overlays, drawn over the film";
     if (kind === "V2") note = "the cue table's picture, over the edit";
     if (kind === "A2") note = "the music bed, mixed under the edit";
     if (kind === "CC") note = "one block per cue, as the .ass will break them";
     headers.append(header(kind, note));
     const row =
-      kind === "V2"
+      kind === "OV"
+        ? buildOverlayRow(state, pxPerSec, duration)
+        : kind === "V2"
         ? buildPictureRow(state, pxPerSec, duration)
         : kind === "A2"
           ? buildMusicRow(state, pxPerSec, duration)

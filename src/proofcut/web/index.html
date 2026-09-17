@@ -210,6 +210,10 @@
               <img id="picture-still" alt="">
               <p id="picture-note" class="picture-note" hidden></p>
             </div>
+            <!-- Overlays over the picture, in stack order: the writer draws
+                 them above every picture track. player.js fills it from the
+                 view's `overlays` — one canvas-sized image each. -->
+            <div id="overlay-layer"></div>
             <!-- CC over both, because that is the order the burn-in composites
                  in. Sized and coloured entirely from /api/captions — nothing
                  about this look is decided here or in the palette. -->

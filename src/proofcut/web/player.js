@@ -36,7 +36,7 @@
  *
  * player.js owns #viewer, #frame (with #frame-note), #media, #visualizer,
  * #picture (with #picture-video, #picture-pane,
- * #picture-still, #picture-note), #caption-layer (with #caption-line),
+ * #picture-still, #picture-note), #overlay-layer, #caption-layer (with #caption-line),
  * #transport, #play, #clock, #playhint and touches no other pane's DOM. Every animation frame it emits
  * a 'playhead' event `{now, total}` on the shared bus, and a 'playing-word'
  * event `{index}` whenever the playing word changes — transcript.js and
@@ -101,6 +101,8 @@ let pendingFillSeek = null; // its own pending seek, for the pane's reason
 let mediaFill = null; // the edit track's blur-fill background element
 let shotCursor = 0; // cache for the shot-under-the-playhead scan
 const pictureRefused = new Set(); // assets the browser would not decode
+let overlayLayer = null; // the overlays' layer, or null before init
+const overlayImages = []; // one <img> per stack position, reused across views
 
 function view() {
   return ctx.getView();
@@ -276,6 +278,7 @@ function tick() {
   paintWord(t);
   paintPicture(t);
   followEditFill();
+  paintOverlays(t);
   paintCaption(t);
   drawVisualizer();
 }
@@ -637,6 +640,73 @@ function paintPicture(t) {
   if (pictureVideo.paused) pictureVideo.play().catch(() => {});
   followPane(target, false);
   followFill(target, false);
+}
+
+/* -- overlays --------------------------------------------------------------
+ *
+ * The view's `overlays` (`ops._overlay_plan`), bottom of the stack first, each
+ * a canvas-sized transparent card drawn over the film. The writer animates
+ * one `qtblend` rect per overlay — opacity, and for a rise a vertical offset
+ * of `rise_px` at 1080 lines — on MLT's cubic curves, so this draws the same
+ * two numbers on the same curves (`mlt.ease_fraction`, mirrored below). The
+ * writer's one-pixel nudge is sub-pixel here and not drawn. Nothing in this
+ * function decides where an overlay plays: the view already did.
+ */
+function easeFraction(name, t) {
+  const x = Math.min(Math.max(t, 0), 1);
+  if (name === "ease-in") return x ** 3;
+  if (name === "ease-out") return 1 - (1 - x) ** 3;
+  if (name === "ease") return x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2;
+  return x;
+}
+
+/* Opacity and downward offset (as a fraction of the rise) at `u` seconds in. */
+function overlayMotion(overlay, u) {
+  const span = overlay.timeline_end - overlay.timeline_start;
+  const enter = overlay.enter === "none" ? 0 : overlay.enter_seconds || 0;
+  const leave = overlay.leave === "none" ? 0 : overlay.leave_seconds || 0;
+  if (enter > 0 && u < enter) {
+    const f = easeFraction(overlay.enter_ease, u / enter);
+    return { opacity: f, drop: overlay.enter === "rise" ? 1 - f : 0 };
+  }
+  if (leave > 0 && u > span - leave) {
+    const f = easeFraction(overlay.leave_ease, (u - (span - leave)) / leave);
+    return { opacity: 1 - f, drop: overlay.leave === "rise" ? f : 0 };
+  }
+  return { opacity: 1, drop: 0 };
+}
+
+function paintOverlays(t) {
+  if (!overlayLayer) return;
+  const v = view();
+  const overlays = (v && !v.overlays_error && v.overlays) || [];
+  const box = frameBox();
+  for (let i = 0; i < Math.max(overlays.length, overlayImages.length); i += 1) {
+    const overlay = overlays[i];
+    let img = overlayImages[i];
+    const live = overlay && t >= overlay.timeline_start && t < overlay.timeline_end;
+    if (!live) {
+      if (img && !img.hidden) img.hidden = true;
+      continue;
+    }
+    if (!img) {
+      img = document.createElement("img");
+      img.alt = "";
+      img.hidden = true;
+      overlayImages[i] = img;
+      overlayLayer.append(img); // DOM order is stack order: position i over i-1
+    }
+    const url = assetURL(overlay.asset);
+    if (img.dataset.src !== url) {
+      img.dataset.src = url;
+      img.src = url;
+    }
+    const { opacity, drop } = overlayMotion(overlay, t - overlay.timeline_start);
+    const travel = ((overlay.rise_px || 0) * (box.height || 0)) / 1080;
+    img.style.opacity = opacity.toFixed(3);
+    img.style.transform = drop ? `translateY(${(travel * drop).toFixed(2)}px)` : "";
+    if (img.hidden) img.hidden = false;
+  }
 }
 
 /* The split's lower pane, held to the same clock as the upper one.
@@ -1008,6 +1078,7 @@ export function init(passedCtx) {
   mediaFill = $("media-fill");
   pictureStill = $("picture-still");
   pictureNote = $("picture-note");
+  overlayLayer = $("overlay-layer");
   captionLayer = $("caption-layer");
   captionLine = $("caption-line");
 

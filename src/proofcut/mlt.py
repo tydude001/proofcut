@@ -143,6 +143,137 @@ class Entry:
         return self.src_in + self.frames - 1
 
 
+#: The animations an overlay enters and leaves with, by the name
+#: `overlay_add` takes. `rise` travels `OVERLAY_RISE` (at 1080 lines, scaled
+#: to the canvas) while it fades; `fade` only fades; `none` is a cut.
+#: docs/plans/NATIVE.md § B3, designed.
+OVERLAY_MOTIONS = ("fade", "rise", "none")
+
+#: How far a `rise` travels, in pixels of a 1080-line canvas — the launch
+#: clip's headline (`clip.py` § overlay).
+OVERLAY_RISE = 24
+
+
+@dataclass(frozen=True)
+class Overlay:
+    """A transparent still drawn over the film from `start` for `frames` frames.
+
+    Timeline frames, like every position in this module. The still is a
+    canvas-sized PNG, so where its type sits is the template's business and
+    the node's `qtblend` filter only animates offset and opacity — `rect`'s
+    fifth value is opacity, frame-exact (`~/proofcut-work/spikes/overlay-probe`).
+    `in_frames`/`out_frames` are the entrance and exit lengths, each with a
+    motion from `OVERLAY_MOTIONS` and an easing from `EASINGS`.
+    """
+
+    resource: str
+    start: int
+    frames: int
+    in_motion: str = "fade"
+    in_frames: int = 0
+    in_ease: str = "ease-out"
+    out_motion: str = "fade"
+    out_frames: int = 0
+    out_ease: str = "ease-in"
+
+    @property
+    def end(self) -> int:
+        """The first timeline frame after the overlay."""
+        return self.start + self.frames
+
+
+def overlay_lanes(overlays: list[Overlay]) -> list[int]:
+    """The lane each overlay is drawn on, in list order.
+
+    **List order is stacking order**: a later overlay that overlaps an
+    earlier one is drawn above it, so it goes on a lane higher than every
+    earlier one it overlaps — and on the lowest such lane that is free for
+    its whole span, so a film of lower thirds that never overlap writes one
+    lane, not one per overlay. One playlist cannot hold two stills at once,
+    which is `music2`'s reason for a second lane too.
+    """
+    lanes: list[int] = []
+    for index, overlay in enumerate(overlays):
+        floor = 0
+        for other, lane in zip(overlays[:index], lanes):
+            if other.start < overlay.end and overlay.start < other.end:
+                floor = max(floor, lane + 1)
+        lane = floor
+        while any(
+            placed == lane and other.start < overlay.end and overlay.start < other.end
+            for other, placed in zip(overlays[:index], lanes)
+        ):
+            lane += 1
+        lanes.append(lane)
+    return lanes
+
+
+def overlay_rect(overlay: Overlay, resolution: tuple[int, int]) -> str | None:
+    """The overlay's `qtblend` `rect` keys, or None where it never moves or fades.
+
+    Keys count from the *producer's* frame, and the entry reads its still
+    from frame 0, so they are the overlay's own frame numbers. **A moving key
+    is drawn one pixel larger** (`_off_unity`) and a resting key at exactly
+    the canvas: a pure 1:1 rise snaps to whole rows, and nudging the resting
+    key too leaves the type sub-pixel off and resampled. With only the moving
+    key nudged the scale reaches unity gradually, so the move is continuous
+    and lands on the exact row (spike `rise-mixed`). One operator shapes both
+    position and opacity, on the key that leaves.
+    """
+    width, height = resolution
+    rest = (0, 0, width, height)
+    travel = round(OVERLAY_RISE * height / 1080)
+
+    def key(frame: int, operator: str, rect: tuple[int, int, int, int], opacity: int) -> str:
+        return f"{frame}{operator}={rect[0]} {rect[1]} {rect[2]} {rect[3]} {opacity}"
+
+    def away(motion: str) -> tuple[int, int, int, int]:
+        if motion == "rise":
+            return _off_unity((0, travel, width, height))
+        return rest
+
+    last = overlay.frames - 1
+    keys: list[str] = []
+    if overlay.in_motion != "none" and overlay.in_frames:
+        keys.append(key(0, EASINGS[overlay.in_ease], away(overlay.in_motion), 0))
+        keys.append(key(overlay.in_frames, "", rest, 1))
+    if overlay.out_motion != "none" and overlay.out_frames:
+        leave = last - overlay.out_frames
+        if keys and leave == overlay.in_frames:
+            keys[-1] = key(leave, EASINGS[overlay.out_ease], rest, 1)
+        else:
+            keys.append(key(leave, EASINGS[overlay.out_ease], rest, 1))
+        keys.append(key(last, "", away(overlay.out_motion), 0))
+    return ";".join(keys) or None
+
+
+def _check_overlay(overlay: Overlay, total_frames: int) -> None:
+    where = f"the overlay {overlay.resource!r} at frame {overlay.start}"
+    if overlay.frames < 1 or overlay.start < 0 or overlay.end > total_frames:
+        raise MLTError(
+            f"{where} runs frames {overlay.start}..{overlay.end} of a "
+            f"{total_frames}-frame timeline — an overlay has to sit inside the film"
+        )
+    for motion, frames, ease in (
+        (overlay.in_motion, overlay.in_frames, overlay.in_ease),
+        (overlay.out_motion, overlay.out_frames, overlay.out_ease),
+    ):
+        if motion not in OVERLAY_MOTIONS:
+            raise MLTError(f"{where}: no motion {motion!r} (there are: {', '.join(OVERLAY_MOTIONS)})")
+        if ease not in EASINGS:
+            raise MLTError(f"{where}: no easing {ease!r} (there are: {', '.join(EASINGS)})")
+        if frames < 0:
+            raise MLTError(f"{where}: a negative animation length")
+    used = (overlay.in_frames if overlay.in_motion != "none" else 0) + (
+        overlay.out_frames if overlay.out_motion != "none" else 0
+    )
+    if used > overlay.frames - 1:
+        raise MLTError(
+            f"{where} is {overlay.frames} frames and its entrance and exit take "
+            f"{used} — shorten the animations or lengthen the overlay"
+        )
+
+
 def fit_rect(source: tuple[int, int], resolution: tuple[int, int]) -> tuple[int, int, int, int]:
     """Where MLT puts a source frame when nothing tells it otherwise.
 
@@ -1174,7 +1305,9 @@ def reframed_nodes(root: ET.Element) -> dict[str, str]:
     found: dict[str, str] = {}
     for node in [*root.findall("chain"), *root.findall("producer")]:
         node_id = node.get("id") or ""
-        if node_id.startswith("bin"):
+        if node_id.startswith(("bin", "ochain")):
+            # An overlay's filter animates a still that is never cropped —
+            # the same `rect` property, and not a reframe.
             continue
         for node_filter in node.findall("filter"):
             rect = node_filter.find("property[@name='rect']")
@@ -1190,6 +1323,7 @@ def document(
     music: list[Entry] | None = None,
     music2: list[Entry] | None = None,
     holds: list[Entry] | None = None,
+    overlays: list[Overlay] | None = None,
     rate: float,
     resolution: tuple[int, int] = DEFAULT_RESOLUTION,
     reframe: dict[str, Reframe] | None = None,
@@ -1322,6 +1456,9 @@ def document(
                 f"the holds lane holds a still ({wrong[0]!r}) — a hold plays a "
                 "clip's own clean audio, and a still has none to play"
             )
+    overlays = overlays or []
+    for overlay in overlays:
+        _check_overlay(overlay, total_frames)
     for entry in [*audio, *picture, *music, *music2, *holds]:
         if entry.fade_in_frames < 0 or entry.fade_out_frames < 0:
             raise MLTError(f"negative fade frames on {entry.resource!r}")
@@ -1618,6 +1755,58 @@ def document(
         for playlist_id in ("playlist10", "playlist11"):
             ET.SubElement(hold_track, "track", {"producer": playlist_id, "hide": "video"})
 
+    # The overlay lanes: a `qimage` node per overlay, since each carries its
+    # own animation, and a playlist per lane blanked outside its overlays —
+    # the split pane's deliberate `<blank>`, by the same frame arithmetic.
+    # Ids in their own namespace (ochain/oplaylist/tractorO), so a document
+    # with no overlays is byte-identical to one built before they existed.
+    overlay_tracks: list[str] = []
+    if overlays:
+        placed = overlay_lanes(overlays)
+        for index, overlay in enumerate(overlays):
+            node = ET.Element("producer", {"id": f"ochain{index}"})
+            for name_, value in {
+                "resource": overlay.resource,
+                "mlt_service": "qimage",
+                "length": str(round(IMAGE_LENGTH_SECONDS * rate)),
+                "eof": "continue",
+                "ttl": "1",
+            }.items():
+                _property(node, name_, value)
+            keys = overlay_rect(overlay, resolution)
+            if keys is not None:
+                node_filter = ET.SubElement(node, "filter", {"id": f"filter_ochain{index}"})
+                _property(node_filter, "mlt_service", "qtblend")
+                _property(node_filter, "rect", keys)
+            root.append(node)
+        for lane in range(max(placed) + 1):
+            playlist = ET.SubElement(root, "playlist", {"id": f"oplaylist{lane}a"})
+            cursor = 0
+            members = sorted(
+                (overlay.start, index) for index, overlay in enumerate(overlays) if placed[index] == lane
+            )
+            for _, index in members:
+                overlay = overlays[index]
+                if overlay.start > cursor:
+                    ET.SubElement(playlist, "blank", {"length": str(overlay.start - cursor)})
+                ET.SubElement(
+                    playlist,
+                    "entry",
+                    {"producer": f"ochain{index}", "in": "0", "out": str(overlay.frames - 1)},
+                )
+                cursor = overlay.end
+            if cursor < total_frames:
+                ET.SubElement(playlist, "blank", {"length": str(total_frames - cursor)})
+            ET.SubElement(root, "playlist", {"id": f"oplaylist{lane}b"})
+            track = ET.SubElement(
+                root, "tractor", {"id": f"tractorO{lane}", "in": "0", "out": str(total_frames - 1)}
+            )
+            _property(track, "kdenlive:timeline_active", "1")
+            _property(track, "kdenlive:track_name", f"Overlay {lane + 1}")
+            for playlist_id in (f"oplaylist{lane}a", f"oplaylist{lane}b"):
+                ET.SubElement(track, "track", {"producer": playlist_id, "hide": "audio"})
+            overlay_tracks.append(f"tractorO{lane}")
+
     # A deterministic uuid: the same project rebuilt twice should produce the
     # same document, so a diff of two exports shows what actually changed.
     sequence_uuid = f"{{{uuid.uuid5(uuid.NAMESPACE_URL, f'proofcut:{name}')}}}"
@@ -1643,6 +1832,8 @@ def document(
         stack.append("tractor1")
     if picture_panes:
         stack.append("tractor4")
+    # Above every picture track: an overlay is drawn over the film.
+    stack.extend(overlay_tracks)
     if music:
         stack.append("tractorA")
     if music2:

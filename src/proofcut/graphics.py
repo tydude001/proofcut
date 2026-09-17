@@ -499,8 +499,15 @@ def identify(image: Path | str) -> tuple[int, int]:
     return width, height
 
 
-def _region_mean(png: Path, rect: tuple[float, float, float, float]) -> float:
-    """Mean luminance (0-255) of `png` cropped to `rect`, `(x0, y0, x1, y1)`."""
+def _region_mean(
+    png: Path, rect: tuple[float, float, float, float], *, alpha: bool = False
+) -> float:
+    """Mean luminance (0-255) of `png` cropped to `rect`, `(x0, y0, x1, y1)`.
+
+    `alpha` measures the alpha channel instead — how much of the region a
+    transparent overlay card covers, where its colour under zero alpha is
+    whatever the encoder left there and means nothing.
+    """
     x0, y0, x1, y1 = rect
     w, h = max(1, round(x1 - x0)), max(1, round(y1 - y0))
     if w <= 0 or h <= 0:
@@ -508,6 +515,7 @@ def _region_mean(png: Path, rect: tuple[float, float, float, float]) -> float:
     command = [
         *magick_command(),
         str(png),
+        *(["-alpha", "extract"] if alpha else []),
         "-crop",
         f"{w}x{h}+{round(x0)}+{round(y0)}",
         "+repage",
@@ -555,7 +563,7 @@ def _hex_luminance(colour: str) -> float:
 
 
 def safe_zone_ink(
-    png: Path | str, canvas: tuple[int, int], band: dict[str, Any], background: str
+    png: Path | str, canvas: tuple[int, int], band: dict[str, Any], background: str | None
 ) -> dict[str, Any]:
     """Mean luminance inside a platform's reserved band, and beside it.
 
@@ -577,12 +585,17 @@ def safe_zone_ink(
     a same-size comparison is the whole point, not a fixed crop that happens
     to be nearby.
 
+    **`background=None` is an overlay card**, which has no background to be
+    relative to: the numbers are then its alpha coverage (0-255) in and
+    beside the band, since the frame under it is whatever the film shows.
+
     **Report only.** No default floor and nothing here blocks a render, the
     same restraint `card_safe_zones` keeps — `SCENE_THRESHOLD`'s own history
     is that a threshold gets pinned by looking at real output, not picked
     cold, and this has had exactly one look so far.
     """
     path = Path(png)
+    coverage = background is None
     width, height = canvas
     scale = height / 1920.0
     bottom_px = float(band["bottom_px"]) * scale
@@ -601,22 +614,33 @@ def safe_zone_ink(
             _rect_area(overlap),
         )
         union_area = band_area + rail_area - overlap_area
-        band_mean = _region_mean(path, band_rect)
-        rail_mean = _region_mean(path, rail_rect)
-        overlap_mean = _region_mean(path, overlap) if overlap_area > 0 else 0.0
+        band_mean = _region_mean(path, band_rect, alpha=coverage)
+        rail_mean = _region_mean(path, rail_rect, alpha=coverage)
+        overlap_mean = _region_mean(path, overlap, alpha=coverage) if overlap_area > 0 else 0.0
         weighted = band_mean * band_area + rail_mean * rail_area - overlap_mean * overlap_area
         in_band = weighted / union_area if union_area > 0 else 0.0
     else:
         union_area = _rect_area(band_rect)
-        in_band = _region_mean(path, band_rect)
+        in_band = _region_mean(path, band_rect, alpha=coverage)
 
     outside_height = min(band_top, (union_area / width) if width else 0.0)
-    outside = _region_mean(path, (0.0, 0.0, float(width), outside_height))
+    outside = _region_mean(path, (0.0, 0.0, float(width), outside_height), alpha=coverage)
 
+    if coverage:
+        return {
+            "canvas": f"{width}x{height}",
+            "reserved_area_px": round(union_area),
+            "measured": "alpha coverage",
+            "ink_in_band": round(in_band, 3),
+            "ink_outside_band": round(outside, 3),
+            "background_ink": None,
+            "ink_vs_background": None,
+        }
     background_ink = _hex_luminance(background)
     return {
         "canvas": f"{width}x{height}",
         "reserved_area_px": round(union_area),
+        "measured": "luminance",
         "ink_in_band": round(in_band, 3),
         "ink_outside_band": round(outside, 3),
         "background_ink": round(background_ink, 3),
@@ -1682,7 +1706,84 @@ TEMPLATES: dict[str, dict[str, Any]] = {
             }
         },
     },
+    # **Overlays** (`overlay: True`): drawn with no background rect, so the
+    # PNG is transparent wherever the type is not, and placed over the film
+    # by `overlay_add` rather than shown by a cue. The launch clip's type
+    # (`clip.py` § overlay) is the register: a headline and an amber
+    # footnote bottom left, over a gradient scrim that is its own overlay so
+    # it can stay up across a headline handed to the next.
+    # docs/plans/NATIVE.md § B3, designed.
+    "lowerthird": {
+        "description": (
+            "A lower third over the film: a headline and an optional amber "
+            "footnote, bottom left, on a transparent card. Place it with "
+            "overlay_add, usually over a `scrim`."
+        ),
+        "overlay": True,
+        "slots": {
+            "headline": {
+                "kind": "line",
+                "x": 96,
+                "width": 1728,
+                "size": 76,
+                "weight": 700,
+                "font": "title_font",
+                "description": "the headline, one line, set in the title face",
+            },
+            "footnote": {
+                "kind": "line",
+                "x": 100,
+                "width": 1720,
+                "size": 44,
+                "weight_role": "footnote_weight",
+                "font": "body_font",
+                "default": "",
+                "description": (
+                    "a smaller amber line under the headline. Optional; a "
+                    "stagger is two overlays, so a footnote that enters later "
+                    "is its own lowerthird passed an empty headline"
+                ),
+            },
+        },
+        "derived": {},
+        # The portrait stack sits just above the reserved bottom fifth
+        # (`foot_margin` 740, the receipt's), at the sizes a phone reads.
+        "variants": {
+            "portrait": {
+                "geometry": {"foot_margin": 740},
+                "slots": {"headline": {"size": 110}, "footnote": {"size": 64}},
+            }
+        },
+    },
+    "scrim": {
+        "description": (
+            "A transparent-to-ink gradient over the bottom of the frame, for "
+            "type to sit on. Place it with overlay_add under a lowerthird."
+        ),
+        "overlay": True,
+        "slots": {
+            "density": {
+                "kind": "fraction",
+                "placed": False,
+                "default": 0.98,
+                "description": (
+                    "how dark the bottom edge gets, 0 to 1 (the gradient's "
+                    "midpoint is set in proportion)"
+                ),
+            },
+        },
+        "derived": {
+            "edge_opacity": ("fraction", "density", 1.0),
+            "mid_opacity": ("fraction", "density", 0.6),
+        },
+        "variants": {"portrait": {}},
+    },
 }
+
+
+def is_overlay(name: str) -> bool:
+    """Whether `name` draws a transparent card meant for `overlay_add`."""
+    return bool(TEMPLATES.get(name, {}).get("overlay"))
 
 #: Slots every template gets: the palette, the font stacks, and the geometry
 #: proofcut computes from the canvas. Style slots are overridable; the geometry
@@ -1734,6 +1835,8 @@ TEMPLATE_BACKGROUND: dict[str, str] = {
     "endcard": "ink",
     "bumper": "ink",
     "chapter": "ink",
+    # Overlay templates (`is_overlay`) have no entry: they draw no background,
+    # and `safe_zone_ink` measures their alpha coverage instead.
 }
 
 #: Reserved-band platform safe zones, at 1080x1920 (the vertical canvas every
@@ -1910,6 +2013,16 @@ def templates() -> list[dict[str, Any]]:
             }
         )
     return listing
+
+
+def _fraction(slot: str, value: Any) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise GraphicsError(f"{slot} must be a number from 0 to 1, not {value!r}") from None
+    if not 0.0 <= number <= 1.0:
+        raise GraphicsError(f"{slot} must be from 0 to 1, not {number}")
+    return number
 
 
 def _rating(slot: str, value: Any) -> float:
@@ -2206,6 +2319,9 @@ def fill_template(
                 resolved["muted"],
                 resolved["amber"],
             )
+        elif builder == "fraction":
+            source, scale = sources
+            filled[slot] = f"{_fraction(source, resolved[source]) * scale:.3f}"
         else:  # pragma: no cover - a builder name only this module writes
             raise GraphicsError(f"template {name!r} names an unknown builder {builder!r}")
 

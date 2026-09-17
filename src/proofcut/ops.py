@@ -2077,7 +2077,8 @@ def card_safe_zones(path: Path | str, card: str, platform: str) -> dict[str, Any
     width, height = graphics.identify(png)
     record = _card_record(project, card)
     background = None
-    if record is not None:
+    overlay = record is not None and graphics.is_overlay(str(record.get("template")))
+    if record is not None and not overlay:
         bg_slot = graphics.TEMPLATE_BACKGROUND.get(str(record.get("template")))
         if bg_slot:
             slots = record.get("slots") or {}
@@ -2104,10 +2105,12 @@ def card_safe_zones(path: Path | str, card: str, platform: str) -> dict[str, Any
                     background = authoring_payload.get("palette", {}).get(bg_slot)
             if background is None:
                 background = graphics.PALETTE.get(bg_slot)
-    if background is None:
+    if background is None and not overlay:
         background = graphics.PALETTE["paper"]
 
-    ink = graphics.safe_zone_ink(png, (width, height), zones[platform], str(background))
+    ink = graphics.safe_zone_ink(
+        png, (width, height), zones[platform], None if overlay else str(background)
+    )
     return {
         "project": str(project.root),
         "card": card,
@@ -3077,6 +3080,13 @@ def _resolve_asset(project: Project, asset: str) -> dict[str, Any]:
         if not name:
             raise ProjectError(f"asset {asset!r} names no card")
         resolved = project.cards_dir / f"{name}.png"
+        record = _card_record(project, name)
+        if record is not None and graphics.is_overlay(str(record.get("template"))):
+            raise ProjectError(
+                f"card {name!r} is a transparent {record.get('template')!r} card — as a "
+                "picture it would draw its type over black; place it over the film "
+                "with overlay_add"
+            )
         is_image = True
         duration = None
     else:
@@ -4504,6 +4514,35 @@ def timeline_view(
         except (ProjectError, tx.TranscriptError) as exc:
             music_error = str(exc)
 
+    # The overlays, as the writer would draw them — `music_view`'s policy: a
+    # stack that cannot resolve is `overlays_error`, never raised. Each item
+    # carries `asset` (`card:<name>`, which `/api/asset/` serves) and its
+    # entrance and exit, so the preview draws what the render will.
+    overlays_view: list[dict[str, Any]] = []
+    overlays_error: str | None = None
+    if project.read_manifest().get(OVERLAYS_KEY):
+        try:
+            overlay_plans = _overlay_plan(
+                project, edit, shots_rate, edit_frames=_edit_frames(edit, shots_rate)
+            )
+            overlays_view = [
+                {
+                    **{
+                        key: plan[key]
+                        for key in (
+                            "position", "card", "clip_id", "timeline_start", "timeline_end",
+                            "frames", "lane", "enter", "enter_seconds", "enter_ease",
+                            "leave", "leave_seconds", "leave_ease",
+                        )
+                    },
+                    "asset": f"card:{plan['card']}",
+                    "rise_px": mlt.OVERLAY_RISE,
+                }
+                for plan in overlay_plans
+            ]
+        except (ProjectError, tx.TranscriptError, media.MediaError) as exc:
+            overlays_error = str(exc)
+
     # The holds lane's own projection — `music_view`'s policy, per item
     # rather than once, because a project can hold several: each stored
     # hold's live `_hold_plan` resolution, or `hold_error` inline when it
@@ -4611,6 +4650,9 @@ def timeline_view(
         # live-resolved fields (or `hold_error` when it cannot resolve right
         # now) — `music_view`'s policy, per item.
         "holds": holds_view,
+        # [] with no overlays; bottom of the stack first. `rise_px` is at a
+        # 1080-line canvas, scaled to `canvas` the way the writer scales it.
+        "overlays": overlays_view,
         # Ruling: this view stays Edit-relative — `segments`/`shots`/`seams`
         # below are unchanged by a configured head, because the web player
         # cannot play one yet and shifting this view's clock would desync it
@@ -4630,6 +4672,8 @@ def timeline_view(
         result["reframe_error"] = reframe_error
     if music_error is not None:
         result["music_error"] = music_error
+    if overlays_error is not None:
+        result["overlays_error"] = overlays_error
     # A clip can be registered, transcribed, and still not be in the edit — and
     # then every one of its words comes back `present: false`, which is exactly
     # what a clip somebody cut entirely looks like. Reported rather than left to
@@ -13431,6 +13475,357 @@ def _resolved_hold_spans(
     return spans, errors
 
 
+# -- overlays --------------------------------------------------------------
+#
+# docs/plans/NATIVE.md § B3, designed. An overlay is a card drawn with no
+# background (`graphics.is_overlay`) placed over the film from a word or an
+# event to a word, an event or a length. Like the music bed, no field is a
+# timeline second: the span resolves through the `Edit` on every build, so a
+# cut cannot leave one pointing at the wrong moment. List order is stacking
+# order — the writer draws a later overlay above an earlier one it overlaps.
+
+OVERLAYS_KEY = "overlays"
+
+#: The entrance and exit an overlay gets unless told otherwise — the launch
+#: clip's headline (`clip.py` § overlay): a 0.45 s eased rise in, a 0.3 s
+#: fade out.
+OVERLAY_ENTER = ("rise", 0.45, "ease-out")
+OVERLAY_LEAVE = ("fade", 0.3, "ease-in")
+
+
+def _stored_overlays(project: Project) -> list[dict[str, Any]]:
+    """Every stored overlay, validated — `_stored_holds`' discipline."""
+    stored = project.read_manifest().get(OVERLAYS_KEY, [])
+    if not isinstance(stored, list):
+        raise ProjectError(f"{project.manifest_path}'s {OVERLAYS_KEY!r} must be a JSON array")
+    overlays: list[dict[str, Any]] = []
+    for item in stored:
+        if not isinstance(item, dict):
+            raise ProjectError(f"{project.manifest_path}'s {OVERLAYS_KEY!r} entries must be JSON objects")
+        try:
+            record: dict[str, Any] = {"card": str(item["card"]), "clip_id": str(item["clip_id"])}
+            for key, kind in (
+                ("word_index", int),
+                ("event", str),
+                ("until_word_index", int),
+                ("until_event", str),
+                ("seconds", float),
+            ):
+                if item.get(key) is not None:
+                    record[key] = kind(item[key])
+            for side, (motion, seconds, ease) in (("enter", OVERLAY_ENTER), ("leave", OVERLAY_LEAVE)):
+                record[side] = str(item.get(side, motion))
+                record[f"{side}_seconds"] = float(item.get(f"{side}_seconds", seconds))
+                record[f"{side}_ease"] = str(item.get(f"{side}_ease", ease))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ProjectError(
+                f"{project.manifest_path} has an overlay that is not "
+                f"(card, clip_id, a start and an end): {item!r} ({exc})"
+            ) from None
+        if ("word_index" in record) == ("event" in record):
+            raise ProjectError(f"overlay {item!r} needs exactly one of word_index or event")
+        ends = [key for key in ("until_word_index", "until_event", "seconds") if key in record]
+        if len(ends) != 1:
+            raise ProjectError(
+                f"overlay {item!r} needs exactly one of until_word_index, until_event or seconds"
+            )
+        overlays.append(record)
+    return overlays
+
+
+def _overlay_card(project: Project, card: str) -> Path:
+    """The overlay's PNG, refused unless it is a card drawn as an overlay.
+
+    An ordinary card is opaque at the full canvas, so placed over the film it
+    would cover every frame of its span — the picture gone at exit 0. A card
+    with no record cannot say which it is, so it is refused too.
+    """
+    _card_name(card)
+    record = _card_record(project, card)
+    if record is None:
+        raise ProjectError(
+            f"card {card!r} has no record, so nothing says it is transparent — "
+            "make it with card_new from an overlay template (lowerthird, scrim)"
+        )
+    template = str(record.get("template"))
+    if not graphics.is_overlay(template):
+        overlays = sorted(name for name in graphics.TEMPLATES if graphics.is_overlay(name))
+        raise ProjectError(
+            f"card {card!r} is a {template!r} card, which is opaque and would cover "
+            f"the film for its whole span — an overlay is a card from {', '.join(overlays)}"
+        )
+    png = project.cards_dir / f"{card}.png"
+    if not png.is_file():
+        raise ProjectError(f"card {card!r} has no PNG at {png} — card_render it first")
+    return png
+
+
+def _overlay_instant(
+    project: Project,
+    edit: tl.Edit,
+    record: dict[str, Any],
+    *,
+    word_key: str,
+    event_key: str,
+    edge: int,
+    what: str,
+) -> tuple[float, dict[str, Any]]:
+    """Where one of an overlay's addresses plays, in Edit seconds, and its echo.
+
+    A word resolves to its own span (`edge` 0 is where it starts, 1 where it
+    ends) and an event to its instant. Either one a cut removed refuses by
+    name — `build_shots`' orphan rule.
+    """
+    clip_id = record["clip_id"]
+    if record.get(word_key) is not None:
+        parsed = _transcript(project, clip_id)
+        index = int(record[word_key])
+        if not 0 <= index < len(parsed.words):
+            raise ProjectError(f"{clip_id!r} has no word {index} (it has {len(parsed.words)})")
+        echo = _cue_echo(parsed, index)
+        span = edit.timeline_span(clip_id, echo["start"], echo["end"])
+        if span is None:
+            raise ProjectError(
+                f"an overlay ({record['card']!r}) {what} at {clip_id!r} word {index} "
+                f"({echo['text']!r}), which a cut removed from the timeline — move it"
+            )
+        return span[edge], echo
+    event = resolve_event(media.get_clip(project, clip_id), str(record[event_key]))
+    at = edit.timeline_time(clip_id, event["at"], closed_end=True)
+    if at is None:
+        raise ProjectError(
+            f"an overlay ({record['card']!r}) {what} at {clip_id!r} event "
+            f"{record[event_key]!r} ({event['at']}s), which a cut removed from the timeline"
+        )
+    return at, event
+
+
+def _overlay_plan(
+    project: Project,
+    edit: tl.Edit,
+    rate: float,
+    *,
+    edit_frames: int,
+    stored: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Every overlay resolved to the frames the writer draws it on, in stacking order.
+
+    Live, every build, never stored — `_music_plan`'s rule. Frames are Edit
+    frames; `_build_mlt` adds a head's frames the way it does for the bed.
+    Raises on the first overlay that cannot resolve; `export` refuses and
+    `timeline_view` reports it as `overlays_error`.
+    """
+    overlays = _stored_overlays(project) if stored is None else stored
+    plans: list[dict[str, Any]] = []
+    for index, record in enumerate(overlays):
+        png = _overlay_card(project, record["card"])
+        start, start_echo = _overlay_instant(
+            project, edit, record, word_key="word_index", event_key="event", edge=0, what="starts"
+        )
+        if record.get("seconds") is not None:
+            if record["seconds"] <= 0:
+                raise ProjectError(f"overlay {record['card']!r} lasts {record['seconds']}s — a length is positive")
+            end, end_echo = start + record["seconds"], None
+        else:
+            end, end_echo = _overlay_instant(
+                project, edit, record, word_key="until_word_index", event_key="until_event", edge=1, what="ends"
+            )
+        start_frame = min(round(start * rate), edit_frames)
+        end_frame = min(round(end * rate), edit_frames)
+        if end_frame <= start_frame:
+            raise ProjectError(
+                f"overlay {record['card']!r} starts at timeline {start:.3f}s and ends at "
+                f"{end:.3f}s — it has to end after it starts, on the {rate:g} fps grid"
+            )
+        frames = end_frame - start_frame
+        overlay = mlt.Overlay(
+            resource=str(png),
+            start=start_frame,
+            frames=frames,
+            in_motion=record["enter"],
+            in_frames=round(record["enter_seconds"] * rate),
+            in_ease=record["enter_ease"],
+            out_motion=record["leave"],
+            out_frames=round(record["leave_seconds"] * rate),
+            out_ease=record["leave_ease"],
+        )
+        try:
+            mlt._check_overlay(overlay, edit_frames)
+        except mlt.MLTError as exc:
+            raise ProjectError(str(exc)) from None
+        plans.append(
+            {
+                "position": index,
+                **record,
+                "png": str(png),
+                "timeline_start": round(start_frame / rate, 3),
+                "timeline_end": round(end_frame / rate, 3),
+                "start_frame": start_frame,
+                "frames": frames,
+                "start_echo": start_echo,
+                "end_echo": end_echo,
+                "overlay": overlay,
+            }
+        )
+    lanes = mlt.overlay_lanes([plan["overlay"] for plan in plans])
+    for plan, lane in zip(plans, lanes):
+        plan["lane"] = lane
+    return plans
+
+
+def _overlay_view(plan: dict[str, Any]) -> dict[str, Any]:
+    """An overlay plan as JSON — everything but the writer's own object."""
+    return {key: value for key, value in plan.items() if key != "overlay"}
+
+
+def _edit_frames(edit: tl.Edit, rate: float) -> int:
+    return sum(frames for _, frames in autoeditor.frame_layout(edit, rate))
+
+
+def overlay_add(
+    path: Path | str,
+    card: str,
+    clip_id: str,
+    word_index: int | None = None,
+    *,
+    phrase: str | None = None,
+    event: str | None = None,
+    until_word_index: int | None = None,
+    until_phrase: str | None = None,
+    until_event: str | None = None,
+    seconds: float | None = None,
+    after: int = -1,
+    occurrence: int | None = None,
+    enter: str | None = None,
+    enter_seconds: float | None = None,
+    enter_ease: str | None = None,
+    leave: str | None = None,
+    leave_seconds: float | None = None,
+    leave_ease: str | None = None,
+    position: int | None = None,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Place overlay card `card` over the film, from a word or event of `clip_id`.
+
+    The start is one of `word_index`, `phrase` (its first word) or `event`;
+    the end is one of `until_word_index`, `until_phrase` (its last word),
+    `until_event` or `seconds` (a length from the start, so a cut inside the
+    span shortens nothing). `enter`/`leave` are `rise`, `fade` or `none`,
+    with a length in seconds and an easing (`mlt.EASINGS`). `position` is
+    where in the stack it goes — 0 is the bottom, the default the top — since
+    a later overlay draws over an earlier one it overlaps: put a `scrim`
+    before the `lowerthird` it sits under.
+
+    Resolved against the live timeline before anything is written, and the
+    words and events it resolved to are echoed with their neighbours.
+    `plan=True` writes nothing.
+    """
+    project = Project.open(path)
+    if sum(x is not None for x in (word_index, phrase, event)) != 1:
+        raise ProjectError("an overlay starts at one of word_index, phrase or event")
+    if sum(x is not None for x in (until_word_index, until_phrase, until_event, seconds)) != 1:
+        raise ProjectError("an overlay ends at one of until_word_index, until_phrase, until_event or seconds")
+
+    record: dict[str, Any] = {"card": card, "clip_id": clip_id}
+    if event is not None:
+        record["event"] = event
+    else:
+        record["word_index"], _ = _resolve_word_or_phrase(
+            _transcript(project, clip_id) if phrase is not None else None,
+            word_index=word_index,
+            phrase=phrase,
+            after=after,
+            occurrence=occurrence,
+            edge="first",
+        )
+    if until_event is not None:
+        record["until_event"] = until_event
+    elif seconds is not None:
+        record["seconds"] = float(seconds)
+    else:
+        _, record["until_word_index"] = _resolve_word_or_phrase(
+            _transcript(project, clip_id) if until_phrase is not None else None,
+            word_index=until_word_index,
+            phrase=until_phrase,
+            after=after,
+            occurrence=occurrence,
+            edge="last",
+        )
+    for side, (motion, length, ease), values in (
+        ("enter", OVERLAY_ENTER, (enter, enter_seconds, enter_ease)),
+        ("leave", OVERLAY_LEAVE, (leave, leave_seconds, leave_ease)),
+    ):
+        record[side] = motion if values[0] is None else str(values[0])
+        record[f"{side}_seconds"] = length if values[1] is None else float(values[1])
+        record[f"{side}_ease"] = ease if values[2] is None else str(values[2])
+        if record[side] not in mlt.OVERLAY_MOTIONS:
+            raise ProjectError(f"{side} {record[side]!r} is not one of {', '.join(mlt.OVERLAY_MOTIONS)}")
+        if record[f"{side}_ease"] not in mlt.EASINGS:
+            raise ProjectError(f"{side}_ease {record[f'{side}_ease']!r} is not one of {', '.join(mlt.EASINGS)}")
+        if record[f"{side}_seconds"] < 0:
+            raise ProjectError(f"{side}_seconds is a length, not {record[f'{side}_seconds']}")
+
+    stored = _stored_overlays(project)
+    at = len(stored) if position is None else int(position)
+    if not 0 <= at <= len(stored):
+        raise ProjectError(f"position {at} is outside the stack of {len(stored)} overlays (0 to {len(stored)})")
+    updated = [*stored[:at], record, *stored[at:]]
+
+    edit = _load_edit(project)
+    rate = _export_fps(_clips_by_id(project))
+    plans = _overlay_plan(project, edit, rate, edit_frames=_edit_frames(edit, rate), stored=updated)
+    if not plan:
+        manifest = project.read_manifest()
+        manifest[OVERLAYS_KEY] = updated
+        project.write_manifest(manifest)
+    return {
+        "overlay": _overlay_view(plans[at]),
+        "position": at,
+        "count": len(updated),
+        "rate": rate,
+        "plan": bool(plan),
+    }
+
+
+def overlay_ls(path: Path | str) -> dict[str, Any]:
+    """Every overlay, bottom of the stack first, with where it plays now.
+
+    Read-only. A stack that cannot resolve is reported rather than raised —
+    `overlays_error`, `timeline_view`'s convention — with the stored records,
+    so the one to fix or remove can still be found.
+    """
+    project = Project.open(path)
+    stored = _stored_overlays(project)
+    rate = _export_fps(_clips_by_id(project))
+    try:
+        edit = _load_edit(project)
+        plans = _overlay_plan(project, edit, rate, edit_frames=_edit_frames(edit, rate), stored=stored)
+    except (ProjectError, tl.TimelineError, tx.TranscriptError, media.MediaError) as exc:
+        return {"overlays": stored, "overlays_error": str(exc), "rate": rate}
+    return {"overlays": [_overlay_view(p) for p in plans], "overlays_error": None, "rate": rate}
+
+
+def overlay_rm(path: Path | str, position: int, *, plan: bool = False) -> dict[str, Any]:
+    """Take the overlay at `position` (as `overlay_ls` numbers it) off the film.
+
+    The card itself stays under `assets/cards/`. `plan=True` writes nothing.
+    """
+    project = Project.open(path)
+    stored = _stored_overlays(project)
+    if not 0 <= int(position) < len(stored):
+        raise ProjectError(
+            f"there is no overlay at position {position} — the stack has {len(stored)}"
+            + (f" (0 to {len(stored) - 1})" if stored else "")
+        )
+    removed = stored[int(position)]
+    remaining = [item for i, item in enumerate(stored) if i != int(position)]
+    if not plan:
+        manifest = project.read_manifest()
+        manifest[OVERLAYS_KEY] = remaining
+        project.write_manifest(manifest)
+    return {"removed": removed, "position": int(position), "count": len(remaining), "plan": bool(plan)}
+
+
 def _is_layered(project: Project, edit: tl.Edit) -> bool:
     """Does this timeline need the MLT writer?
 
@@ -13469,6 +13864,8 @@ def _is_layered(project: Project, edit: tl.Edit) -> bool:
         # Film audio under the VO is a lane auto-editor has no export for —
         # recorded but routed there, the render comes back without it at exit 0.
         or manifest.get(UNDER_VO_KEY)
+        # An overlay is a lane over the picture — ninth trigger, same rule.
+        or manifest.get(OVERLAYS_KEY)
     )
 
 
@@ -13818,6 +14215,21 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         if music2_lane:
             music2_lane = _gate_music_lane(project, music2_lane, music_resources, gate_spans, rate)
 
+    # The overlays, resolved in Edit frames and moved by the head the way the
+    # bed is — a head is not part of the `Edit` an overlay addresses.
+    overlay_plans = _overlay_plan(project, edit, rate, edit_frames=edit_frames)
+    overlays = [
+        replace(plan["overlay"], start=plan["overlay"].start + head_frames)
+        for plan in overlay_plans
+    ]
+    overlays_report = [
+        {
+            key: plan[key]
+            for key in ("position", "card", "clip_id", "timeline_start", "timeline_end", "frames", "lane", "enter", "leave")
+        }
+        for plan in overlay_plans
+    ]
+
     resolution = _mlt_resolution(project)
     by_clip = _reframe_map(project, resolution)
     reframes = {
@@ -13829,6 +14241,7 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         music=music_lane,
         music2=music2_lane,
         holds=holds_lane,
+        overlays=overlays,
         rate=rate,
         resolution=resolution,
         reframe=reframes,
@@ -13855,6 +14268,9 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         # sees the render actually carried each hold rather than trusting
         # the manifest key alone.
         "holds": holds_report,
+        # [] with no overlays, or each one the render draws — `music`'s
+        # reasoning: an overlay recorded but not drawn is a silent failure.
+        "overlays": overlays_report,
         # What the render will actually crop, named where the render is built
         # rather than left for a pixel probe to discover.
         "reframed": sorted(
@@ -13894,6 +14310,8 @@ def _mlt_reply(built: dict[str, Any], edit: tl.Edit, **extra: Any) -> dict[str, 
         # `music` reasoning: a hold recorded but not rendered is the silent
         # failure `_is_layered`'s trigger exists to prevent.
         "holds": built["holds"],
+        # [] with no overlays, or each one drawn, and on which lane.
+        "overlays": built["overlays"],
         # Named on both roads because a crop is a decision about what is on
         # screen, and the render that made it looks entirely plausible.
         "reframed": built["reframed"],
@@ -16800,6 +17218,10 @@ def reel(
     # pin failure shape CLAUDE.md already documents for the picture side.
     holds_dropped = _stored_holds(source)
     under_vo_dropped = _stored_under_vo(source)
+    # An overlay is addressed by words and events of the film, and a reel's
+    # own type is a decision about the reel — dropped and named, the tail's
+    # rule, never carried across.
+    overlays_dropped = _stored_overlays(source)
     # Checked here rather than left to `cut_by_time`, at the granularity a reel
     # actually has a boundary at — see `_reel_suspect_edges`. Under `plan` it
     # is reported and never refused, which is `cut_by_time`'s own convention
@@ -16868,6 +17290,7 @@ def reel(
         # carried onto the derived project — same rule, same reason.
         "holds_dropped": holds_dropped,
         "under_vo_dropped": under_vo_dropped,
+        "overlays_dropped": overlays_dropped,
         "plan": bool(plan),
     }
     report["over_platform_cap"] = report["duration"] > PLATFORM_CAP
@@ -16905,6 +17328,7 @@ def reel(
         # `holds_dropped`'s own "never" line, for the same reason.
         manifest.pop(HOLDS_KEY, None)
         manifest.pop(UNDER_VO_KEY, None)
+        manifest.pop(OVERLAYS_KEY, None)
         # Provenance, and the answer to the question a hand-made scratch copy
         # could not answer once already: which film is this, and which seconds
         # of it (HISTORY.md § The VO the project was holding). Additive and

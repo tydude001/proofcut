@@ -30,7 +30,7 @@ from proofcut.energy import EnergyError
 from proofcut.finish import FinishError
 from proofcut.graphics import GraphicsError
 from proofcut.media import MediaError
-from proofcut.mlt import EASINGS, MLTError
+from proofcut.mlt import EASINGS, OVERLAY_MOTIONS, MLTError
 from proofcut.pack import PackError
 from proofcut.picture import PictureError
 from proofcut.project import ProjectError, path_too_long
@@ -1422,6 +1422,41 @@ def _build_parser() -> argparse.ArgumentParser:
         help="likeness docked per semitone under the floor (0 restores likeness-only ranking)",
     )
 
+    p_overlay = sub.add_parser(
+        "overlay", help="transparent cards drawn over the film (lowerthird, scrim)"
+    )
+    overlay_sub = p_overlay.add_subparsers(dest="overlay_command", required=True)
+    p_overlay_add = overlay_sub.add_parser(
+        "add", help="place an overlay card from a word or event to a word, event or length"
+    )
+    p_overlay_add.add_argument("card", help="a card made from an overlay template (card new … lowerthird)")
+    p_overlay_add.add_argument("clip_id", help="the clip whose words or events address the span")
+    p_overlay_add.add_argument("word_index", type=int, nargs="?", help="the word it starts on")
+    p_overlay_add.add_argument("--phrase", help="start on this phrase's first word")
+    p_overlay_add.add_argument("--event", help="start on this event (name or name#k)")
+    p_overlay_add.add_argument("--until-word", type=int, dest="until_word_index", help="end with this word")
+    p_overlay_add.add_argument("--until-phrase", help="end with this phrase's last word")
+    p_overlay_add.add_argument("--until-event", help="end on this event")
+    p_overlay_add.add_argument("--for", type=float, dest="seconds", help="end this many seconds after the start")
+    p_overlay_add.add_argument("--after", type=int, default=-1, help="only match a phrase forward of this word index")
+    p_overlay_add.add_argument("--occurrence", type=int, help="pick the Nth phrase match")
+    motions = ", ".join(OVERLAY_MOTIONS)
+    eases = ", ".join(EASINGS)
+    p_overlay_add.add_argument("--enter", choices=OVERLAY_MOTIONS, help=f"{motions} (default {ops.OVERLAY_ENTER[0]})")
+    p_overlay_add.add_argument("--enter-seconds", type=float, help=f"default {ops.OVERLAY_ENTER[1]}")
+    p_overlay_add.add_argument("--enter-ease", choices=tuple(EASINGS), help=f"{eases} (default {ops.OVERLAY_ENTER[2]})")
+    p_overlay_add.add_argument("--leave", choices=OVERLAY_MOTIONS, help=f"{motions} (default {ops.OVERLAY_LEAVE[0]})")
+    p_overlay_add.add_argument("--leave-seconds", type=float, help=f"default {ops.OVERLAY_LEAVE[1]}")
+    p_overlay_add.add_argument("--leave-ease", choices=tuple(EASINGS), help=f"{eases} (default {ops.OVERLAY_LEAVE[2]})")
+    p_overlay_add.add_argument(
+        "--position", type=int, help="where in the stack (0 = bottom; default the top) — a scrim goes under its type"
+    )
+    p_overlay_add.add_argument("--plan", action="store_true", help="resolve and report without writing")
+    overlay_sub.add_parser("ls", help="list overlays, bottom of the stack first, with where each plays")
+    p_overlay_rm = overlay_sub.add_parser("rm", help="take an overlay off the film (the card stays)")
+    p_overlay_rm.add_argument("position", type=int, help="its position, as `overlay ls` numbers it")
+    p_overlay_rm.add_argument("--plan", action="store_true", help="report without writing")
+
     p_hold = sub.add_parser(
         "hold", help="film-audio holds — a clean span of a clip's own audio spliced into the VO"
     )
@@ -2798,6 +2833,37 @@ def _cmd_vo_synth(args: argparse.Namespace) -> int:
     )
 
 
+def _cmd_overlay(args: argparse.Namespace) -> int:
+    if args.overlay_command == "add":
+        return _emit(
+            ops.overlay_add(
+                args.project,
+                args.card,
+                args.clip_id,
+                args.word_index,
+                phrase=args.phrase,
+                event=args.event,
+                until_word_index=args.until_word_index,
+                until_phrase=args.until_phrase,
+                until_event=args.until_event,
+                seconds=args.seconds,
+                after=args.after,
+                occurrence=args.occurrence,
+                enter=args.enter,
+                enter_seconds=args.enter_seconds,
+                enter_ease=args.enter_ease,
+                leave=args.leave,
+                leave_seconds=args.leave_seconds,
+                leave_ease=args.leave_ease,
+                position=args.position,
+                plan=args.plan,
+            )
+        )
+    if args.overlay_command == "ls":
+        return _emit(ops.overlay_ls(args.project))
+    return _emit(ops.overlay_rm(args.project, args.position, plan=args.plan))
+
+
 def _cmd_hold(args: argparse.Namespace) -> int:
     if args.hold_command == "add":
         return _emit(
@@ -3304,6 +3370,7 @@ _COMMANDS = {
     "music": _cmd_music,
     "vo-extend": _cmd_vo_extend,
     "vo-synth": _cmd_vo_synth,
+    "overlay": _cmd_overlay,
     "hold": _cmd_hold,
     "reel": _cmd_reel,
     "review": _cmd_review,

@@ -1473,6 +1473,23 @@ built; docs/plans/INSTALL.md):
     without records ever resurfaces. All twelve author at 9:16; the two that
     refuse at 2.35:1 are a 16:9-only content fit. HISTORY.md § The card record,
     § Step 6 of the aspect swap, watched.
+- **An overlay is a card with no background (`graphics.is_overlay`), drawn
+  over the film by `OVERLAYS_KEY` — `_is_layered`'s ninth trigger — and it
+  goes over nothing else.** An opaque card is refused as an overlay (it
+  covers the film for its whole span) and an overlay card is refused as a
+  cue, tail or head (`_resolve_asset`: its type over black). The span is a
+  word/event address resolved through the `Edit` every build, never
+  seconds, and **list order is the stack**. Two writer rules, both measured
+  (`~/proofcut-work/spikes/overlay-probe`): the entry reads its still from
+  frame 0, because `rect` keys count from the producer (the A2 fade trap);
+  and **only a moving key is drawn off 1:1** — a 1:1 rise snaps to whole
+  rows, and a nudged resting key leaves the type sub-pixel off and
+  resampled. `reframed_nodes` skips `ochain` nodes, whose filter carries a
+  `rect` and is not a reframe. **The preview's `#overlay-layer` mirrors
+  `mlt.ease_fraction`** — change a curve in one and the window stops
+  drawing the render. A frame melt composites with an overlay reads ~2 luma
+  levels brighter all over, so judge an overlay against a baseline frame
+  inside its span. HISTORY.md § Overlays, built.
 - **A channel preset pack is a snapshot, never a live reference to a sibling
   repo's file.** `pack.load_pack` resolves one external JSON file (palette,
   fonts, mark, caption presets, weights) once; `pack_apply` writes the fully-

@@ -104,6 +104,7 @@
  *   #picture                 the V2 layer over both: the shot under the
  *                          playhead, `contain` so nothing is cropped
  *   .picture-note             why a shot is not showing, in words
+ *   #overlay-layer           overlays over the picture, one image each
  *   #caption-layer           CC over both — geometry only, because every
  *                          visible property comes off /api/captions so the
  *                          preview shows the render's look and not proofcut's
@@ -199,6 +200,8 @@
  *                             plan refused, and the message is the point
  *   .music-block / .fade-ramp   the A2 bed's audible span, and its fade
  *                             ramps (timeline.js's `buildMusicRow`)
+ *   .overlay-block             one overlay on OV (timeline.js's
+ *                             `buildOverlayRow`), banded by its writer lane
  *   .filmstrip / .filmstrip img  V1/V2 thumbnails (timeline.js's
  *                             `buildFilmstrip`, `/api/thumb/<clip_id>`) —
  *                             fixed-width frames reading the block's OWN
@@ -506,6 +509,7 @@
   --clip-rose: light-dark(hsl(350 58% 89%), hsl(350 20% 33%));
   --clip-sand: light-dark(hsl(41 34% 88%), hsl(41 10% 24%));
   --clip-peach: light-dark(hsl(24 52% 88%), hsl(24 18% 29%));
+  --clip-teal: light-dark(hsl(180 34% 85%), hsl(180 18% 27%));
   --clip-ink: light-dark(hsl(48 14% 18%), hsl(48 20% 90%));
   --clip-edge: light-dark(hsl(42 12% 76% / 0.9), hsl(42 6% 30% / 0.9));
 
@@ -1618,6 +1622,28 @@ textarea {
   display: none;
 }
 
+
+/* The overlay layer — transparent cards over the picture (player.js §
+   overlays). Each image is canvas-sized, so it fills #frame exactly the way
+   the writer places it; player.js sets only opacity and a vertical offset,
+   mirroring the `rect` keys the render animates. Never takes a click. */
+#overlay-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+#overlay-layer img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+#overlay-layer img[hidden] {
+  display: none;
+}
 
 /* The caption layer — geometry only.
 
@@ -3559,6 +3585,14 @@ textarea {
    padding is drawn as nothing, because that is what silence is. */
 .lane-a2 {
   --clip-fill: var(--clip-peach);
+}
+
+/* OV — overlays drawn over the film (timeline.js `buildOverlayRow`). One
+   row however many writer lanes the stack needs; overlapping overlays share
+   it in bands, the bottom of the stack lowest, and the ramps are the
+   entrance and exit. */
+.lane-ov {
+  --clip-fill: var(--clip-teal);
 }
 
 /* A crossfade: two pieces overlap, so each takes half the row. */

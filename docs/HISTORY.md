@@ -16097,3 +16097,57 @@ eased-pan project (`~/proofcut-work/spikes/eased-pan/sheetrepro`, a copy),
 the sheet draws the 9.9 s window at 9.915, 9.95 and 9.967 s. The copy's
 footage is one static frame, so the tile cannot say *which* frame it is;
 the timestamp and the ffmpeg probe carry that.
+
+## Overlays, built — 2026-09-16
+
+docs/plans/NATIVE.md § B3, built as designed, with every recommendation Tyler
+took. The spike is `~/proofcut-work/spikes/overlay-probe/FINDINGS.md`: MLT
+needed nothing new. An overlay is a `qimage` PNG with alpha on a blanked lane,
+composited by the writer's existing `qtblend` transition and animated by a
+`qtblend` filter whose `rect` carries opacity as a fifth value. Alpha
+survived (0.998 opaque, 0.50 half), and the flatpak melt and Shotcut's
+portable melt read back identically.
+
+What shipped:
+- **Two overlay templates**, `lowerthird` (headline and amber footnote,
+  bottom left, the launch clip's register) and `scrim` (a gradient whose
+  `density` is a validated fraction), each with a portrait variant above the
+  reserved bottom fifth. They draw no background rect, so
+  `card_safe_zones` measures their alpha coverage (`graphics.is_overlay`).
+- **`overlay add/ls/rm`** (and `overlay_add`/`overlay_ls`/`overlay_rm`), a new
+  optional `overlays` key and no schema bump. A span starts at a word, phrase
+  or event and ends at one, or after `seconds`. It is resolved through the
+  `Edit` on every build (`_overlay_plan`, the bed's rule), and a cut through
+  its start refuses export by name. An opaque card is refused as an overlay,
+  and an overlay card is refused as a cue (`_resolve_asset`).
+- **The writer** (`mlt.Overlay`, `overlay_lanes`, `overlay_rect`): list order
+  is stacking order, packed onto as few lanes as keep it, above every
+  picture track. The entry always reads its still from frame 0, because keys
+  count from the producer (A2's trap). Only a *moving* key is drawn at
+  1921x1081. A 1:1 rise snapped to whole rows, and an all-nudged rise came to
+  rest 0.22 px off and resampled. `reframed_nodes` skips `ochain` nodes, and
+  `_is_layered` has a ninth trigger.
+- **The window**: an `OV` lane above V2, banded by writer lane, and an
+  `#overlay-layer` in the preview that draws each card with the writer's
+  opacity and offset on `mlt.ease_fraction`'s curves.
+
+How it was judged:
+- **The preview, against the render, on the demo project**
+  (`overlay-probe/demo`). At 2.7 s, 0.16 s into the lower third's rise,
+  the preview drew opacity 0.723 and a 2.46 px drop at 400 lines. The render
+  read 0.739 of the rest contrast and a 2.3 px drop at 360 lines (expected
+  2.2), and its frame is at 2.708 s, where the curve gives 0.745.
+- **Clicks at 0 and 120 ms**, a clean console, and a clean 700 px sweep.
+- `test_an_overlay_is_drawn_where_and_as_strongly_as_its_keys_say` reads a
+  real melt render of a scrim over a flat source: nothing outside the span,
+  and a linear fade is half-way at half-time.
+
+Two findings, neither fixed:
+- **A frame composited with an overlay reads 2 luma levels brighter over the
+  whole picture**: 134 against 132 on a source whose own frames read 135. So
+  a flat area steps by 2 where an overlay starts and ends. It is melt's
+  compositing path, not the overlay's pixels (the spike saw the same thing in
+  chroma), and the composited frame is the more faithful one.
+- **A lower third and burned captions share the bottom band.** On the demo
+  the preview's caption line ran through the footnote. Nothing checks for
+  this.

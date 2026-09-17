@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="{{width}}" height="{{height}}" viewBox="0 0 1920 {{view_height}}">
+  <g transform="translate(0, {{foot_y}})">
+    <text x="96" y="-70" font-family="{{title_font}}" font-size="76" font-weight="700" fill="{{paper}}">{{headline}}</text>
+    <text x="100" y="12" font-family="{{body_font}}" font-size="44" font-weight="{{footnote_weight}}" fill="{{amber}}">{{footnote}}</text>
+  </g>
+</svg>

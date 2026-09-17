@@ -61,7 +61,7 @@ INSTRUCTIONS = (
     "- picture: cue_add (b-roll under a line), broll_brief, shot_sheet, canvas, "
     "reframe, reframe_sheet\n"
     "- sound: music (the bed), hold_add, vo_extend, vo_synth\n"
-    "- cards and ends: card_templates, card_new, head, tail\n"
+    "- cards and ends: card_templates, card_new, overlay_add (type over the film), head, tail\n"
     "- finish: add_captions, caption_style, export (render with export_format=null)\n"
     "- checks: check_frames, verify, film_check, finish_check; changes (what the last edits did)\n\n"
     "Rules nothing will warn you about:\n"
@@ -342,7 +342,7 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "transcript_checks", "describe_ls", "card_templates", "card_safe_zones",
             "pack_show", "pack_status", "cue_ls", "assets", "unspoken_ls", "build_shots",
             "locate", "timeline_status", "timeline_view", "changes", "properties", "finish_report",
-            "caption_view", "hold_ls", "hold_check", "finish_check", "reframe_coverage",
+            "caption_view", "hold_ls", "hold_check", "overlay_ls", "finish_check", "reframe_coverage",
             "continuity_check", "continuity_ls", "thumbnail", "contact_sheet",
             "broll_brief", "verify", "check_frames", "check_black", "spot_frames",
             "speech_overlap", "review_list",
@@ -352,6 +352,8 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
     **dict.fromkeys(
         [
             "init", "import_media", "cue_add", "unspoken_add", "continuity_accept",
+            # Inserts a record into the stack; never replaces one.
+            "overlay_add",
             # `apply` writes a label only where none is set, and never over one.
             "attribute_speakers",
             # `apply` never writes over an existing override (CLAUDE.md).
@@ -386,6 +388,7 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "clip_rm", "transcribe", "cue_rm", "unspoken_rm", "unspoken_detect",
             "cut_by_transcript", "cut_by_time", "undo", "vo_extend", "vo_synth",
             "hold_add", "hold_rm", "hold_under_rm", "reel", "continuity_reject",
+            "overlay_rm",
             "review_add",
         ],
         _EDIT,
@@ -1617,6 +1620,40 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "echo it with its neighbours, writing nothing."
         ),
         "clear": "Remove every event on this clip.",
+    },
+    "overlay_add": {
+        "card": (
+            "The overlay card to place: one made by card_new from an overlay template "
+            "(`lowerthird`, `scrim`). An ordinary card is opaque and is refused."
+        ),
+        "clip_id": (
+            "The clip whose words or events address the span — the transcript the "
+            "word indices index, or the recording the events belong to."
+        ),
+        "word_index": "The word the overlay starts on. One of word_index, phrase or event.",
+        "phrase": "Start on this phrase's FIRST word, resolved against clip_id's transcript.",
+        "event": "Start on this event of clip_id: `name`, or `name#k` when the name repeats.",
+        "until_word_index": (
+            "End as this word ends. One of until_word_index, until_phrase, until_event or seconds."
+        ),
+        "until_phrase": "End as this phrase's LAST word ends.",
+        "until_event": "End on this event of clip_id.",
+        "seconds": (
+            "End this long after the start. A length, so a cut inside the span does not shorten it."
+        ),
+        "enter": "How it appears: `rise` (moves up while fading in), `fade`, or `none` (a cut). Default rise.",
+        "enter_seconds": "How long the entrance takes. Default 0.45.",
+        "enter_ease": "The entrance's curve: linear, ease, ease-in or ease-out. Default ease-out.",
+        "leave": "How it goes: `fade`, `rise` (moves down while fading out), or `none`. Default fade.",
+        "leave_seconds": "How long the exit takes. Default 0.3.",
+        "leave_ease": "The exit's curve: linear, ease, ease-in or ease-out. Default ease-in.",
+        "position": (
+            "Where in the stack it goes: 0 is the bottom, omitted is the top. A later "
+            "overlay draws over an earlier one it overlaps, so a scrim goes before its type."
+        ),
+    },
+    "overlay_rm": {
+        "position": "The overlay to remove, by its position in overlay_ls (0 is the bottom).",
     },
     "broll_brief": {
         "fps": (
@@ -4590,6 +4627,92 @@ def events(
         clear=clear,
         plan=plan,
     )
+
+
+@_tool()
+def overlay_add(
+    path: ProjectPath = None,
+    *,
+    card: str,
+    clip_id: str,
+    word_index: int | None = None,
+    phrase: str | None = None,
+    event: str | None = None,
+    until_word_index: int | None = None,
+    until_phrase: str | None = None,
+    until_event: str | None = None,
+    seconds: float | None = None,
+    after: int = -1,
+    occurrence: int | None = None,
+    enter: str | None = None,
+    enter_seconds: float | None = None,
+    enter_ease: str | None = None,
+    leave: str | None = None,
+    leave_seconds: float | None = None,
+    leave_ease: str | None = None,
+    position: int | None = None,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Draw a transparent card over the film — a lower third, or the scrim under one.
+
+    Make the card first with card_new from `lowerthird` (a headline and an
+    optional footnote, bottom left) or `scrim` (a dark gradient for type to sit
+    on). The span starts at a word, phrase or event of `clip_id` and ends at a
+    word, phrase, event or length; it is resolved through the timeline on
+    every build and never stored as seconds, so cuts move it, and a cut
+    through its start word makes export refuse until it is moved.
+
+    The stack is list order: a later overlay draws over an earlier one it
+    overlaps. Put the scrim first (or `position=0`), then the lowerthird. A
+    staggered footnote is its own lowerthird with an empty headline, starting
+    later. The reply echoes the words or event each end resolved to and
+    where it plays; `plan=true` writes nothing. Any overlay routes export
+    through the MLT writer, and export's reply lists the overlays it drew.
+    """
+    return ops.overlay_add(
+        path,
+        card,
+        clip_id,
+        word_index,
+        phrase=phrase,
+        event=event,
+        until_word_index=until_word_index,
+        until_phrase=until_phrase,
+        until_event=until_event,
+        seconds=seconds,
+        after=after,
+        occurrence=occurrence,
+        enter=enter,
+        enter_seconds=enter_seconds,
+        enter_ease=enter_ease,
+        leave=leave,
+        leave_seconds=leave_seconds,
+        leave_ease=leave_ease,
+        position=position,
+        plan=plan,
+    )
+
+
+@_tool()
+def overlay_ls(path: ProjectPath = None) -> dict[str, Any]:
+    """Every overlay, bottom of the stack first, with where each plays now.
+
+    Each carries its `position` (as overlay_rm takes it), its lane, and its
+    timeline span. A stack that cannot resolve — a cut removed a start word —
+    comes back as `overlays_error` beside the stored records, so the one to
+    move or remove can still be found.
+    """
+    return ops.overlay_ls(path)
+
+
+@_tool()
+def overlay_rm(path: ProjectPath = None, *, position: int, plan: bool = False) -> dict[str, Any]:
+    """Take one overlay off the film, by its position in overlay_ls.
+
+    The card stays under assets/cards/, so it can be placed again. Positions
+    above the removed one move down by one.
+    """
+    return ops.overlay_rm(path, position, plan=plan)
 
 
 @_tool()

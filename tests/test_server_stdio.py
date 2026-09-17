@@ -96,6 +96,9 @@ EXPECTED_TOOLS = {
     "hold_under_rm",
     "hold_ls",
     "hold_check",
+    "overlay_add",
+    "overlay_ls",
+    "overlay_rm",
     "finish_check",
     "reel",
     "review_add",
@@ -299,6 +302,42 @@ def test_timeline_status_lists_a_registered_clip_before_it_is_seeded(
 
     assert status["seeded"] is False
     assert status["clips"] == [clip_id]
+
+
+@needs_ffprobe
+@pytest.mark.skipif(shutil.which("magick") is None, reason="a card is drawn by ImageMagick")
+def test_an_overlay_is_placed_listed_and_removed_over_the_wire(
+    tmp_path: Path, sources: tuple[Path, Path]
+) -> None:
+    """NATIVE B3's three tools, registered and reachable: a lowerthird
+    placed from a phrase, listed at its position, planned off and removed."""
+    audio, transcript = sources
+    project = tmp_path / "proj"
+
+    async def body(session: ClientSession) -> Any:
+        client = Client(session)
+        clip = await _seeded(client, project, audio, transcript)
+        await client.call(
+            "card_new", path=str(project), name="lt", template="lowerthird",
+            slots={"headline": "It hears the false start."},
+        )
+        added = await client.call(
+            "overlay_add", path=str(project), card="lt", clip_id=clip, word_index=1, seconds=1.5
+        )
+        listed = await client.call("overlay_ls", path=str(project))
+        planned = await client.call("overlay_rm", path=str(project), position=0, plan=True)
+        removed = await client.call("overlay_rm", path=str(project), position=0)
+        return {"added": added, "listed": listed, "planned": planned, "removed": removed,
+                "after": await client.call("overlay_ls", path=str(project))}
+
+    out = anyio.run(_with_server, body)
+
+    assert out["added"]["overlay"]["card"] == "lt"
+    assert out["added"]["overlay"]["start_echo"]["word_index"] == 1
+    assert [(o["position"], o["card"]) for o in out["listed"]["overlays"]] == [(0, "lt")]
+    assert out["planned"]["count"] == 0 and out["planned"]["plan"] is True
+    assert out["removed"]["removed"]["card"] == "lt"
+    assert out["after"]["overlays"] == []
 
 
 @needs_ffprobe
@@ -634,6 +673,9 @@ TOOL_TO_COMMAND = {
     "hold_under_rm": "hold",
     "hold_ls": "hold",
     "hold_check": "hold",
+    "overlay_add": "overlay",
+    "overlay_ls": "overlay",
+    "overlay_rm": "overlay",
     "finish_check": "finish-check",
     "reel": "reel",
     "review_add": "review",
@@ -834,6 +876,8 @@ def test_card_new_from_a_template_over_the_wire(tmp_path: Path) -> None:
         "endcard",
         "bumper",
         "chapter",
+        "lowerthird",
+        "scrim",
     }
     assert out["made"]["asset"] == "card:receipt-scream-1996"
     # No video clip in this project, so the canvas falls back to 1080p.
@@ -7101,6 +7145,77 @@ def test_rendering_a_cued_project_goes_through_melt_and_is_measured(
     assert frames["agrees"] is True
 
 
+# -- an overlay, read back off a real melt render ---------------------------
+
+
+def _frame_rows(path: Path, frame: int, rows: range) -> float:
+    """Mean luma of `rows` in frame index `frame` of `path`, 0-255."""
+    raw = subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-i", str(path),
+         "-vf", f"select=eq(n\\,{frame})", "-frames:v", "1",
+         "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+        capture_output=True, check=True,
+    ).stdout  # fmt: skip
+    width = len(raw) // 180
+    values = [raw[y * width + x] for y in rows for x in range(0, width, 4)]
+    return sum(values) / len(values)
+
+
+@needs_melt
+@pytest.mark.skipif(shutil.which("magick") is None, reason="a card is drawn by ImageMagick")
+def test_an_overlay_is_drawn_where_and_as_strongly_as_its_keys_say(visible_tmp: Path) -> None:
+    """NATIVE B3 against a real melt: a scrim over a flat source, placed at an
+    event, fading in linearly over one second. Every number is read back off
+    the rendered frames — before, halfway, at rest, after — never off the
+    document (docs/plans/NATIVE.md § B3, designed). A flat source is what makes
+    "halfway" a number: the darkening at frame 45 is half of frame 60's."""
+    film = visible_tmp / "flat.mp4"
+    subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-y",
+         "-f", "lavfi", "-i", "color=c=0x6090c0:size=320x180:rate=30:duration=4",
+         "-f", "lavfi", "-i", "sine=frequency=440:duration=4:sample_rate=48000",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(film)],
+        capture_output=True, check=True,
+    )  # fmt: skip
+    project = visible_tmp / "proj"
+    output = visible_tmp / "out.mp4"
+
+    async def body(session: ClientSession) -> Any:
+        client = Client(session)
+        await client.call("init", path=str(project))
+        clip = (await client.call("import_media", path=str(project), source=str(film)))["clip_id"]
+        await client.call("seed_timeline", path=str(project), clip_id=clip, remove_silences=False)
+        await client.call("events", path=str(project), clip_id=clip, name="land", at=1.0)
+        await client.call(
+            "card_new", path=str(project), name="scrim", template="scrim", slots={"density": 1.0}
+        )
+        await client.call(
+            "overlay_add", path=str(project), card="scrim", clip_id=clip, event="land",
+            seconds=2.0, enter="fade", enter_seconds=1.0, enter_ease="linear", leave="none",
+        )
+        return await client.call("export", path=str(project), output=str(output), export_format=None)
+
+    rendered = anyio.run(_with_server, body)
+
+    assert rendered["writer"] == "melt"
+    assert [(o["card"], o["frames"]) for o in rendered["overlays"]] == [("scrim", 60)]
+    assert rendered["rendered"]["frames"] == 120
+    bottom, top = range(165, 180), range(60)
+    before, start, half, rest, after = (_frame_rows(output, n, bottom) for n in (20, 30, 45, 60, 100))
+    assert abs(after - before) < 1, "nothing is drawn outside the overlay's span"
+    # Frame 30 is the fade's first key, at opacity 0: the baseline inside the
+    # span. It is not `before`: a frame composited with an image reads 2 luma
+    # levels brighter over the whole picture (134 against 132 on this source,
+    # whose own frames read 135) — melt's path, not the overlay's pixels, and
+    # the spike's chroma finding again (overlay-probe FINDINGS.md § 2).
+    assert rest < start - 30, "the scrim darkens the bottom of the frame"
+    assert (start - half) == pytest.approx((start - rest) / 2, rel=0.05), "a linear fade is half-way at half-time"
+    # The top of the scrim is transparent, so the frame there is the source's,
+    # within that path's few levels.
+    source_top = _frame_rows(film, 60, top)
+    assert abs(_frame_rows(output, 60, top) - source_top) <= 4
+
+
 # -- a head's own lead-silence pad, against a real melt render --------------
 #
 # The trap named in CLAUDE.md: `mlt.document`'s validation only checks the
@@ -8102,7 +8217,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
     hung on the parameter in `server.py` that never reached `tools/list` is
     exactly the failure this pins: the two tools whose `path` means *no
     project* (`fonts`, `pack_show`) have to say their own thing, and the
-    other 89 share `ProjectPath`'s sentence."""
+    other 92 share `ProjectPath`'s sentence."""
 
     async def body(session: ClientSession) -> Any:
         return await session.list_tools()
@@ -8120,7 +8235,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
             assert "no project" in description, tool.name
         else:
             assert "bound project" in description, tool.name
-    assert seen == 91
+    assert seen == 94
 
 
 def test_no_tool_advertises_an_argument_with_nothing_said_about_it() -> None:

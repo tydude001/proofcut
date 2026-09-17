@@ -186,9 +186,10 @@ Each step is usable on its own, and each is judged on a served render.
   name (a short list over MLT's operators: `linear`, `ease`, `smooth`) and an
   event or word address. First, measure a slow pan at constant zoom for
   judder; if it judders, a pan is written as a scaling move of the same rect.
-- **B3. Overlays.** A card rendered with alpha and placed on the canvas
+- **B3. Overlays.** Shipped — see HISTORY.md § Overlays, built.
+  A card rendered with alpha and placed on the canvas
   instead of filling it, with an opacity/position animation — a lower third.
-  Also useful to the essays. Design below (§ B3, designed), for review.
+  Also useful to the essays. Design below (§ B3, designed).
 - **B4. Sound on events.** A1's cue list plus one-shot effects at events
   (`send`, `land`, keystrokes).
 - **B5. Retime.** The hard one, last on purpose: it is the only step that
@@ -247,7 +248,7 @@ the picture lane and its panes. An overlay is `_is_layered`'s ninth trigger.
 - **One operator shapes both position and opacity**, so an animation is one
   curve, as `clip.py`'s is.
 
-**Decisions** (a recommendation on each):
+**Decisions** (a recommendation on each; Tyler took all six on 2026-09-16):
 
 1. **One overlay is one card, and a stagger is two overlays** (recommended).
    Headline and footnote are separate cards with separate starts, and the

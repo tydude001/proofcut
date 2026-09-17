@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="{{width}}" height="{{height}}" viewBox="0 0 1920 {{view_height}}">
+  <defs>
+    <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0.52" stop-color="{{ink}}" stop-opacity="0"/>
+      <stop offset="0.74" stop-color="{{ink}}" stop-opacity="{{mid_opacity}}"/>
+      <stop offset="1" stop-color="{{ink}}" stop-opacity="{{edge_opacity}}"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1920" height="{{view_height}}" fill="url(#scrim)"/>
+</svg>
