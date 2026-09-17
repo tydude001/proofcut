@@ -173,8 +173,8 @@ product names for anything proofcut ships.
 Each step is usable on its own, and each is judged on a served render.
 
 - **B1. Events.** Shipped — see HISTORY.md § Events, and the pan that
-  snapped to whole pixels; `events` plus `locate --event` so far, and every
-  other tool takes the address as its own step needs it.
+  snapped to whole pixels; `locate` and `reframe` take the address; each later
+  step adds it where it needs it.
   An event index per clip — `(clip_id, name, src_seconds)`,
   imported from the recorder's JSON — addressable anywhere a word is.
   Source-indexed like a footage description, so no edit can invalidate one.
