@@ -16550,3 +16550,9 @@ downloads and removed the folder. The arm64 branch still reached `brew
 install` through a failing `brew` stub. What only a Mac can answer is left
 to `mac-demo.yml`, which now also runs on `macos-15-intel`, and then to the
 tester.
+
+**Its first run passed every step** (GitHub run 35235106833: macOS 15.7.9, an
+i7-8700B, proofcut `3197eae`). whisper resolved torch 2.2.2 with numpy
+1.26.4, `uv sync` took 352 s with the OTIO compile, and transcription took
+108 s. `trial_check.py` passed all of it: 34 of 34 words heard, 289 of 289
+frames, the master at −16.1 LUFS, and both frames the right colour.
