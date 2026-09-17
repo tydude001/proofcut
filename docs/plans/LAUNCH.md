@@ -284,7 +284,8 @@ audience's Macs are Apple silicon. So **the gate stays open for Apple
 silicon**: the tester post goes up now, asking for Apple silicon only,
 rather than waiting for 2026-09-21, and Show HN goes on the first weekday
 morning after an Apple silicon report or 7 days after that post, whichever
-comes first. README.md already says Apple silicon is untried by a person.
+comes first. README.md already says Apple silicon is untried by a person. **Posted 2026-09-17**, so the time-box ends **2026-09-24** —
+HISTORY.md § The Apple silicon tester post.
 
 ## Step 3 — the flip, and the ten minutes after it
 

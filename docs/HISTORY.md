@@ -16588,3 +16588,16 @@ That meets LAUNCH.md § Step 2. Its queue:
 - Cards and the caption font are unmeasured on macOS, because the kit
   installs no `magick` and doctor listed it absent.
 - Apple silicon has only been run on CI, never by a person.
+
+## The Apple silicon tester post — 2026-09-17
+
+LAUNCH.md § Step 2 had been marked met by the Intel run (issue #6), and that
+was wrong for the Mac most of the Show HN audience owns: an Apple silicon Mac
+installs through Homebrew, which no person has run and CI's runner, with
+Homebrew preinstalled, cannot. So the gate stays open for Apple silicon, and
+the tester post went up the same day rather than on its 2026-09-21 fallback:
+[r/alphaandbetausers](https://www.reddit.com/r/alphaandbetausers/comments/1wixxim/testers_a_local_ai_video_editor_needs_its_first/),
+the room LAUNCH.md names first, with the Apple-silicon-only wording, pointing
+at issue #1. Show HN goes on the first weekday morning after an Apple silicon
+report, or on **2026-09-24**, seven days after the post, whichever comes
+first.
