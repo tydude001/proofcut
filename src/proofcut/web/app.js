@@ -225,6 +225,15 @@ function renderBar() {
     ].join("\n");
   }
 
+  // An inset the view could not resolve is drawn nowhere, and export refuses
+  // it — said on the preview, where the missing picture would be noticed.
+  const insetNote = $("preview-inset-note");
+  insetNote.hidden = !view.insets_error;
+  if (view.insets_error) {
+    insetNote.textContent = "inset refused";
+    insetNote.title = `an inset cannot resolve, so export will refuse too — ${view.insets_error}`;
+  }
+
   const picker = $("clip");
   picker.textContent = "";
   for (const clip of view.clips) {

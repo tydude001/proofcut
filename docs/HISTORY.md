@@ -16357,3 +16357,95 @@ warp, check the tone is gone off speed and present at 1x, and find a click
 inside a stretch at its retimed sample. Both pass on both melts:
 `tests/conftest.py` now passes `PROOFCUT_MELT` through to the stdio server as
 well, and a deliberately broken path showed it arrives.
+
+## Insets, built — 2026-09-17
+
+NATIVE.md § B6. An inset draws a clip into a rectangle of the recording and
+follows the recording's camera (`inset add/ls/rm`, tools `inset_add` …) — the
+launch clip's render, playing inside the app's preview while the camera
+pushes in. The spike is `~/proofcut-work/spikes/inset-probe/FINDINGS.md`;
+every number below was read back off renders, and the flatpak melt and
+Shotcut's portable melt agreed on all of them.
+
+**What the spike measured, and what it corrected in the plan.**
+- **The plan's route was the worst one.** "Composite onto the recording's
+  track, then frame the composite" means a nested tractor, which renders at
+  the document's profile: the render was scaled to 684px before the camera
+  zoomed 1.97x, keeping 38% of its detail (76% of the recording's), with the
+  lock off by 2.1px. The inset is a sibling track instead, 99% of both.
+- **The inset copies the camera's keys and never samples its curve.** The
+  camera keys the rect the whole recording is drawn into, and the inset's
+  rect is linear in it, so the same positions and operators lock (0.88px).
+  Float keys reached 1.19px and per-frame keys from proofcut's own `ease`
+  1.52px.
+- **The filter hangs on the inset's playlist.** A chain's keys count its own
+  source frames, so a camera key from before the inset's in-point would need a
+  negative position, which MLT reads as counting from the end. A playlist
+  filter counts render frames from 0 and locked the same, and at 0.63px for
+  an inset starting mid-push.
+- **The fade and the dim are `brightness` alpha**, on the inset chain and on
+  a black `color` track under it, because fade keys merged into the rect would
+  bend the camera's curve. The recording's grey went 30 → 14 at a 0.55 dim.
+- **A colour shift first blamed on nesting was the test sources.** Lossless
+  RGB (`libx264rgb`) drawn *smaller* than itself changed colour on every
+  route — (40,200,80) as (53,225,84) — and drawn larger it did not. BT.709
+  yuv420p sources, the render's own format, stayed within 1 of ffmpeg's decode
+  at every scale. Not chased; a screen recorder writing RGB would hit it.
+
+**What the build found.**
+- **Round each edge, not the size.** The writer's own document, judged by the
+  spike's readback, had its worst side's mean error at 0.54px with the rect's
+  position and size rounded separately, and 0.42px with each edge rounded
+  where it lands.
+  The worst frame is about 1.2px either way, which is `qtblend`'s own
+  sampling. `mlt.inset_dest` rounds edges.
+- **Read an edge off luma, never off colour.** The export is yuv420p, whose
+  chroma is half size: read from green and magenta, the real-melt test's
+  edges moved 1.79px and it failed; read from luma, the same render measured
+  0.72px. The test uses luma. Broken on purpose (keys 15 frames late, the
+  chain-clock bug), it failed at 47px while the export report still passed.
+- **A key before the film collapses onto frame 0** at the value the slide
+  has reached, `_format_keys`' rule — the one place the inset's curve is an
+  approximation, and only for a slide begun before the film's first frame.
+- **The preview's inset held a stale position on resize.** Placed only when
+  its `dest` changed, it stayed at the old pixels when the window narrowed —
+  the 700px overflow sweep found the `<video>` at x 830. `layoutFrame` now
+  forgets every inset's placement.
+
+**The shape.** `insets` is a list in the manifest: `clip_id` (the
+recording), `asset`, `rect` (`x0,y0,x1,y1` in the recording's pixels), a word
+or event start, an optional word, event or length end (none is the asset's
+end), `src_in`, fades, `dim`, `gain_db`, `mute`. Additive and optional, so no
+schema bump. It is `_is_layered`'s twelfth trigger. Each inset is its own
+track over the edit's (and its split's) and under the picture lane, so a cue
+covering the recording covers its inset. One with sound is mixed and takes
+the bed out under it, as a hold does; a muted one carries no audio.
+
+**Refusals**, each by name: a rect not the asset's shape within 1%, or
+outside the recording's frame; an inset running past its asset; one across a
+cut; one over any frame the retime plays more than 5% off 1x; one over a split
+or blur-fill window; a start or end word a cut removed (`insets_error` in the
+view and `inset ls`). `reel` drops them (`insets_dropped`).
+
+**Decision 9 closed.** A picture cue over a retimed stretch speeds up with
+the film, as B5 built it; it reopens when a film shows b-roll that should hold
+1x.
+
+**The window.** `#inset-layer` sits between the edit's track and `#picture`,
+each inset a muted `<video>` placed at the view's `dest` (the rect mapped
+through the recording's head window, where the preview draws the recording)
+with its dim under it, held to the playhead like the picture layer. Checked in
+headless Chrome on a project built from the test's sources: placed at canvas
+(218, 63, 228, 171) at 700, 1000 and 1400 px, reading its own frame 60 and
+green (40,200,81) at playhead 2.5 s, following within 60 ms while playing,
+hidden past its end, no page or pane overflow once the resize fix was in. V1
+draws each inset as a strip along its foot; an unresolvable one is an
+"inset refused" chip on the preview. `reframe_sheet` draws the inset rect
+dashed on every tile inside its span, labelled — checked at full size, the
+stroke centred on the box's first column.
+
+**Tests.** `tests/test_inset.py` has 36 tests. The real-melt test in
+`test_server_stdio.py` pushes a 1.6x camera into a box of a recording while a
+4:3 clip is inset there, and checks the lock on 120 frames, the clip's frame
+counter on the held frames, its colour, and that its tone plays only while it
+does. The advertised-path count went from 101 to 104 for the three tools.

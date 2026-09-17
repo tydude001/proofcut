@@ -342,6 +342,198 @@ def sound_lanes(hits: list[Hit], total_frames: int, silence: str) -> list[list[E
     return built
 
 
+@dataclass(frozen=True)
+class Inset:
+    """A clip drawn into a rectangle of the recording, following its camera.
+
+    docs/plans/NATIVE.md § B6, designed. Render frames, like every position in
+    this module: the inset plays `frames` frames of `resource` from `src_in`,
+    starting at render frame `start`, over the Edit entry of `host` (the
+    recording) that covers that whole span. `box` is `(x0, y0, x1, y1)` in the
+    recording's own source pixels and `host_source` is the recording's size,
+    which is what maps the camera's rects onto the box.
+
+    **Its own track, never a nested tractor**: a tractor composites at the
+    profile's size, so composite-then-frame scaled the render to 684px before
+    the camera zoomed 1.97x and kept 38% of its detail
+    (`~/proofcut-work/spikes/inset-probe`). The fade is `brightness` alpha on
+    the chain and the dim a black track under it — never keys merged into the
+    camera's `rect`, which would bend its curve.
+    """
+
+    resource: str
+    src_in: int
+    start: int
+    frames: int
+    box: tuple[int, int, int, int]
+    host: str
+    host_source: tuple[int, int]
+    has_audio: bool = True
+    gain_db: float = 0.0
+    fade_in_frames: int = 0
+    fade_in_ease: str = "linear"
+    fade_out_frames: int = 0
+    fade_out_ease: str = "linear"
+    dim: float = 0.0
+
+    @property
+    def end(self) -> int:
+        """The first render frame after the inset."""
+        return self.start + self.frames
+
+
+def inset_dest(
+    dest: tuple[int, ...], box: tuple[int, int, int, int], source: tuple[int, int]
+) -> tuple[int, int, int, int]:
+    """Where `box` lands when the whole source is drawn into `dest`.
+
+    Linear in `dest`, which is the whole reason copying the camera's keys
+    locks: two rects that interpolate on the same operator between the same
+    positions stay in step (0.88px in the spike, against 1.52px for keys
+    re-sampled every frame).
+    """
+    x, y, w, h = dest[:4]
+    sx, sy = w / source[0], h / source[1]
+    # Each edge rounded where it lands, so the far edge carries one rounding
+    # rather than the near edge's plus the size's.
+    left, top = round(x + box[0] * sx), round(y + box[1] * sy)
+    right, bottom = round(x + box[2] * sx), round(y + box[3] * sy)
+    return (left, top, right - left, bottom - top)
+
+
+def _host_entry(inset: Inset, audio: list[Entry]) -> tuple[int, Entry]:
+    """The Edit entry the inset sits over, and the render frame it starts at."""
+    at = 0
+    for entry in audio:
+        if entry.resource == inset.host and at <= inset.start and inset.end <= at + entry.frames:
+            return at, entry
+        at += entry.frames
+    raise MLTError(
+        f"the inset {inset.resource!r} at frames {inset.start}..{inset.end} is not inside "
+        f"one Edit entry of {inset.host!r} — an inset follows one continuous stretch of "
+        "its recording, so a cut under it refuses"
+    )
+
+
+def inset_rect(
+    inset: Inset,
+    audio: list[Entry],
+    reframe: Reframe | None,
+    resolution: tuple[int, int],
+    rate: float,
+) -> str:
+    """The inset playlist's `qtblend` `rect`: the camera's keys, mapped onto the box.
+
+    **Keyed on the playlist, in render frames from 0.** A chain's keys count
+    its own source frames, so a camera key from before the inset's in-point
+    would need a negative position, which MLT reads as counting back from the
+    end; the playlist's clock has no such key (spike round three: an inset
+    starting mid-push locked at 0.63px). Each of the host entry's keys goes to
+    the render frame it lands on — `S + position - src_in` on the source
+    clock, `S + position` on a retimed chain, whose positions are already
+    render frames — with its own operator.
+    """
+    at, entry = _host_entry(inset, audio)
+    if reframe is None or reframe.is_identity(resolution):
+        rows: list[_KeyRow] = [(0.0, None, fit_rect(inset.host_source, resolution), 1)]
+    else:
+        if reframe.panes or reframe.fills:
+            raise MLTError(
+                f"the inset {inset.resource!r} is over {inset.host!r}, which has a split or a "
+                "blur-fill window — an inset maps one rect, and neither draws the recording "
+                "as one"
+            )
+        rows = reframe.key_rows(resolution)
+    if len(rows) == 1:
+        return " ".join(str(v) for v in inset_dest(rows[0][2], inset.box, inset.host_source)) + " 1"
+    place = placement(entry)
+    shift = at - (0 if place is not None else entry.src_in)
+    keys = [(position + shift, ease, dest, opacity) for position, ease, dest, opacity in _key_tuples(rows, rate, place)]
+    early = [i for i, key in enumerate(keys) if key[0] <= 0]
+    if early:
+        # A slide that starts before the film: its value at frame 0, the way
+        # `_format_keys` cuts a slide at a retimed entry's edge.
+        lead = early[-1]
+        position, ease, dest, opacity = keys[lead]
+        if ease is not None and lead + 1 < len(keys) and keys[lead + 1][0] > position:
+            dest = _between(dest, keys[lead + 1][2], ease, -position / (keys[lead + 1][0] - position))
+        keys = [(0, ease, dest, opacity), *keys[lead + 1 :]]
+    return ";".join(
+        _key_string(position, ease, inset_dest(dest, inset.box, inset.host_source), opacity)
+        for position, ease, dest, opacity in keys
+    )
+
+
+def rect_at(keys: str, frame: int) -> tuple[float, ...]:
+    """A `rect` animation's value at `frame`, as MLT draws it (x, y, w, h, opacity).
+
+    For reporting — `export`'s inset echo — on the operators this module
+    writes: discrete, linear and the cubic family (`ease_fraction`).
+    """
+    names = {operator: name for name, operator in EASINGS.items()}
+    parsed: list[tuple[int, str | None, tuple[float, ...]]] = []
+    for key in keys.split(";"):
+        if "=" not in key:
+            return tuple(float(v) for v in key.split())
+        head, _, body = key.partition("=")
+        operator = head.lstrip("-0123456789")
+        position = int(head[: len(head) - len(operator)])
+        ease = None if operator == "|" else names.get(operator, "linear")
+        parsed.append((position, ease, tuple(float(v) for v in body.split())))
+    if frame <= parsed[0][0]:
+        return parsed[0][2]
+    for (p0, ease, v0), (p1, _, v1) in pairwise(parsed):
+        if p0 <= frame < p1:
+            if ease is None:
+                return v0
+            t = ease_fraction(ease, (frame - p0) / (p1 - p0))
+            return tuple(round(a + (b - a) * t, 3) for a, b in zip(v0, v1))
+    return parsed[-1][2]
+
+
+def _alpha_keys(inset: Inset, first: int, plateau: float) -> str:
+    """A `brightness` alpha animation: 0 → plateau over the fade in, back to 0
+    over the fade out, keyed from `first` — `overlay_rect`'s timing."""
+    last = first + inset.frames - 1
+    keys: list[str] = []
+    if inset.fade_in_frames:
+        keys.append(f"{first}{EASINGS[inset.fade_in_ease]}=0")
+        keys.append(f"{first + inset.fade_in_frames}={plateau:g}")
+    if inset.fade_out_frames:
+        leave = last - inset.fade_out_frames
+        key = f"{leave}{EASINGS[inset.fade_out_ease]}={plateau:g}"
+        if keys and leave == first + inset.fade_in_frames:
+            keys[-1] = key
+        else:
+            keys.append(key)
+        keys.append(f"{last}=0")
+    return ";".join(keys) or f"{plateau:g}"
+
+
+def _check_inset(inset: Inset, total_frames: int) -> None:
+    where = f"the inset {inset.resource!r} at frame {inset.start}"
+    if inset.frames < 1 or inset.start < 0 or inset.end > total_frames:
+        raise MLTError(
+            f"{where} runs frames {inset.start}..{inset.end} of a "
+            f"{total_frames}-frame timeline — an inset has to sit inside the film"
+        )
+    x0, y0, x1, y1 = inset.box
+    if not (x1 > x0 and y1 > y0):
+        raise MLTError(f"{where}: its box {inset.box} is empty")
+    for frames, ease in ((inset.fade_in_frames, inset.fade_in_ease), (inset.fade_out_frames, inset.fade_out_ease)):
+        if ease not in EASINGS:
+            raise MLTError(f"{where}: no easing {ease!r} (there are: {', '.join(EASINGS)})")
+        if frames < 0:
+            raise MLTError(f"{where}: a negative fade")
+    if inset.fade_in_frames + inset.fade_out_frames > inset.frames - 1:
+        raise MLTError(
+            f"{where} is {inset.frames} frames and its fades take "
+            f"{inset.fade_in_frames + inset.fade_out_frames} — shorten the fades"
+        )
+    if not 0 <= inset.dim <= 1:
+        raise MLTError(f"{where}: dim is a fraction from 0 to 1, not {inset.dim}")
+
+
 def fit_rect(source: tuple[int, int], resolution: tuple[int, int]) -> tuple[int, int, int, int]:
     """Where MLT puts a source frame when nothing tells it otherwise.
 
@@ -473,14 +665,22 @@ def _between(
 
 
 def _format_keys(rows: list[_KeyRow], rate: float, place: Placement | None) -> str:
-    """The rows as MLT keys: at source frames, or on a retimed chain's clock.
+    """The rows as MLT keys: at source frames, or on a retimed chain's clock."""
+    return ";".join(_key_string(*key) for key in _key_tuples(rows, rate, place))
+
+
+def _key_tuples(
+    rows: list[_KeyRow], rate: float, place: Placement | None
+) -> list[tuple[int, str | None, tuple[int, ...], int]]:
+    """The rows at the positions `_format_keys` writes them, unjoined.
 
     On a chain, a slide the entry starts or ends inside is cut at the entry's
     edge at the value the curve has reached there, so the first and last
-    frames draw what the source-clock document would.
+    frames draw what the source-clock document would. An inset copies these
+    tuples rather than the string (`inset_rect`).
     """
     if place is None:
-        return ";".join(_key_string(round(seconds * rate), *rest) for seconds, *rest in rows)
+        return [(round(seconds * rate), *rest) for seconds, *rest in rows]
     at = [place.position(seconds, rate) for seconds, *_ in rows]
     lead = max(i for i in range(len(rows)) if at[i] <= 0)
     keys: list[tuple[int, str | None, tuple[int, ...], int]] = []
@@ -504,7 +704,7 @@ def _format_keys(rows: list[_KeyRow], rate: float, place: Placement | None) -> s
         span = at[last + 1] - at[last]
         fraction = (end - at[last]) / span if span > 0 else 1.0
         keys.append((end, None, _between(rows[last][2], rows[last + 1][2], ease, fraction), rows[last][3]))
-    return ";".join(_key_string(*key) for key in keys)
+    return keys
 
 
 def placement(entry: Entry) -> Placement | None:
@@ -889,7 +1089,6 @@ class Reframe:
         render frames, so the keys go where the warp shows each window
         (docs/plans/NATIVE.md § B5, designed).
         """
-        upper, _ = pane_boxes(resolution)
         if not self.later and not self.panes:
             return " ".join(str(value) for value in self.dest_rect(resolution)) + " 1"
         if not rate:
@@ -897,6 +1096,16 @@ class Reframe:
                 "a reframe with more than one window needs the frame rate — its "
                 "keyframes are numbered in the source's own frames"
             )
+        return _format_keys(self.key_rows(resolution), rate, place)
+
+    def key_rows(self, resolution: tuple[int, int]) -> list[_KeyRow]:
+        """`rect_property`'s rows before they are placed: one per window, in
+        source seconds, with the operator of the segment leaving each.
+
+        The inset lane reads these too (`inset_rect`), which is why they are a
+        method: the inset copies the camera's keys and never re-derives them.
+        """
+        upper, _ = pane_boxes(resolution)
         windows = self.windows()
         rows: list[_KeyRow] = []
         for index, (seconds, crop) in enumerate(windows):
@@ -909,7 +1118,7 @@ class Reframe:
             if ease is not None and dest[2:] == tuple(self.source):
                 dest = _off_unity(dest)
             rows.append((seconds, ease, dest, 1))
-        return _format_keys(rows, rate, place)
+        return rows
 
     def pane_rect_property(
         self, resolution: tuple[int, int], rate: float, place: Placement | None = None
@@ -1524,6 +1733,7 @@ def document(
     holds: list[Entry] | None = None,
     overlays: list[Overlay] | None = None,
     sounds: list[list[Entry]] | None = None,
+    insets: list[Inset] | None = None,
     rate: float,
     resolution: tuple[int, int] = DEFAULT_RESOLUTION,
     reframe: dict[str, Reframe] | None = None,
@@ -1607,6 +1817,15 @@ def document(
     past its file shortens the lane so every later hit plays early, both at
     exit 0 (`~/proofcut-work/spikes/sfx-probe`). The caller's padded copies
     are what make that true; the writer cannot see a file's length.
+
+    `insets` are clips drawn into a rectangle of the recording
+    (docs/plans/NATIVE.md § B6): each its own track directly over the edit's
+    (and its split's), under the picture lane, so a cue that covers the
+    recording covers its inset too. The rect is a `qtblend` on the inset's
+    playlist, keyed from the host entry's own camera (`inset_rect`); a dim is
+    a black `color` track under it. Ids in their own namespace
+    (ichain/iplaylist/tractorI, idim/idplaylist/tractorJ), so a document with
+    no insets is byte-identical to one built before they existed.
     """
     if not audio:
         raise MLTError("an MLT document needs at least one entry on the edit's track")
@@ -1682,6 +1901,10 @@ def document(
         if wrong:
             raise MLTError(f"sound lane {number} holds a still ({wrong[0]!r})")
     sound_entries = [entry for sound_lane in sounds for entry in sound_lane]
+    insets = insets or []
+    for inset in insets:
+        _check_inset(inset, total_frames)
+        _host_entry(inset, audio)
     for entry in [*music, *music2, *holds, *sound_entries]:
         if entry.time_map:
             raise MLTError(
@@ -1728,7 +1951,8 @@ def document(
     # of the producer, not of the entry — but both point at one bin entry, so
     # `kdenlive:id` is keyed on the resource and not on the node.
     sources: dict[str, Entry] = {}
-    for entry in [*audio, *picture, *music, *music2, *holds, *sound_entries]:
+    inset_entries = [Entry(inset.resource, inset.src_in, inset.frames, has_video=True) for inset in insets]
+    for entry in [*audio, *picture, *music, *music2, *holds, *sound_entries, *inset_entries]:
         # A bin entry is the raw media, so it never carries an entry's retime.
         sources.setdefault(entry.resource, replace(entry, time_map=(), gain_keys=()))
     bin_ids = {resource: index + 2 for index, resource in enumerate(sources)}
@@ -1878,6 +2102,94 @@ def document(
         _property(picture_track, "kdenlive:track_name", "Picture")
         for playlist_id in ("playlist2", "playlist3"):
             ET.SubElement(picture_track, "track", {"producer": playlist_id, "hide": "audio"})
+
+    # The insets, each on its own track (and its dim on another) — see the
+    # docstring. The node is the edit's shape with its own audio, or silenced
+    # like a picture node when the inset is muted.
+    inset_tracks: list[tuple[str, bool]] = []
+    for index, inset in enumerate(insets):
+        if inset.dim:
+            dim = ET.SubElement(root, "producer", {"id": f"idim{index}"})
+            for name_, value in {
+                "length": str(total_frames),
+                "eof": "continue",
+                "resource": "#ff000000",
+                "mlt_service": "color",
+                "mlt_image_format": "rgba",
+            }.items():
+                _property(dim, name_, value)
+            dim_filter = ET.SubElement(dim, "filter", {"id": f"filter_idim{index}"})
+            _property(dim_filter, "mlt_service", "brightness")
+            _property(dim_filter, "level", "1")
+            _property(dim_filter, "alpha", _alpha_keys(inset, 0, inset.dim))
+            playlist = ET.SubElement(root, "playlist", {"id": f"idplaylist{index}a"})
+            if inset.start:
+                ET.SubElement(playlist, "blank", {"length": str(inset.start)})
+            ET.SubElement(playlist, "entry", {"producer": f"idim{index}", "in": "0", "out": str(inset.frames - 1)})
+            if inset.end < total_frames:
+                ET.SubElement(playlist, "blank", {"length": str(total_frames - inset.end)})
+            ET.SubElement(root, "playlist", {"id": f"idplaylist{index}b"})
+            track = ET.SubElement(
+                root, "tractor", {"id": f"tractorJ{index}", "in": "0", "out": str(total_frames - 1)}
+            )
+            _property(track, "kdenlive:timeline_active", "1")
+            _property(track, "kdenlive:track_name", f"Inset {index + 1} dim")
+            for playlist_id in (f"idplaylist{index}a", f"idplaylist{index}b"):
+                ET.SubElement(track, "track", {"producer": playlist_id, "hide": "audio"})
+            inset_tracks.append((f"tractorJ{index}", False))
+
+        entry = Entry(
+            inset.resource,
+            inset.src_in,
+            inset.frames,
+            has_video=True,
+            gain_db=inset.gain_db if inset.has_audio else 0.0,
+            fade_in_frames=inset.fade_in_frames if inset.has_audio else 0,
+            fade_out_frames=inset.fade_out_frames if inset.has_audio else 0,
+        )
+        node = _source_node(f"ichain{index}", entry, bin_ids[inset.resource], rate)
+        _property(node, "video_index", "0")
+        if inset.has_audio:
+            _property(node, "set.test_audio", "0")
+        else:
+            _property(node, "audio_index", "-1")
+            _property(node, "set.test_audio", "1")
+        if inset.fade_in_frames or inset.fade_out_frames:
+            fade = ET.SubElement(node, "filter", {"id": f"fade_ichain{index}"})
+            _property(fade, "mlt_service", "brightness")
+            _property(fade, "level", "1")
+            _property(fade, "alpha", _alpha_keys(inset, inset.src_in, 1))
+        root.append(node)
+        playlist = ET.SubElement(root, "playlist", {"id": f"iplaylist{index}a"})
+        if inset.start:
+            ET.SubElement(playlist, "blank", {"length": str(inset.start)})
+        placed = ET.SubElement(
+            playlist, "entry", {"producer": f"ichain{index}", "in": str(entry.src_in), "out": str(entry.src_out)}
+        )
+        if entry.fade_in_frames or entry.fade_out_frames or entry.gain_db:
+            level = ET.SubElement(placed, "filter", {"id": f"iplaylist{index}fade"})
+            _property(level, "mlt_service", "volume")
+            _property(level, "level", _fade_level(entry))
+        if inset.end < total_frames:
+            ET.SubElement(playlist, "blank", {"length": str(total_frames - inset.end)})
+        # On the playlist, so its keys count render frames (`inset_rect`).
+        place_filter = ET.SubElement(playlist, "filter", {"id": f"filter_iplaylist{index}"})
+        _property(place_filter, "mlt_service", "qtblend")
+        _property(
+            place_filter,
+            "rect",
+            inset_rect(inset, audio, reframe.get(inset.host), resolution, rate),
+        )
+        ET.SubElement(root, "playlist", {"id": f"iplaylist{index}b"})
+        track = ET.SubElement(
+            root, "tractor", {"id": f"tractorI{index}", "in": "0", "out": str(total_frames - 1)}
+        )
+        _property(track, "kdenlive:timeline_active", "1")
+        _property(track, "kdenlive:track_name", f"Inset {index + 1}")
+        hide = {} if inset.has_audio else {"hide": "audio"}
+        for playlist_id in (f"iplaylist{index}a", f"iplaylist{index}b"):
+            ET.SubElement(track, "track", {"producer": playlist_id, **hide})
+        inset_tracks.append((f"tractorI{index}", inset.has_audio))
 
     picture_fills = _fill_lane(
         picture, "fvchain", ("playlist16", "playlist17"), "tractorE", "Picture fill"
@@ -2085,6 +2397,9 @@ def document(
     stack.append("tractor0")
     if edit_panes:
         stack.append("tractor3")
+    # An inset is part of the recording's picture: over the edit, under
+    # anything the cue table lays over the recording.
+    stack.extend(track for track, _ in inset_tracks)
     if picture_fills:
         stack.append("tractorE")
     if picture:
@@ -2195,6 +2510,23 @@ def document(
             {
                 "a_track": "0",
                 "b_track": str(stack.index("tractorB")),
+                "mlt_service": "mix",
+                "internal_added": "237",
+                "always_active": "1",
+                "sum": "1",
+            },
+        )
+    # An inset with sound is mixed like any other lane (spike finding F).
+    for inset_track, audible in inset_tracks:
+        if not audible:
+            continue
+        extra_mix += 1
+        _transition(
+            sequence,
+            f"transition{extra_mix}",
+            {
+                "a_track": "0",
+                "b_track": str(stack.index(inset_track)),
                 "mlt_service": "mix",
                 "internal_added": "237",
                 "always_active": "1",

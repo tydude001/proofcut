@@ -639,6 +639,33 @@ says where the render plays the words. `cut-at` and `reel` take the
 seconds a retimed export plays at. The preview plays the Edit at 1x, says so
 on its header, and draws each stretch as a band on V1 and A1.
 
+### Inset: a clip inside the recording
+
+A screen recording of an app that plays a video can have that video drawn
+into it for real: the render at full sharpness in place of the recording's
+small copy, moving and zooming with the camera.
+
+```sh
+proofcut -C myproject inset add screen cut 873,252,1785,936 --event playing   # to the clip's end
+proofcut -C myproject inset add screen cut 873,252,1785,936 --event playing --dim 0.55 --for 12
+proofcut -C myproject inset ls              # where each plays, and where its rect lands
+proofcut -C myproject inset rm 0            # the clip stays registered
+```
+
+The rect is `X0,Y0,X1,Y1` in the recording's own pixels, where it shows what
+the inset replaces, and it has to be the clip's shape (within 1%). The inset
+follows the recording's `reframe` windows, slides included. It fades in and
+out over 0.4 s (`--enter/--leave none` for a cut), `--dim` darkens the
+recording around it, and its own audio plays at `--gain-db` with the music
+bed out underneath, unless `--mute`.
+
+It plays at 1x, so it has to sit inside one continuous stretch of the
+recording that also plays at 1x: a cut under it, a retimed span, or a split
+or blur-fill window refuses. `reframe-sheet` draws the rect dashed on every
+tile inside the inset, which is where a wrong rect is seen before a render.
+The preview draws it too, at the recording's head window, and V1 marks its
+span along the lane's foot.
+
 ### A cold open
 
 ```sh

@@ -392,6 +392,7 @@ function contentDuration(state, captions) {
   }
   for (const shot of state.shots || []) widen(shot.start + shot.duration);
   for (const overlay of state.overlays || []) widen(overlay.timeline_end);
+  for (const inset of state.insets || []) widen(inset.timeline_end);
   return end;
 }
 
@@ -659,6 +660,18 @@ function buildLaneRow(kind, segments, pxPerSec, duration, state, withFilmstrip) 
       band.style.left = `${(stretch.edit_start * pxPerSec).toFixed(1)}px`;
       band.style.width = `${Math.max(1, (stretch.edit_end - stretch.edit_start) * pxPerSec).toFixed(1)}px`;
       band.dataset.speed = stretch.speed;
+      row.append(band);
+    }
+  }
+
+  // Each inset, as a strip along V1's foot: where a clip is drawn into the
+  // recording. Never a hit target, the retime band's rule.
+  if (kind === "V1" && state.insets && !state.insets_error) {
+    for (const inset of state.insets) {
+      const band = el("div", "inset-band");
+      band.style.left = `${(inset.timeline_start * pxPerSec).toFixed(1)}px`;
+      band.style.width = `${Math.max(1, (inset.timeline_end - inset.timeline_start) * pxPerSec).toFixed(1)}px`;
+      band.dataset.asset = inset.asset;
       row.append(band);
     }
   }

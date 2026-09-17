@@ -1453,6 +1453,42 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_overlay_add.add_argument("--plan", action="store_true", help="resolve and report without writing")
     overlay_sub.add_parser("ls", help="list overlays, bottom of the stack first, with where each plays")
+    p_inset = sub.add_parser("inset", help="a clip drawn into a rectangle of the recording, following its camera")
+    inset_sub = p_inset.add_subparsers(dest="inset_command", required=True)
+    p_inset_add = inset_sub.add_parser(
+        "add", help="draw ASSET into RECT of CLIP_ID from a word or event, to a word, event, length or its end"
+    )
+    p_inset_add.add_argument("clip_id", help="the recording it is drawn into, whose words or events address it")
+    p_inset_add.add_argument("asset", help="the clip to draw (the render, in a launch clip)")
+    p_inset_add.add_argument(
+        "rect", help="X0,Y0,X1,Y1 in the recording's own pixels — where it shows what the inset replaces"
+    )
+    p_inset_add.add_argument("word_index", type=int, nargs="?", help="the word it starts on")
+    p_inset_add.add_argument("--phrase", help="start on this phrase's first word")
+    p_inset_add.add_argument("--event", help="start on this event (name or name#k)")
+    p_inset_add.add_argument("--until-word", type=int, dest="until_word_index", help="end with this word")
+    p_inset_add.add_argument("--until-phrase", help="end with this phrase's last word")
+    p_inset_add.add_argument("--until-event", help="end on this event")
+    p_inset_add.add_argument("--for", type=float, dest="seconds", help="end this many seconds after the start")
+    p_inset_add.add_argument("--src-in", type=float, default=0.0, help="seconds into ASSET it starts from (default 0)")
+    p_inset_add.add_argument("--after", type=int, default=-1, help="only match a phrase forward of this word index")
+    p_inset_add.add_argument("--occurrence", type=int, help="pick the Nth phrase match")
+    fade_eases = ", ".join(EASINGS)
+    for side in ("enter", "leave"):
+        p_inset_add.add_argument(f"--{side}", choices=("fade", "none"), help=f"fade or none (default {ops.INSET_FADE[0]})")
+        p_inset_add.add_argument(f"--{side}-seconds", type=float, help=f"default {ops.INSET_FADE[1]}")
+        p_inset_add.add_argument(
+            f"--{side}-ease", choices=tuple(EASINGS), help=f"{fade_eases} (default {ops.INSET_FADE[2]})"
+        )
+    p_inset_add.add_argument("--dim", type=float, default=0.0, help="darken the recording around it, 0 to 1")
+    p_inset_add.add_argument("--gain-db", type=float, default=0.0, help="its own audio's level")
+    p_inset_add.add_argument("--mute", action="store_true", help="play none of its audio")
+    p_inset_add.add_argument("--position", type=int, help="where in the stack (0 = bottom; default the top)")
+    p_inset_add.add_argument("--plan", action="store_true", help="resolve and report without writing")
+    inset_sub.add_parser("ls", help="list insets with where each plays and where its rect lands")
+    p_inset_rm = inset_sub.add_parser("rm", help="take an inset off the recording (the clip stays)")
+    p_inset_rm.add_argument("position", type=int, help="its position, as `inset ls` numbers it")
+    p_inset_rm.add_argument("--plan", action="store_true", help="report without writing")
     p_retime = sub.add_parser("retime", help="play spans of the film faster or slower")
     retime_sub = p_retime.add_subparsers(dest="retime_command", required=True)
     p_retime_add = retime_sub.add_parser(
@@ -2941,6 +2977,46 @@ def _cmd_overlay(args: argparse.Namespace) -> int:
     return _emit(ops.overlay_rm(args.project, args.position, plan=args.plan))
 
 
+def _cmd_inset(args: argparse.Namespace) -> int:
+    if args.inset_command == "add":
+        try:
+            rect = [int(value) for value in args.rect.split(",")]
+        except ValueError:
+            raise ProjectError(f"rect is X0,Y0,X1,Y1 in whole pixels, not {args.rect!r}") from None
+        return _emit(
+            ops.inset_add(
+                args.project,
+                args.clip_id,
+                args.asset,
+                rect,
+                args.word_index,
+                phrase=args.phrase,
+                event=args.event,
+                until_word_index=args.until_word_index,
+                until_phrase=args.until_phrase,
+                until_event=args.until_event,
+                seconds=args.seconds,
+                src_in=args.src_in,
+                after=args.after,
+                occurrence=args.occurrence,
+                enter=args.enter,
+                enter_seconds=args.enter_seconds,
+                enter_ease=args.enter_ease,
+                leave=args.leave,
+                leave_seconds=args.leave_seconds,
+                leave_ease=args.leave_ease,
+                dim=args.dim,
+                gain_db=args.gain_db,
+                mute=args.mute,
+                position=args.position,
+                plan=args.plan,
+            )
+        )
+    if args.inset_command == "ls":
+        return _emit(ops.inset_ls(args.project))
+    return _emit(ops.inset_rm(args.project, args.position, plan=args.plan))
+
+
 def _cmd_retime(args: argparse.Namespace) -> int:
     if args.retime_command == "add":
         return _emit(
@@ -3472,6 +3548,7 @@ _COMMANDS = {
     "vo-synth": _cmd_vo_synth,
     "overlay": _cmd_overlay,
     "retime": _cmd_retime,
+    "inset": _cmd_inset,
     "sound": _cmd_sound,
     "hold": _cmd_hold,
     "reel": _cmd_reel,

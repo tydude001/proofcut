@@ -4557,6 +4557,18 @@ def timeline_view(
         except (ProjectError, tx.TranscriptError, media.MediaError) as exc:
             overlays_error = str(exc)
 
+    # The insets, for the preview's inset layer and the V1 band —
+    # `overlays_view`'s policy: `insets_error`, never raised. Each carries its
+    # `dest` in canvas pixels, mapped through the head window the preview
+    # draws the recording at, so the page derives nothing.
+    insets_view: list[dict[str, Any]] = []
+    insets_error: str | None = None
+    if project.read_manifest().get(INSETS_KEY):
+        try:
+            insets_view = _inset_views(project, edit, shots_rate)
+        except (ProjectError, tx.TranscriptError, media.MediaError) as exc:
+            insets_error = str(exc)
+
     # Every sound hit, for the window's tick lane — `overlays_view`'s policy:
     # a record that cannot resolve is `sounds_error`, never raised. Cheap: the
     # plan decodes nothing.
@@ -4690,6 +4702,8 @@ def timeline_view(
         "overlays": overlays_view,
         # [] with no sounds; one item per hit, in Edit seconds.
         "sounds": sounds_view,
+        # [] with no insets; bottom of the stack first, each with its `dest`.
+        "insets": insets_view,
         # Ruling: this view stays Edit-relative — `segments`/`shots`/`seams`
         # below are unchanged by a configured head, because the web player
         # cannot play one yet and shifting this view's clock would desync it
@@ -4717,6 +4731,8 @@ def timeline_view(
         result["overlays_error"] = overlays_error
     if sounds_error is not None:
         result["sounds_error"] = sounds_error
+    if insets_error is not None:
+        result["insets_error"] = insets_error
     # A clip can be registered, transcribed, and still not be in the edit — and
     # then every one of its words comes back `present: false`, which is exactly
     # what a clip somebody cut entirely looks like. Reported rather than left to
@@ -8940,8 +8956,13 @@ def _draw_window(
     source: tuple[int, int],
     label: str,
     pane: tuple[int, int, int, int] | None = None,
+    insets: list[tuple[int, int, int, int]] = (),
 ) -> None:
     """Draw one window on one extracted frame, in place.
+
+    `insets` are the rects of the recording a clip is drawn into at this
+    moment (docs/plans/NATIVE.md § B6), dashed like a pane: a wrong inset rect
+    is seen here, on the recording's own pixels, or nowhere before a render.
 
     A stacked split draws **both** of its rects, because half a split judged
     on its own is the same failure the whole sheet exists to catch: the upper
@@ -8960,8 +8981,7 @@ def _draw_window(
     panes = [
         "-draw", f"rectangle {x},{y} {x + width - 1},{y + height - 1}",
     ]  # fmt: skip
-    if pane is not None:
-        px, py, pw, ph = pane
+    for px, py, pw, ph in [*([pane] if pane is not None else []), *insets]:
         # The dash array is an MVG primitive inside `-draw`, not a command-line
         # option: `-strokedasharray` is ImageMagick 6's spelling and `magick`
         # rejects it outright — which at least fails loudly, unlike most of
@@ -9088,6 +9108,20 @@ def reframe_sheet(
             "this project has no footage placements to sheet — there is nothing "
             "framed here to look at"
         )
+    # Each inset's rect and the stretch of its recording it covers, in source
+    # seconds, so a tile inside one draws it. One that cannot resolve is left
+    # off the sheet — `inset_ls` and export say why.
+    inset_rects: list[tuple[str, float, float, tuple[int, int, int, int]]] = []
+    if project.read_manifest().get(INSETS_KEY):
+        try:
+            for inset in _inset_views(project, _load_edit(project), _export_fps(_clips_by_id(project))):
+                x0, y0, x1, y1 = inset["rect"]
+                length = inset["timeline_end"] - inset["timeline_start"]
+                inset_rects.append(
+                    (inset["clip_id"], inset["src_start"], inset["src_start"] + length, (x0, y0, x1 - x0, y1 - y0))
+                )
+        except (ProjectError, tl.TimelineError, tx.TranscriptError, media.MediaError):
+            inset_rects = []
 
     tiles: list[Path] = []
     rows: list[dict[str, Any]] = []
@@ -9232,6 +9266,9 @@ def reframe_sheet(
             when = min(float(pick["src_time"]), placement["last_frame"])
             tile = dest_dir / f"{row:03d}-{index}-{pick['pick']}.png"
             picture.extract_frame(placement["path"], when, tile)
+            drawn_insets = [
+                rect for clip, start, end, rect in inset_rects if clip == placement["asset"] and start <= when < end
+            ]
             if sliding:
                 # MLT's key sits at the window's own start, which a placement
                 # can begin after, so the curve is measured from there.
@@ -9251,12 +9288,14 @@ def reframe_sheet(
                         f"{row} {placement['asset']} @{when:.2f}s SLIDE "
                         f"{_rect_text(from_rect)} -> {_rect_text(to_rect)}  {pick['pick']}"
                     )
-                    _draw_window(tile, crop, source, label, ghost)
+                    _draw_window(tile, crop, source, label, ghost, drawn_insets)
             else:
                 crop = entry.crop_at(when) if entry is not None else None
                 pane = entry.pane_at(entry.window_start(when)) if entry is not None else None
                 if crop is not None and source is not None:
                     label = f"{row} {placement['asset']} @{when:.2f}s  {_rect_text(crop)}"
+                    if drawn_insets:
+                        label += " + inset " + ", ".join(_rect_text(rect) for rect in drawn_insets)
                     if pane is not None:
                         label += f" + {_rect_text(pane)} (split)"
                     if entry is not None and entry.is_fill_at(when):
@@ -9273,7 +9312,7 @@ def reframe_sheet(
                             # number on a sheet that can be large and mean nothing,
                             # and a sheet is read as pictures.
                             label += f" ({pick['faces']} faces)"
-                    _draw_window(tile, crop, source, label, pane)
+                    _draw_window(tile, crop, source, label, pane, drawn_insets)
             tiles.append(tile)
             samples.append(
                 {
@@ -14222,6 +14261,459 @@ def retime_rm(path: Path | str, position: int, *, plan: bool = False) -> dict[st
     return {"removed": removed, "position": int(position), "count": len(remaining), "plan": bool(plan)}
 
 
+# -- insets ----------------------------------------------------------------
+#
+# docs/plans/NATIVE.md § B6, designed. An inset is a clip — the render an
+# agent made, in the launch clip — drawn into a rectangle of the recording
+# (`rect`, in the recording's own source pixels) and following its camera.
+# Like overlays, nothing stored is a timeline second: the span resolves
+# through the `Edit` on every build. List order is stacking order.
+
+INSETS_KEY = "insets"
+
+#: The fade an inset gets unless told otherwise: it crosses over the
+#: recording's own copy of the same picture, so a cut would jump.
+INSET_FADE = ("fade", 0.4, "ease")
+
+#: How far a rect's shape may be from its clip's before it is refused rather
+#: than letterboxed — the bars would show the recording's own copy.
+INSET_ASPECT_TOLERANCE = 0.01
+
+#: Off 1x by more than this and the recording under the inset drifts from
+#: the render drawn over it; B5's own mute threshold.
+INSET_SPEED_TOLERANCE = rt.MUTE_TOLERANCE
+
+
+def _stored_insets(project: Project) -> list[dict[str, Any]]:
+    """Every stored inset, validated — `_stored_overlays`' discipline."""
+    stored = project.read_manifest().get(INSETS_KEY, [])
+    if not isinstance(stored, list):
+        raise ProjectError(f"{project.manifest_path}'s {INSETS_KEY!r} must be a JSON array")
+    insets: list[dict[str, Any]] = []
+    for item in stored:
+        if not isinstance(item, dict):
+            raise ProjectError(f"{project.manifest_path}'s {INSETS_KEY!r} entries must be JSON objects")
+        try:
+            rect = [int(value) for value in item["rect"]]
+            if len(rect) != 4:
+                raise ValueError("rect is four numbers")
+            record: dict[str, Any] = {
+                "clip_id": str(item["clip_id"]),
+                "asset": str(item["asset"]),
+                "rect": rect,
+                "src_in": float(item.get("src_in", 0.0)),
+                "dim": float(item.get("dim", 0.0)),
+                "gain_db": float(item.get("gain_db", 0.0)),
+                "mute": bool(item.get("mute", False)),
+            }
+            for key, kind in (
+                ("word_index", int),
+                ("event", str),
+                ("until_word_index", int),
+                ("until_event", str),
+                ("seconds", float),
+            ):
+                if item.get(key) is not None:
+                    record[key] = kind(item[key])
+            motion, length, ease = INSET_FADE
+            for side in ("enter", "leave"):
+                record[side] = str(item.get(side, motion))
+                record[f"{side}_seconds"] = float(item.get(f"{side}_seconds", length))
+                record[f"{side}_ease"] = str(item.get(f"{side}_ease", ease))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ProjectError(
+                f"{project.manifest_path} has an inset that is not "
+                f"(clip_id, asset, rect, a start): {item!r} ({exc})"
+            ) from None
+        if ("word_index" in record) == ("event" in record):
+            raise ProjectError(f"inset {item!r} needs exactly one of word_index or event")
+        if sum(key in record for key in ("until_word_index", "until_event", "seconds")) > 1:
+            raise ProjectError(
+                f"inset {item!r} has more than one of until_word_index, until_event or seconds"
+            )
+        insets.append(record)
+    return insets
+
+
+def _inset_asset(project: Project, record: dict[str, Any]) -> dict[str, Any]:
+    """The inset's clip, refused unless it is footage whose shape fits the rect."""
+    try:
+        clip = media.get_clip(project, record["asset"])
+    except media.MediaError as exc:
+        raise ProjectError(f"inset asset: {exc} — an inset draws a registered clip") from None
+    if not clip.get("has_video") or not clip.get("width") or not clip.get("height"):
+        raise ProjectError(f"inset asset {record['asset']!r} has no picture to draw")
+    x0, y0, x1, y1 = record["rect"]
+    if x1 <= x0 or y1 <= y0:
+        raise ProjectError(f"an inset rect is (x0, y0, x1, y1) with x1 > x0 and y1 > y0, not {record['rect']}")
+    rect_aspect = (x1 - x0) / (y1 - y0)
+    clip_aspect = clip["width"] / clip["height"]
+    if abs(rect_aspect / clip_aspect - 1) > INSET_ASPECT_TOLERANCE:
+        raise ProjectError(
+            f"the inset rect {record['rect']} is {rect_aspect:.4f}:1 and {record['asset']!r} is "
+            f"{clip['width']}x{clip['height']} ({clip_aspect:.4f}:1) — an inset is drawn at its "
+            "clip's own shape, and bars would show the recording's copy underneath; measure the "
+            f"rect again (within {INSET_ASPECT_TOLERANCE:.0%})"
+        )
+    return clip
+
+
+def _inset_plan(
+    project: Project,
+    edit: tl.Edit,
+    rate: float,
+    *,
+    edit_frames: int,
+    stored: list[dict[str, Any]] | None = None,
+    clock: _Clock | None = None,
+) -> list[dict[str, Any]]:
+    """Every inset resolved to the render frames the writer draws it on.
+
+    Live, every build, never stored — `_overlay_plan`'s rule. Frames are Edit
+    frames, or render frames under a retime; `_build_mlt` adds a head's.
+    Raises on the first inset that cannot resolve; `export` refuses and
+    `timeline_view` reports it as `insets_error`.
+    """
+    records = _stored_insets(project) if stored is None else stored
+    if not records:
+        return []
+    resolution = _mlt_resolution(project)
+    reframes = _reframe_map(project, resolution)
+    layout = autoeditor.frame_layout(edit, rate)
+    bounds: list[tuple[float, float]] = []
+    cursor = 0
+    for _offset, frames in layout:
+        bounds.append((cursor / rate, (cursor + frames) / rate))
+        cursor += frames
+    warp = clock.warp if clock is not None else None
+    plans: list[dict[str, Any]] = []
+    for index, record in enumerate(records):
+        label = f"inset {index} ({record['asset']!r})"
+        host = media.get_clip(project, record["clip_id"])
+        if not host.get("has_video") or not host.get("width") or not host.get("height"):
+            raise ProjectError(f"{label} is over {record['clip_id']!r}, which has no picture to draw into")
+        x0, y0, x1, y1 = record["rect"]
+        if x0 < 0 or y0 < 0 or x1 > host["width"] or y1 > host["height"]:
+            raise ProjectError(
+                f"{label}: rect {record['rect']} runs outside {record['clip_id']!r}'s "
+                f"{host['width']}x{host['height']} frame"
+            )
+        asset = _inset_asset(project, record)
+        start, start_echo = _overlay_instant(
+            project, edit, record, word_key="word_index", event_key="event", edge=0, what="starts", label=label
+        )
+        available = float(asset["duration"]) - record["src_in"]
+        if record["src_in"] < 0 or available <= 0:
+            raise ProjectError(
+                f"{label} reads from {record['src_in']}s, outside {record['asset']!r}'s "
+                f"{float(asset['duration']):.3f}s"
+            )
+        end_echo = None
+        if record.get("seconds") is not None:
+            if record["seconds"] <= 0:
+                raise ProjectError(f"{label} lasts {record['seconds']}s — a length is positive")
+            length = record["seconds"]
+        elif record.get("until_word_index") is not None or record.get("until_event") is not None:
+            end, end_echo = _overlay_instant(
+                project, edit, record, word_key="until_word_index", event_key="until_event",
+                edge=1, what="ends", label=label,
+            )  # fmt: skip
+            length = end - start
+        else:
+            length = available
+        if length > available + 0.5 / rate:
+            raise ProjectError(
+                f"{label} runs {length:.3f}s but {record['asset']!r} has only {available:.3f}s "
+                f"from {record['src_in']}s — end it sooner or read from earlier"
+            )
+        # One continuous stretch of the recording: a cut under the inset would
+        # jump the recording while the inset played on.
+        segment = next(
+            (k for k, (a, b) in enumerate(bounds) if a - 1e-9 <= start < b), None
+        )
+        if segment is None or edit.segments[segment].clip_id != record["clip_id"]:
+            raise ProjectError(f"{label} starts where {record['clip_id']!r} is not on the timeline")
+        if start + length > bounds[segment][1] + 0.5 / rate:
+            raise ProjectError(
+                f"{label} runs from Edit {start:.3f}s to {start + length:.3f}s, across the cut at "
+                f"{bounds[segment][1]:.3f}s — an inset follows one continuous stretch of its "
+                "recording; end it at the cut or restore what was removed"
+            )
+        seg = edit.segments[segment]
+        src_start = seg.start + (start - bounds[segment][0])
+        src_end = src_start + length
+        reframe = reframes.get(record["clip_id"])
+        if reframe is not None:
+            windows = reframe.windows()
+            for k, (at, _crop) in enumerate(windows):
+                until = windows[k + 1][0] if k + 1 < len(windows) else math.inf
+                if at < src_end and until > src_start and (reframe.pane_at(at) or reframe.is_fill(at)):
+                    raise ProjectError(
+                        f"{label} is over {record['clip_id']!r}'s window at {at:g}s, which is a "
+                        f"{'split' if reframe.pane_at(at) else 'blur-fill'} — an inset maps one "
+                        "rect of the recording, and that window does not draw it as one"
+                    )
+        if warp is not None:
+            start_frame = min(clock.frame(start), edit_frames)
+        else:
+            start_frame = min(round(start * rate), edit_frames)
+        end_frame = min(start_frame + round(length * rate), edit_frames)
+        frames = end_frame - start_frame
+        if frames < 1:
+            raise ProjectError(f"{label} is under a frame long at {rate:g} fps")
+        if warp is not None:
+            off = [
+                k
+                for k in range(start_frame, min(end_frame, warp.frames))
+                if abs(warp.speed_at_frame(k) - 1) > INSET_SPEED_TOLERANCE
+            ]
+            if off:
+                raise ProjectError(
+                    f"{label} plays over render frames the retime plays off 1x "
+                    f"({off[0]}..{off[-1]}) — the inset plays at 1x and would drift from the "
+                    "recording under it; move it into a 1x stretch"
+                )
+        fades = {}
+        for side in ("enter", "leave"):
+            if record[side] not in ("fade", "none"):
+                raise ProjectError(f"{label}: {side} is fade or none, not {record[side]!r}")
+            fades[side] = 0 if record[side] == "none" else round(record[f"{side}_seconds"] * rate)
+        audible = bool(asset.get("has_audio")) and not record["mute"]
+        inset = mlt.Inset(
+            resource=str(media.media_path(project, asset)),
+            src_in=round(record["src_in"] * rate),
+            start=start_frame,
+            frames=frames,
+            box=(x0, y0, x1, y1),
+            host=str(media.media_path(project, host)),
+            host_source=(int(host["width"]), int(host["height"])),
+            has_audio=audible,
+            gain_db=record["gain_db"],
+            fade_in_frames=fades["enter"],
+            fade_in_ease=record["enter_ease"],
+            fade_out_frames=fades["leave"],
+            fade_out_ease=record["leave_ease"],
+            dim=record["dim"],
+        )
+        try:
+            mlt._check_inset(inset, edit_frames)
+        except mlt.MLTError as exc:
+            raise ProjectError(str(exc)) from None
+        head_dest = (
+            reframe.dest_rect(resolution)
+            if reframe is not None
+            else mlt.fit_rect(inset.host_source, resolution)
+        )
+        # Edit seconds, the clock the window previews on; the render's own
+        # beside them, which differ only under a retime.
+        edit_start = start if warp is not None else start_frame / rate
+        plans.append(
+            {
+                "position": index,
+                **record,
+                "timeline_start": round(edit_start, 3),
+                "timeline_end": round(edit_start + frames / rate, 3),
+                "render_start": round(start_frame / rate, 3),
+                "render_end": round(end_frame / rate, 3),
+                "start_frame": start_frame,
+                "frames": frames,
+                "src_start": round(src_start, 3),
+                "audible": audible,
+                "start_echo": start_echo,
+                "end_echo": end_echo,
+                # Where the preview draws it: the rect mapped through the
+                # recording's head window, which is where the preview draws
+                # the recording (player.js § place).
+                "dest": list(mlt.inset_dest(head_dest, inset.box, inset.host_source)),
+                "inset": inset,
+            }
+        )
+    return plans
+
+
+def _inset_view(plan: dict[str, Any]) -> dict[str, Any]:
+    """An inset plan as JSON — everything but the writer's own object."""
+    return {key: value for key, value in plan.items() if key != "inset"}
+
+
+def inset_add(
+    path: Path | str,
+    clip_id: str,
+    asset: str,
+    rect: list[int] | tuple[int, int, int, int],
+    word_index: int | None = None,
+    *,
+    phrase: str | None = None,
+    event: str | None = None,
+    until_word_index: int | None = None,
+    until_phrase: str | None = None,
+    until_event: str | None = None,
+    seconds: float | None = None,
+    src_in: float = 0.0,
+    after: int = -1,
+    occurrence: int | None = None,
+    enter: str | None = None,
+    enter_seconds: float | None = None,
+    enter_ease: str | None = None,
+    leave: str | None = None,
+    leave_seconds: float | None = None,
+    leave_ease: str | None = None,
+    dim: float = 0.0,
+    gain_db: float = 0.0,
+    mute: bool = False,
+    position: int | None = None,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Draw clip `asset` into `rect` of recording `clip_id`, following its camera.
+
+    `rect` is `[x0, y0, x1, y1]` in the recording's own pixels — where the
+    recording shows the thing the inset replaces — and has to be the asset's
+    shape. The start is one of `word_index`, `phrase` or `event`; the end is
+    one of `until_word_index`, `until_phrase`, `until_event` or `seconds`, or
+    the asset's own end. `src_in` is where in the asset it starts. It must lie
+    inside one continuous, 1x stretch of the recording.
+
+    `enter`/`leave` are `fade` or `none`, with seconds and an easing; `dim`
+    darkens the recording around it (0 to 1). The asset's own audio plays at
+    `gain_db` unless `mute`, and the music bed goes out under it as it does
+    under a hold. `plan=True` writes nothing.
+    """
+    project = Project.open(path)
+    if sum(x is not None for x in (word_index, phrase, event)) != 1:
+        raise ProjectError("an inset starts at one of word_index, phrase or event")
+    if sum(x is not None for x in (until_word_index, until_phrase, until_event, seconds)) > 1:
+        raise ProjectError("an inset ends at no more than one of until_word_index, until_phrase, until_event or seconds")
+    try:
+        box = [int(value) for value in rect]
+    except (TypeError, ValueError):
+        raise ProjectError(f"rect is four whole pixel numbers, x0 y0 x1 y1, not {rect!r}") from None
+    if len(box) != 4:
+        raise ProjectError(f"rect is four numbers, x0 y0 x1 y1, not {rect!r}")
+    if not 0 <= float(dim) <= 1:
+        raise ProjectError(f"dim is a fraction from 0 to 1, not {dim}")
+    record: dict[str, Any] = {"clip_id": clip_id, "asset": asset, "rect": box, "src_in": float(src_in)}
+    if event is not None:
+        record["event"] = event
+    else:
+        record["word_index"], _ = _resolve_word_or_phrase(
+            _transcript(project, clip_id) if phrase is not None else None,
+            word_index=word_index,
+            phrase=phrase,
+            after=after,
+            occurrence=occurrence,
+            edge="first",
+        )
+    if until_event is not None:
+        record["until_event"] = until_event
+    elif seconds is not None:
+        record["seconds"] = float(seconds)
+    elif until_word_index is not None or until_phrase is not None:
+        _, record["until_word_index"] = _resolve_word_or_phrase(
+            _transcript(project, clip_id) if until_phrase is not None else None,
+            word_index=until_word_index,
+            phrase=until_phrase,
+            after=after,
+            occurrence=occurrence,
+            edge="last",
+        )
+    motion, length, ease = INSET_FADE
+    for side, values in (("enter", (enter, enter_seconds, enter_ease)), ("leave", (leave, leave_seconds, leave_ease))):
+        record[side] = motion if values[0] is None else str(values[0])
+        record[f"{side}_seconds"] = length if values[1] is None else float(values[1])
+        record[f"{side}_ease"] = ease if values[2] is None else str(values[2])
+        if record[side] not in ("fade", "none"):
+            raise ProjectError(f"{side} is fade or none, not {record[side]!r} — an inset does not rise")
+        if record[f"{side}_ease"] not in mlt.EASINGS:
+            raise ProjectError(f"{side}_ease {record[f'{side}_ease']!r} is not one of {', '.join(mlt.EASINGS)}")
+        if record[f"{side}_seconds"] < 0:
+            raise ProjectError(f"{side}_seconds is a length, not {record[f'{side}_seconds']}")
+    record["dim"] = float(dim)
+    record["gain_db"] = float(gain_db)
+    record["mute"] = bool(mute)
+
+    stored = _stored_insets(project)
+    at = len(stored) if position is None else int(position)
+    if not 0 <= at <= len(stored):
+        raise ProjectError(f"position {at} is outside the {len(stored)} insets (0 to {len(stored)})")
+    updated = [*stored[:at], record, *stored[at:]]
+
+    edit = _load_edit(project)
+    rate = _export_fps(_clips_by_id(project))
+    edit_frames = _edit_frames(edit, rate)
+    warp = _warp(project, edit, rate, edit_frames=edit_frames)
+    plans = _inset_plan(
+        project, edit, rate,
+        edit_frames=warp.frames if warp is not None else edit_frames,
+        stored=updated, clock=_Clock(rate, warp),
+    )  # fmt: skip
+    if not plan:
+        manifest = project.read_manifest()
+        manifest[INSETS_KEY] = updated
+        project.write_manifest(manifest)
+    return {
+        "inset": _inset_view(plans[at]),
+        "position": at,
+        "count": len(updated),
+        "rate": rate,
+        "plan": bool(plan),
+    }
+
+
+def inset_ls(path: Path | str) -> dict[str, Any]:
+    """Every inset, bottom of the stack first, with where it plays now.
+
+    Read-only. Insets that cannot resolve are reported rather than raised —
+    `insets_error`, with the stored records, so the one to fix can be found.
+    """
+    project = Project.open(path)
+    stored = _stored_insets(project)
+    rate = _export_fps(_clips_by_id(project))
+    try:
+        edit = _load_edit(project)
+        plans = _inset_views(project, edit, rate, stored=stored)
+    except (ProjectError, tl.TimelineError, tx.TranscriptError, media.MediaError) as exc:
+        return {"insets": stored, "insets_error": str(exc), "rate": rate}
+    return {"insets": plans, "insets_error": None, "rate": rate}
+
+
+def _inset_views(
+    project: Project, edit: tl.Edit, rate: float, stored: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
+    """The insets as `inset_ls` and the view report them, on the retime's clock."""
+    edit_frames = _edit_frames(edit, rate)
+    warp = _warp(project, edit, rate, edit_frames=edit_frames)
+    plans = _inset_plan(
+        project, edit, rate,
+        edit_frames=warp.frames if warp is not None else edit_frames,
+        stored=stored, clock=_Clock(rate, warp),
+    )  # fmt: skip
+    return [_inset_view(plan) for plan in plans]
+
+
+def inset_rm(path: Path | str, position: int, *, plan: bool = False) -> dict[str, Any]:
+    """Take the inset at `position` (as `inset_ls` numbers it) off the recording.
+
+    The clip stays registered. `plan=True` writes nothing.
+    """
+    project = Project.open(path)
+    stored = _stored_insets(project)
+    if not 0 <= int(position) < len(stored):
+        raise ProjectError(
+            f"there is no inset at position {position} — there are {len(stored)}"
+            + (f" (0 to {len(stored) - 1})" if stored else "")
+        )
+    removed = stored[int(position)]
+    remaining = [item for i, item in enumerate(stored) if i != int(position)]
+    if not plan:
+        manifest = project.read_manifest()
+        if remaining:
+            manifest[INSETS_KEY] = remaining
+        else:
+            manifest.pop(INSETS_KEY, None)
+        project.write_manifest(manifest)
+    return {"removed": removed, "position": int(position), "count": len(remaining), "plan": bool(plan)}
+
+
 # -- sounds ----------------------------------------------------------------
 #
 # docs/plans/NATIVE.md § B4, designed. A sound is an imported clip placed as a
@@ -14635,6 +15127,8 @@ def _is_layered(project: Project, edit: tl.Edit) -> bool:
         or manifest.get(SOUNDS_KEY)
         # auto-editor has no retime — eleventh.
         or manifest.get(RETIME_KEY)
+        # An inset is a lane over the recording — twelfth.
+        or manifest.get(INSETS_KEY)
     )
 
 
@@ -14943,6 +15437,22 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         )
         music_report["pieces"] = _music_pieces_view(music_plan["pieces"], rate)
 
+    # The insets, resolved on the render clock and moved by the head. One with
+    # sound takes the bed out under it, as a hold does (NATIVE.md § B6, 6).
+    inset_plans = _inset_plan(project, edit, rate, edit_frames=edit_frames, clock=clock)
+    insets = [replace(plan["inset"], start=plan["inset"].start + head_frames) for plan in inset_plans]
+    inset_gates = [(inset.start, inset.end) for inset in insets if inset.has_audio]
+    insets_report = [
+        {
+            key: plan[key]
+            for key in (
+                "position", "clip_id", "asset", "rect", "src_in", "timeline_start", "timeline_end",
+                "frames", "audible", "dim",
+            )
+        }
+        for plan in inset_plans
+    ]
+
     # The holds lane: a fourth, audio-only lane, each stored hold's own
     # resolved film-clip span sitting at exactly the frame it plays, real
     # silence everywhere else — `_hold_gate_spans` resolves every hold once,
@@ -15012,7 +15522,8 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         # score on cleared dialogue is a Content ID problem, not a loudness
         # preference (this module's own docstring). Resolved after the holds
         # lane itself so the two can never disagree about where a hold plays.
-        gate_spans = [(start, end) for start, end, _ in hold_spans]
+    gate_spans = sorted([(start, end) for start, end, _ in hold_spans] + inset_gates)
+    if gate_spans:
         if music_lane:
             music_lane = _gate_music_lane(project, music_lane, music_resources, gate_spans, rate)
         if music2_lane:
@@ -15058,11 +15569,18 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         holds=holds_lane,
         overlays=overlays,
         sounds=sound_lanes,
+        insets=insets,
         rate=rate,
         resolution=resolution,
         reframe=reframes,
         name=project.read_manifest().get("name") or project.root.name,
     )
+    # Read back off the document: the rect the render draws at each inset's
+    # first and last frame, so a reply shows where the camera put it.
+    for index, (item, inset) in enumerate(zip(insets_report, insets)):
+        keys = document.find(f"playlist[@id='iplaylist{index}a']/filter/property[@name='rect']").text
+        item["rect_first"] = list(mlt.rect_at(keys, inset.start))
+        item["rect_last"] = list(mlt.rect_at(keys, inset.end - 1))
     return {
         "document": document,
         "rate": rate,
@@ -15090,6 +15608,8 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         # [] with no sounds, or each record with the hits the render places —
         # `music`'s reasoning again.
         "sounds": sounds_report,
+        # [] with no insets, or each one drawn and where its rect lands.
+        "insets": insets_report,
         # None with no retime, or each stretch as the render draws it.
         "retime": retime_report,
         # What the render will actually crop, named where the render is built
@@ -15135,6 +15655,8 @@ def _mlt_reply(built: dict[str, Any], edit: tl.Edit, **extra: Any) -> dict[str, 
         "overlays": built["overlays"],
         # [] with no sounds, or each record and how many hits it placed.
         "sounds": built["sounds"],
+        # [] with no insets, or each one drawn, and its rect at both ends.
+        "insets": built["insets"],
         # None with no retime, or each stretch's Edit span, render span and speed.
         "retime": built["retime"],
         # Named on both roads because a crop is a decision about what is on
@@ -18122,6 +18644,9 @@ def reel(
     # A stretch is addressed by the film's words and events and plays the
     # film's own pacing — dropped and named, the tail's rule.
     retime_dropped = _stored_retime(source)
+    # An inset is placed against the film's own recording and words — the
+    # tail's rule again.
+    insets_dropped = _stored_insets(source)
     # Checked here rather than left to `cut_by_time`, at the granularity a reel
     # actually has a boundary at — see `_reel_suspect_edges`. Under `plan` it
     # is reported and never refused, which is `cut_by_time`'s own convention
@@ -18193,6 +18718,7 @@ def reel(
         "overlays_dropped": overlays_dropped,
         "sounds_dropped": sounds_dropped,
         "retime_dropped": retime_dropped,
+        "insets_dropped": insets_dropped,
         "plan": bool(plan),
     }
     report["over_platform_cap"] = report["duration"] > PLATFORM_CAP
@@ -18233,6 +18759,7 @@ def reel(
         manifest.pop(OVERLAYS_KEY, None)
         manifest.pop(SOUNDS_KEY, None)
         manifest.pop(RETIME_KEY, None)
+        manifest.pop(INSETS_KEY, None)
         # Provenance, and the answer to the question a hand-made scratch copy
         # could not answer once already: which film is this, and which seconds
         # of it (HISTORY.md § The VO the project was holding). Additive and

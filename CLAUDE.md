@@ -1539,6 +1539,22 @@ built; docs/plans/INSTALL.md):
     muted frame, never by the keys.
   - `cut_by_time` and `reel` read their seconds through the warp. A hold and
     film audio under the VO refuse a retime, both ways.
+- **An inset (`INSETS_KEY`, `_is_layered`'s twelfth trigger) is its own
+  track, never a nested tractor** — a tractor composites at the profile's
+  size, so composite-then-frame kept 38% of the render's detail. Its
+  `qtblend` copies the host Edit entry's camera keys, same positions and
+  operators with each rect mapped (`mlt.inset_rect`); re-sampling the curve
+  was worse. HISTORY.md § Insets, built.
+  - **The rect filter hangs on the inset's PLAYLIST**, whose keys count
+    render frames from 0; on the chain, a camera key before the inset's
+    in-point needs a negative position, which MLT counts from the end.
+  - **Fade and dim are `brightness` alpha**, never keys merged into the
+    rect, which would bend the camera's curve.
+  - **Judge an edge in a yuv420p render by luma**: chroma is half size and
+    moved the measured edge 1.8px on a render that was right to 0.72.
+  - **Lossless-RGB sources drawn smaller than themselves shift colour** in
+    melt, on every route; yuv420p ones do not. A colour finding on an RGB
+    fixture is the fixture until a yuv one agrees.
 - **A channel preset pack is a snapshot, never a live reference to a sibling
   repo's file.** `pack.load_pack` resolves one external JSON file (palette,
   fonts, mark, caption presets, weights) once; `pack_apply` writes the fully-

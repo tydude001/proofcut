@@ -104,6 +104,7 @@
  *   #picture                 the V2 layer over both: the shot under the
  *                          playhead, `contain` so nothing is cropped
  *   .picture-note             why a shot is not showing, in words
+ *   #inset-layer             insets over the edit's track, under #picture
  *   #overlay-layer           overlays over the picture, one image each
  *   #caption-layer           CC over both — geometry only, because every
  *                          visible property comes off /api/captions so the
@@ -215,6 +216,7 @@
  *   .waveform-canvas            the <canvas> an A1 lane draws its envelope
  *                             into (from `/api/waveform/<clip_id>`)
  *   .retime-band                a retime stretch on V1/A1, hatched, no hit target
+ *   .inset-band                 an inset's span along V1's foot, no hit target
  *   .seam-tick                  a cut boundary, drawn as a 1px line
  *   .gap                        a removed stretch, on a source-coordinate lane
  *   .playhead-line               the shared vertical line, positioned by `left`
@@ -1624,6 +1626,30 @@ textarea {
   display: none;
 }
 
+
+/* The inset layer — clips drawn into a rect of the recording (player.js §
+   insets). Each slot fills #frame; its video is placed by `place()` like
+   #media, and its dim covers the frame under the video. Never takes a click. */
+#inset-layer,
+.inset-slot,
+.inset-dim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+#inset-layer {
+  overflow: hidden;
+}
+
+.inset-dim {
+  background: #000;
+  opacity: 0;
+}
+
+.inset-slot[hidden] {
+  display: none;
+}
 
 /* The overlay layer — transparent cards over the picture (player.js §
    overlays). Each image is canvas-sized, so it fills #frame exactly the way
@@ -3743,6 +3769,16 @@ textarea {
     transparent 4px 8px
   );
   border-inline: 1px solid var(--partial);
+}
+
+/* An inset's span on V1 (timeline.js § buildLaneRow): a strip along the
+   lane's foot, under every gesture. */
+.inset-band {
+  position: absolute;
+  bottom: 0;
+  height: 4px;
+  pointer-events: none;
+  background: var(--partial);
 }
 
 .gap {

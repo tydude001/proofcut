@@ -182,6 +182,8 @@
                it is about (docs/plans/NATIVE.md § B5, designed). app.js fills
                it from `view.retime` and hides it without one. -->
           <span id="preview-retime-note" class="chip-static" hidden></span>
+          <!-- An inset that cannot resolve draws nothing here and refuses export. -->
+          <span id="preview-inset-note" class="chip-static" hidden></span>
         </div>
         <div id="viewer">
           <!-- The frame is the project canvas, not the media's own shape, and
@@ -199,6 +201,11 @@
             <video id="media-fill" preload="metadata" muted playsinline hidden></video>
             <video id="media" preload="metadata"></video>
             <canvas id="visualizer" width="960" height="240"></canvas>
+            <!-- Insets over the edit's own track and under V2, the writer's
+                 order (docs/plans/NATIVE.md § B6): each a clip drawn into a
+                 rect of the recording, with its dim under it. player.js fills
+                 it from the view's `insets`, placed at each one's `dest`. -->
+            <div id="inset-layer"></div>
             <!-- V2 over V1, stacked the way melt composites the picture track
                  over the edit's own track. player.js shows the shot under the
                  playhead in here, muted: the audio is always the transport's. -->

@@ -103,6 +103,9 @@ EXPECTED_TOOLS = {
     "retime_add",
     "retime_ls",
     "retime_rm",
+    "inset_add",
+    "inset_ls",
+    "inset_rm",
     "sound_add",
     "sound_ls",
     "sound_rm",
@@ -720,6 +723,9 @@ TOOL_TO_COMMAND = {
     "retime_add": "retime",
     "retime_ls": "retime",
     "retime_rm": "retime",
+    "inset_add": "inset",
+    "inset_ls": "inset",
+    "inset_rm": "inset",
     "sound_add": "sound",
     "sound_ls": "sound",
     "sound_rm": "sound",
@@ -7462,6 +7468,178 @@ def test_a_sound_inside_a_stretch_lands_where_the_retime_plays_its_event(visible
     assert abs(peak - 5.0 * 48000) > 48000
 
 
+# -- an inset, against a real melt render (NATIVE B6) -----------------------
+
+_INSET_BOX = (218, 63, 446, 234)  # 228x171, the inset's 4:3
+_INSET_ZOOM = (132, 36, 400, 225)  # a 1.6x window on the box, where the camera pushes
+
+
+def _inset_sources(root: Path) -> tuple[Path, Path]:
+    """A recording with a blue box and a magenta ring 4px outside it, and a
+    green 4:3 clip whose top band counts its frames (`_counted_frames`' code)."""
+    x0, y0, x1, y1 = _INSET_BOX
+    w, h = x1 - x0, y1 - y0
+    rec, clip = root / "rec.mp4", root / "cut.mp4"
+    boxes = ",".join(
+        f"drawbox=x={x0 - pad}:y={y0 - pad}:w={w + 2 * pad}:h={h + 2 * pad}:color={color}:t=fill"
+        for pad, color in ((8, "0xff00ff"), (4, "0x1e1e1e"), (0, "0x141478"))
+    )
+    subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-y",
+         "-f", "lavfi", "-i", "color=c=0x1e1e1e:size=640x360:rate=30:duration=6",
+         "-f", "lavfi", "-i", "sine=frequency=440:duration=6:sample_rate=48000",
+         "-vf", f"{boxes},format=yuv420p", "-c:v", "libx264", "-crf", "4",
+         "-c:a", "aac", "-shortest", str(rec)],
+        capture_output=True, check=True,
+    )  # fmt: skip
+    band = "lt(Y,40)"
+    count = "if(lt(X,W/2),mod(N,32)*8,floor(N/32)*20)"
+    subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-y",
+         "-f", "lavfi", "-i", "color=c=black:size=160x120:rate=30:duration=4",
+         "-f", "lavfi", "-i", "sine=frequency=1000:duration=4:sample_rate=48000",
+         "-vf", (f"format=rgb24,geq=r='if({band},{count},40)':g='if({band},{count},200)':"
+                 f"b='if({band},{count},80)',format=yuv420p"),
+         "-c:v", "libx264", "-crf", "0", "-c:a", "aac", "-shortest", str(clip)],
+        capture_output=True, check=True,
+    )  # fmt: skip
+    return rec, clip
+
+
+def _rgb_frames(path: Path, width: int, height: int) -> list[bytes]:
+    raw = subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-i", str(path), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+        capture_output=True, check=True,
+    ).stdout  # fmt: skip
+    size = width * height * 3
+    return [raw[at : at + size] for at in range(0, len(raw) - size + 1, size)]
+
+
+def _crossing(values: list[float], start: int, stop: int, rising: bool) -> float | None:
+    step = 1 if stop > start else -1
+    for x in range(start, stop, step):
+        a, b = values[x], values[x + step]
+        if (a < 0.5 <= b) if rising else (a >= 0.5 > b):
+            return x + 0.5 + step * (0.5 - a) / (b - a)
+    return None
+
+
+def _goertzel(samples: list[int], hz: float, rate: int = 48000) -> float:
+    k = round(len(samples) * hz / rate)
+    coeff = 2 * math.cos(2 * math.pi * k / len(samples))
+    s1 = s2 = 0.0
+    for sample in samples:
+        s1, s2 = sample + coeff * s1 - s2, s1
+    return math.sqrt(max(s1 * s1 + s2 * s2 - coeff * s1 * s2, 0.0)) / len(samples)
+
+
+@needs_melt
+def test_an_inset_is_drawn_where_the_recording_says_its_rect_is(visible_tmp: Path) -> None:
+    """NATIVE B6 against a real melt: a 4:3 clip inset into a box of the
+    recording while the camera pushes 1.6x into it (1–3 s, eased). On every
+    frame the inset's left, right and bottom edges sit where the recording's
+    own ring says the box is — within 1px, read from luma (0.72 measured);
+    the counter in its top band reads its own frame on the held frames; its
+    green is the source's, and its tone plays only while it does."""
+    rec, clip = _inset_sources(visible_tmp)
+    project = visible_tmp / "proj"
+    output = visible_tmp / "out.mp4"
+
+    async def body(session: ClientSession) -> Any:
+        client = Client(session)
+        await client.call("init", path=str(project))
+        rec_id = (await client.call("import_media", path=str(project), source=str(rec)))["clip_id"]
+        cut_id = (await client.call("import_media", path=str(project), source=str(clip)))["clip_id"]
+        await client.call("seed_timeline", path=str(project), clip_id=rec_id, remove_silences=False)
+        await client.call("events", path=str(project), clip_id=rec_id, name="playing", at=0.5)
+        await client.call("reframe", path=str(project), clip_id=rec_id, rect="0,0,640,360", src_start=1.0)
+        await client.call(
+            "reframe", path=str(project), clip_id=rec_id, rect=",".join(map(str, _INSET_ZOOM)),
+            src_start=3.0, interp=True, ease="ease",
+        )  # fmt: skip
+        added = await client.call(
+            "inset_add", path=str(project), clip_id=rec_id, asset=cut_id, rect=list(_INSET_BOX),
+            event="playing", enter="none", leave="none",
+        )  # fmt: skip
+        rendered = await client.call("export", path=str(project), output=str(output), export_format=None)
+        return added, rendered
+
+    added, rendered = anyio.run(_with_server, body)
+    assert added["inset"]["frames"] == 120
+    assert rendered["writer"] == "melt"
+    [report] = rendered["insets"]
+    assert report["rect_first"][:4] == [218, 63, 228, 171]
+    # the 1.6x window's destination rounds to (-211, -58, 1024, 576)
+    assert report["rect_last"][:4] == [138, 43, 365, 273]
+
+    frames = _rgb_frames(output, 640, 360)
+    assert len(frames) == 180
+    x0, y0, x1, y1 = _INSET_BOX
+
+    def dest(f: int) -> tuple[float, float, float]:
+        """Where the recording's origin lands and its scale, on the camera's curve."""
+        t = min(max((f - 30) / 60, 0.0), 1.0)
+        t = 4 * t**3 if t < 0.5 else 1 - (-2 * t + 2) ** 3 / 2
+        zx, zy, zw, _ = _INSET_ZOOM
+        s = 1 + (640 / zw - 1) * t
+        return -zx * (640 / zw) * t, -zy * (640 / zw) * t, s
+
+    def at(pixels: bytes, x: int, y: int) -> tuple[int, int, int]:
+        i = (y * 640 + x) * 3
+        return pixels[i], pixels[i + 1], pixels[i + 2]
+
+    # Edges from luma, which yuv420p keeps at full resolution: read from the
+    # colour, the render's half-size chroma alone moved them 1.8px.
+    def luma(p: tuple[int, int, int]) -> float:
+        return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]
+
+    def green(p: tuple[int, int, int]) -> float:
+        return (luma(p) - 30) / (157 - 30)
+
+    def magenta(p: tuple[int, int, int]) -> float:
+        return (luma(p) - 30) / (72.6 - 30)
+
+    worst = 0.0
+    for f in range(15, 135):
+        pixels = frames[f]
+        ox, oy, s = dest(f)
+        row = round(oy + (y0 + 0.6 * (y1 - y0)) * s)
+        col = round(ox + (x0 + 0.5 * (x1 - x0)) * s)
+        line = [at(pixels, x, row) for x in range(640)]
+        column = [at(pixels, col, y) for y in range(360)]
+        # left, right and bottom: from the inset's middle out to its edge, then on to the ring
+        for values, start, stop in ((line, col, 0), (line, col, 639), (column, row, 359)):
+            inset_edge = _crossing([green(p) for p in values], start, stop, False)
+            assert inset_edge is not None, f
+            ring = _crossing([magenta(p) for p in values], int(inset_edge), stop, True)
+            assert ring is not None, f
+            box_edge = ring + 4 * s if stop < start else ring - 4 * s
+            worst = max(worst, abs(inset_edge - box_edge))
+        if f < 30 or f >= 90:
+            left, right = ox + (x0 + 0.25 * (x1 - x0)) * s, ox + (x0 + 0.75 * (x1 - x0)) * s
+            top = round(oy + (y0 + 20 * (y1 - y0) / 120) * s)
+            count = round(at(pixels, round(right), top)[1] / 20) * 32 + round(at(pixels, round(left), top)[1] / 8)
+            assert count == f - 15, f
+    assert worst <= 1.0
+
+    source = _rgb_frames(clip, 160, 120)[85]
+    i = (80 * 160 + 80) * 3
+    want = source[i : i + 3]
+    ox, oy, s = dest(100)
+    x = round(ox + (x0 + 0.5 * (x1 - x0)) * s)
+    y = round(oy + (y0 + (80 / 120) * (y1 - y0)) * s)
+    j = (y * 640 + x) * 3
+    got = frames[100][j : j + 3]
+    assert all(abs(a - b) <= 6 for a, b in zip(got, want)), (list(got), list(want))
+
+    pcm = _pcm(output)
+    before = pcm[2400:19200]
+    during = pcm[48000:96000]
+    assert _goertzel(before, 1000) < 30
+    assert _goertzel(during, 1000) > 300
+    assert _goertzel(during, 440) > 300
+
+
 # -- a head's own lead-silence pad, against a real melt render --------------
 #
 # The trap named in CLAUDE.md: `mlt.document`'s validation only checks the
@@ -8481,7 +8659,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
             assert "no project" in description, tool.name
         else:
             assert "bound project" in description, tool.name
-    assert seen == 101
+    assert seen == 104
 
 
 def test_no_tool_advertises_an_argument_with_nothing_said_about_it() -> None:

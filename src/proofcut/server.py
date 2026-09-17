@@ -59,7 +59,7 @@ INSTRUCTIONS = (
     "- transcript: transcribe or attach_transcript; get_transcript with search=\n"
     "- cut: seed_timeline, then cut_by_transcript / cut_by_time, restore, locate, retime_add\n"
     "- picture: cue_add (b-roll under a line), broll_brief, shot_sheet, canvas, "
-    "reframe, reframe_sheet\n"
+    "reframe, reframe_sheet, inset_add (a clip inside the recording)\n"
     "- sound: music (the bed), hold_add, vo_extend, vo_synth, sound_add (one-shots at events)\n"
     "- cards and ends: card_templates, card_new, overlay_add (type over the film), head, tail\n"
     "- finish: add_captions, caption_style, export (render with export_format=null)\n"
@@ -342,7 +342,7 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "transcript_checks", "describe_ls", "card_templates", "card_safe_zones",
             "pack_show", "pack_status", "cue_ls", "assets", "unspoken_ls", "build_shots",
             "locate", "timeline_status", "timeline_view", "changes", "properties", "finish_report",
-            "caption_view", "hold_ls", "hold_check", "overlay_ls", "sound_ls", "retime_ls", "finish_check", "reframe_coverage",
+            "caption_view", "hold_ls", "hold_check", "overlay_ls", "sound_ls", "retime_ls", "inset_ls", "finish_check", "reframe_coverage",
             "continuity_check", "continuity_ls", "thumbnail", "contact_sheet",
             "broll_brief", "verify", "check_frames", "check_black", "spot_frames",
             "speech_overlap", "review_list",
@@ -358,6 +358,8 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "sound_add",
             # Appends a stretch; one overlapping another is refused, never merged.
             "retime_add",
+            # Inserts a record into the stack; never replaces one.
+            "inset_add",
             # `apply` writes a label only where none is set, and never over one.
             "attribute_speakers",
             # `apply` never writes over an existing override (CLAUDE.md).
@@ -395,7 +397,7 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "clip_rm", "transcribe", "cue_rm", "unspoken_rm", "unspoken_detect",
             "cut_by_transcript", "cut_by_time", "undo", "vo_extend", "vo_synth",
             "hold_add", "hold_rm", "hold_under_rm", "reel", "continuity_reject",
-            "overlay_rm", "sound_rm", "retime_rm",
+            "overlay_rm", "sound_rm", "retime_rm", "inset_rm",
             "review_add",
         ],
         _EDIT,
@@ -1677,6 +1679,44 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         "until_word_index": "End as this word ends. One of until_word_index, until_phrase or until_event.",
         "until_phrase": "End as this phrase's LAST word ends.",
         "until_event": "End on this event of clip_id.",
+    },
+    "inset_add": {
+        "clip_id": (
+            "The recording the inset is drawn into — its camera (reframe windows) is what "
+            "the inset follows, and its words or events address the span."
+        ),
+        "asset": "The clip to draw, by clip_id: the render an agent made, in a launch clip. Needs picture.",
+        "rect": (
+            "[x0, y0, x1, y1] in the recording's OWN pixels: where the recording shows the thing "
+            "the inset replaces (a preview pane). Must be the asset's shape, within 1%."
+        ),
+        "word_index": "The word the inset starts on. One of word_index, phrase or event.",
+        "phrase": "Start on this phrase's FIRST word, resolved against clip_id's transcript.",
+        "event": (
+            "Start on this event of clip_id: `name`, or `name#k` when the name repeats. Usually "
+            "the moment the recording's own preview starts playing, which locks the two."
+        ),
+        "until_word_index": (
+            "End as this word ends. At most one of until_word_index, until_phrase, until_event "
+            "or seconds; none runs to the asset's end."
+        ),
+        "until_phrase": "End as this phrase's LAST word ends.",
+        "until_event": "End on this event of clip_id.",
+        "seconds": "End this long after the start.",
+        "src_in": "Seconds into the asset the inset starts from. Default 0.",
+        "enter": "How it appears: `fade` or `none` (a cut). Default fade.",
+        "enter_seconds": "How long the fade in takes. Default 0.4.",
+        "enter_ease": "The fade's curve: linear, ease, ease-in or ease-out. Default ease.",
+        "leave": "How it goes: `fade` or `none`. Default fade.",
+        "leave_seconds": "How long the fade out takes. Default 0.4.",
+        "leave_ease": "The fade's curve: linear, ease, ease-in or ease-out. Default ease.",
+        "dim": "Darken the recording around the inset, 0 (none, the default) to 1 (black); 0.55 reads well.",
+        "gain_db": "The asset's own audio level in dB. Default 0. The music bed goes out under it.",
+        "mute": "Play none of the asset's audio (and leave the bed alone).",
+        "position": "Where in the stack it goes: 0 is the bottom, omitted is the top.",
+    },
+    "inset_rm": {
+        "position": "The inset to remove, by its position in inset_ls.",
     },
     "retime_rm": {
         "position": "The stretch to remove, by its position in retime_ls; that span plays at 1x again.",
@@ -4764,6 +4804,101 @@ def overlay_rm(path: ProjectPath = None, *, position: int, plan: bool = False) -
     above the removed one move down by one.
     """
     return ops.overlay_rm(path, position, plan=plan)
+
+
+@_tool()
+def inset_add(
+    path: ProjectPath = None,
+    *,
+    clip_id: str,
+    asset: str,
+    rect: list[int],
+    word_index: int | None = None,
+    phrase: str | None = None,
+    event: str | None = None,
+    until_word_index: int | None = None,
+    until_phrase: str | None = None,
+    until_event: str | None = None,
+    seconds: float | None = None,
+    src_in: float = 0.0,
+    after: int = -1,
+    occurrence: int | None = None,
+    enter: str | None = None,
+    enter_seconds: float | None = None,
+    enter_ease: str | None = None,
+    leave: str | None = None,
+    leave_seconds: float | None = None,
+    leave_ease: str | None = None,
+    dim: float = 0.0,
+    gain_db: float = 0.0,
+    mute: bool = False,
+    position: int | None = None,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Draw a clip into a rectangle of the recording, following its camera — a render inside the app's preview.
+
+    `rect` is where the recording shows what the inset replaces, in the
+    recording's own pixels, and must be the clip's shape. The inset moves and
+    zooms with the recording's reframe windows, so a push into the preview
+    fills the frame with the clip itself, at full sharpness. The span starts
+    at a word, phrase or event of `clip_id` and ends at one, at a length, or
+    at the clip's end; it plays at 1x and must lie inside one continuous, 1x
+    stretch of the recording (no cut, no retimed span under it).
+
+    It fades in and out by default, can dim the recording around it, and plays
+    its own audio with the music bed out underneath unless `mute`. The reply
+    echoes where it plays and `dest`, where its rect lands in the canvas;
+    `plan=true` writes nothing. Any inset routes export through the MLT
+    writer, and export's reply gives each inset's rect at its first and last
+    frame.
+    """
+    return ops.inset_add(
+        path,
+        clip_id,
+        asset,
+        rect,
+        word_index,
+        phrase=phrase,
+        event=event,
+        until_word_index=until_word_index,
+        until_phrase=until_phrase,
+        until_event=until_event,
+        seconds=seconds,
+        src_in=src_in,
+        after=after,
+        occurrence=occurrence,
+        enter=enter,
+        enter_seconds=enter_seconds,
+        enter_ease=enter_ease,
+        leave=leave,
+        leave_seconds=leave_seconds,
+        leave_ease=leave_ease,
+        dim=dim,
+        gain_db=gain_db,
+        mute=mute,
+        position=position,
+        plan=plan,
+    )
+
+
+@_tool()
+def inset_ls(path: ProjectPath = None) -> dict[str, Any]:
+    """Every inset, bottom of the stack first, with where each plays and where its rect lands.
+
+    Each carries its `position` (as inset_rm takes it). Insets that cannot
+    resolve — a cut removed a start word — come back as `insets_error` beside
+    the stored records, so the one to move or remove can still be found.
+    """
+    return ops.inset_ls(path)
+
+
+@_tool()
+def inset_rm(path: ProjectPath = None, *, position: int, plan: bool = False) -> dict[str, Any]:
+    """Take one inset off the recording, by its position in inset_ls.
+
+    The clip stays registered. Positions above the removed one move down by one.
+    """
+    return ops.inset_rm(path, position, plan=plan)
 
 
 @_tool()

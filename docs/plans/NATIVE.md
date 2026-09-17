@@ -205,8 +205,8 @@ Each step is usable on its own, and each is judged on a served render.
   stretch that is not 1x is muted by default — `clip.py`'s own choice, with a
   separate VO — and `pitch=1` stays available. Design below (§ B5,
   designed); Tyler took all eight decisions on 2026-09-17.
-- **B6. Inset.** The render drawn into a rectangle of the recording, following
-  the camera. This plan said to composite onto the recording's own track and
+- **B6. Inset.** Shipped — see HISTORY.md § Insets, built. The render drawn
+  into a rectangle of the recording, following the camera. This plan said to composite onto the recording's own track and
   then frame the composite, with a nested tractor. Measured, that is the
   worst route: soft, off by up to 2px, and colour-shifted. The inset is a
   sibling track that reuses the camera's keys. Design below (§ B6, designed).
@@ -506,9 +506,10 @@ second where the preview's playback begins, plays at 1x, and its audio plays.
   recording's.** Composite-then-frame scaled the recording to 1920 and the
   render to 684px before the camera zoomed 1.97x. It kept 38% of the render's
   detail and 76% of the recording's, and the lock was off by up to 2.1px.
-  **It also shifted colour at exit 0**: the render's (40,200,80) came out
-  (53,225,84) on both melts, while greys stayed the same. **The writer never
-  nests a tractor for an inset.**
+  **The writer never nests a tractor for an inset.** (A colour shift first
+  blamed on nesting was melt drawing a lossless-RGB source smaller than
+  itself, on every route; BT.709 yuv420p sources, the render's own format,
+  stayed within 1 of ffmpeg's decode at every scale.)
 - **A sibling track that reuses the camera's keys locks within 0.88px and is
   as sharp as `clip.py`** (99% of both sources' detail). The camera keys the
   rectangle the whole recording is drawn into. The inset's rectangle is a
@@ -537,15 +538,23 @@ second where the preview's playback begins, plays at 1x, and its audio plays.
   - `src_in` is where in the asset the inset starts (default 0).
 - **It is a track directly above the Edit track and below the picture
   lane.** A b-roll cue covers the recording, so it covers the inset too.
-- **Its `qtblend` keys are the Edit entry's reframe keys.** They sit at the
-  same positions, moved onto the inset entry's own clock (through the warp
-  when the recording is retimed, since B5 keys the camera in output frames).
-  They keep the same operators, and each destination rectangle is mapped
-  through `rect`. With no reframe, the rectangle is MLT's own fit
-  (`fit_rect`). Ints, as proofcut writes.
+- **Its `qtblend` keys are the Edit entry's reframe keys, and the filter
+  hangs on the inset's playlist.** A chain's keys count its asset's frames,
+  so a camera key from before the inset's in-point would need a negative
+  position, which MLT reads as counting from the end. A playlist filter
+  counts render frames from 0 and locked the same (0.88px; 0.63px for an
+  inset starting mid-push). Each key goes to the render frame it lands on,
+  with the same operator, and each destination rectangle is mapped through
+  `rect`. With no reframe, the rectangle is MLT's own fit (`fit_rect`).
+  Ints, as proofcut writes.
+- **The fade and the dim are `brightness` `alpha` keys**, never keys merged
+  into the camera's `rect`, which would bend its curve. The fade is on the
+  inset chain; the dim is a black `color` track between the recording and
+  the inset. Both measured (the grey went 30 → 14 at a 0.55 dim).
 - **It is `_is_layered`'s twelfth trigger.**
 
-**Decisions** (a recommendation on each):
+**Decisions** (a recommendation on each; Tyler took all nine on
+2026-09-17 — HISTORY.md § Insets, built):
 
 1. **The sibling track** (recommended; the spike leaves no real
    alternative). The nested route at native size (the `consumer` producer)
@@ -576,9 +585,7 @@ second where the preview's playback begins, plays at 1x, and its audio plays.
    - `enter`/`leave` take `fade` or `none`, plus seconds and an easing.
      These are the overlay's words, and `rise` is refused.
    - `dim` darkens the recording around the inset (0 to 1, default 0;
-     `clip.py` uses 0.55). It is a black `color` track at keyed opacity,
-     between the recording and the inset, fading with the inset. It is
-     unmeasured and gets measured at build time.
+     `clip.py` uses 0.55), fading with the inset.
 6. **The inset's audio plays** (recommended; it is the point in `clip.py`).
    - `gain_db` sets its level (default 0).
    - `mute` switches it off.

@@ -36,7 +36,7 @@
  *
  * player.js owns #viewer, #frame (with #frame-note), #media, #visualizer,
  * #picture (with #picture-video, #picture-pane,
- * #picture-still, #picture-note), #overlay-layer, #caption-layer (with #caption-line),
+ * #picture-still, #picture-note), #inset-layer, #overlay-layer, #caption-layer (with #caption-line),
  * #transport, #play, #clock, #playhint and touches no other pane's DOM. Every animation frame it emits
  * a 'playhead' event `{now, total}` on the shared bus, and a 'playing-word'
  * event `{index}` whenever the playing word changes — transcript.js and
@@ -101,6 +101,8 @@ let pendingFillSeek = null; // its own pending seek, for the pane's reason
 let mediaFill = null; // the edit track's blur-fill background element
 let shotCursor = 0; // cache for the shot-under-the-playhead scan
 const pictureRefused = new Set(); // assets the browser would not decode
+let insetLayer = null; // the insets' layer, or null before init
+const insetSlots = []; // one {box, dim, video} per stack position, reused across views
 let overlayLayer = null; // the overlays' layer, or null before init
 const overlayImages = []; // one <img> per stack position, reused across views
 
@@ -278,6 +280,7 @@ function tick() {
   paintWord(t);
   paintPicture(t);
   followEditFill();
+  paintInsets(t);
   paintOverlays(t);
   paintCaption(t);
   drawVisualizer();
@@ -434,6 +437,9 @@ function layoutFrame() {
   place(pictureVideo, pictureAsset, pictureDest);
   place(picturePane, pictureAsset, picturePaneDest);
   placeFill(pictureFill, pictureFillView);
+  // An inset re-places on its next paint only when its `dest` changes, and a
+  // resize moves every pixel without changing one: forget what was placed.
+  for (const slot of insetSlots) delete slot.video.dataset.dest;
 }
 
 /* Put one element where the render puts that source. Called whenever either
@@ -640,6 +646,84 @@ function paintPicture(t) {
   if (pictureVideo.paused) pictureVideo.play().catch(() => {});
   followPane(target, false);
   followFill(target, false);
+}
+
+/* -- insets ----------------------------------------------------------------
+ *
+ * The view's `insets` (`ops._inset_plan`), bottom of the stack first: a clip
+ * drawn into a rect of the recording, with a black dim under it. Each is
+ * placed at its `dest` — the rect mapped through the recording's head window,
+ * which is where this pane draws the recording — so it sits on the same
+ * pixels the recording shows it in; a slide the render makes is not drawn
+ * here, as it is not for the recording either. Muted: the transport is the
+ * only sound in this window. Held to `now()` the way the picture layer is.
+ */
+function insetSlot(i) {
+  if (insetSlots[i]) return insetSlots[i];
+  const box = document.createElement("div");
+  box.className = "inset-slot";
+  box.hidden = true;
+  const dim = document.createElement("div");
+  dim.className = "inset-dim";
+  const video = document.createElement("video");
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "metadata";
+  box.append(dim, video);
+  insetLayer.append(box); // DOM order is stack order
+  insetSlots[i] = { box, dim, video, pending: null };
+  video.addEventListener("loadedmetadata", () => {
+    const slot = insetSlots[i];
+    if (slot.pending !== null) {
+      video.currentTime = slot.pending;
+      slot.pending = null;
+    }
+  });
+  return insetSlots[i];
+}
+
+function paintInsets(t) {
+  if (!insetLayer) return;
+  const v = view();
+  const insets = (v && !v.insets_error && v.insets) || [];
+  for (let i = 0; i < Math.max(insets.length, insetSlots.length); i += 1) {
+    const inset = insets[i];
+    const live = inset && t >= inset.timeline_start && t < inset.timeline_end;
+    if (!live) {
+      const idle = insetSlots[i];
+      if (idle && !idle.box.hidden) {
+        idle.box.hidden = true;
+        idle.video.pause();
+      }
+      continue;
+    }
+    const slot = insetSlot(i);
+    const url = assetURL(inset.asset);
+    if (slot.video.dataset.src !== url) {
+      slot.video.dataset.src = url;
+      slot.video.src = url;
+    }
+    if (slot.video.dataset.dest !== String(inset.dest)) {
+      slot.video.dataset.dest = String(inset.dest);
+      place(slot.video, null, inset.dest);
+    }
+    const { opacity } = overlayMotion(inset, t - inset.timeline_start);
+    slot.video.style.opacity = opacity.toFixed(3);
+    slot.dim.style.opacity = ((inset.dim || 0) * opacity).toFixed(3);
+    if (slot.box.hidden) slot.box.hidden = false;
+    const target = inset.src_in + (t - inset.timeline_start);
+    if (slot.video.readyState === 0) {
+      slot.pending = target;
+      continue;
+    }
+    if (media.paused) {
+      if (!slot.video.paused) slot.video.pause();
+      if (Math.abs(slot.video.currentTime - target) > PICTURE_EPS) slot.video.currentTime = target;
+    } else {
+      if (Math.abs(slot.video.currentTime - target) > PICTURE_DRIFT) slot.video.currentTime = target;
+      if (slot.video.paused) slot.video.play().catch(() => {});
+    }
+  }
 }
 
 /* -- overlays --------------------------------------------------------------
@@ -1078,6 +1162,7 @@ export function init(passedCtx) {
   mediaFill = $("media-fill");
   pictureStill = $("picture-still");
   pictureNote = $("picture-note");
+  insetLayer = $("inset-layer");
   overlayLayer = $("overlay-layer");
   captionLayer = $("caption-layer");
   captionLine = $("caption-line");
