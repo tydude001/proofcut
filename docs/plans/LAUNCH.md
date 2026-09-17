@@ -422,7 +422,12 @@ twos, with time to fix what they find.
 **What to watch.** Each listing reports something — installs, stars,
 "tried it" comments. Record which ones actually sent a stranger (an issue, a
 doctor paste, a pull request) in HISTORY.md § The launch; that is the number
-the next release's listing order is chosen by.
+the next release's listing order is chosen by. **GitHub's clone traffic is
+not one of them**: every CI job checks the repo out from a fresh runner
+address, so the day after the flip read 294 clones from 83 "unique cloners"
+against 5 page views, and the curve tracks the workflow-run count day by
+day. Read views and referrers, and know that a referrer can be Tyler's own
+share (the one Slack referrer on 2026-09-15 was).
 
 **Done when:** the four listings are live and one week has passed with the
 queue they produced closed.
