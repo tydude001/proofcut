@@ -28,9 +28,10 @@ ones, each handed a goal and no steps, and each passed every one of its checks.
   The score, the level and the end card were each measured in the delivered
   file, not taken from the project.
 
-> **Have a Mac or a Windows PC and half an hour?** Nobody has run proofcut on
-> a Mac yet, and on Windows only its author has. One script runs the whole
-> test and removes what it installed:
+> **Have a Mac or a Windows PC and half an hour?** One person has run
+> proofcut on an Intel Mac and nobody yet on Apple silicon, and on Windows
+> only its author has. One script runs the whole test and removes what it
+> installed:
 > [§ Help wanted](#help-wanted-a-mac-or-a-windows-run).
 
 ## Try it
@@ -220,8 +221,9 @@ projections of one edit](https://raw.githubusercontent.com/tydude001/proofcut/ma
 ## Help wanted: a Mac or a Windows run
 
 GitHub's macOS and Windows runners take the demo to a checked render, but a
-runner never reads the instructions. No person has run proofcut on a Mac. On
-Windows, the author's own Windows 11 laptop has, twice, and nobody else's PC;
+runner never reads the instructions. On a Mac, one person has taken the demo
+to a checked render, on an Intel Mac (i7-8850H, macOS 15.7.9); nobody has on
+Apple silicon. On Windows, the author's own Windows 11 laptop has, twice, and nobody else's PC;
 Windows 10 and ARM64 PCs have not been tried at all. If you have one of these
 machines and half an hour, one script installs what proofcut needs, makes a
 short test video, has proofcut cut, score, master and check it, and puts a
@@ -261,8 +263,8 @@ your Desktop with your home folder's name taken out; [file the report](https://g
 
 proofcut is developed on Linux (a Fedora-based desktop). On macOS and
 Windows the test suite passes on CI and GitHub's runners take the demo to a
-checked render. On Windows one person's PC has too, the author's; no person
-has run it on a Mac yet. Where each OS stands is in
+checked render. A person's Intel Mac has too, and on Windows the author's
+own PC; nobody has tried Apple silicon by hand yet. Where each OS stands is in
 [docs/plans/PORTABILITY.md](https://github.com/tydude001/proofcut/blob/main/docs/plans/PORTABILITY.md).
 
 Every hard part of an editor already exists as mature open source, and

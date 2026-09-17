@@ -269,6 +269,11 @@ first contact with macOS. HISTORY.md § The Mac test in CI.
 queue is closed or recorded, and README.md's "no person has run it on a
 Mac yet" is replaced by what was measured.
 
+**Met 2026-09-17** by a friend's Intel Mac (issue #6), so the gate's
+2026-09-21 tester post is not needed. The run's queue and its numbers are in
+HISTORY.md § An Intel Mac route, without Homebrew. Apple silicon is still
+untried by a person, and README.md says so.
+
 ## Step 3 — the flip, and the ten minutes after it
 
 **No public commit may carry the MIT grant.** A flip publishes every tag
@@ -495,7 +500,8 @@ trial — a whole film). Draft:
 >
 > *Platforms.* Developed on Linux. On macOS and Windows the suite passes in
 > CI and GitHub's runners take the demo to a checked render; one Windows PC
-> has too, mine, and no person has run it on a Mac yet. This tells you
+> has too, mine, and so has a friend's Intel Mac; nobody's Apple silicon Mac
+> yet. This tells you
 > what's missing and how to fix it, without cloning anything:
 >
 >     uvx proofcut doctor
