@@ -167,9 +167,9 @@ three OSes. Its README paragraphs wait on step 4, as below.
   the device knob exists for whoever measures MPS later.
 - **Whisper on a Mac is CPU-only** (openai-whisper's MPS support is partial
   and slow enough to be a footnote). Document it; nothing to build.
-- **README.md § Requirements** says Linux only and must keep saying so until
-  step 4 has run — then it gains one paragraph per OS naming the install
-  route (Homebrew `ffmpeg imagemagick`, Shotcut for melt, the auto-editor
+- **README.md § Requirements** names `proofcut setup`'s three OSes and the
+  per-tool notes each needs; what step 4 adds is one paragraph per OS naming
+  the rest of the install route (Homebrew `ffmpeg imagemagick`, Shotcut for melt, the auto-editor
   release binary, `uv tool install openai-whisper`; winget or the upstream
   installers on Windows). **The ImageMagick RSVG delegate is the one to
   check by hand on both**: `magick -list format | grep RSVG`. Homebrew's
@@ -420,8 +420,8 @@ render has not been read back is still unsupported, whatever runs.
 
 - **No installer, no packaged app.** `uv sync` and the tool list is the
   route on every OS; a `.dmg` or `.msi` is a different project. (`proofcut
-  setup` installs the external tools on Linux and packages nothing;
-  docs/plans/INSTALL.md.)
+  setup` installs the external tools on Linux, Windows and an Intel Mac, and
+  packages nothing; docs/plans/INSTALL.md.)
 - **No transcoding to dodge a platform codec gap.** The lean is to not
   transcode (CLAUDE.md § `vfr`); a platform ffmpeg missing an encoder is
   reported by doctor, not worked around.

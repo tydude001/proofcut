@@ -16716,3 +16716,21 @@ is still refused:
   silicon.
 - The pin test accepts the two new keys, with evermeet.cx as its one named
   exception.
+
+## The release page caught up — 2026-09-17
+
+§ `proofcut setup` on Windows and an Intel Mac shipped as **0.36.0**, and the
+tag published itself: PyPI carries the wheel and the sdist, and the MCP
+registry marks `io.github.tydude001/proofcut` 0.36.0 latest (§ Releases
+publish from the tag).
+
+**The GitHub Release was cut the same day, ahead of LAUNCH.md § Step 5, which
+puts it on Show HN morning.** The tester posts start 2026-09-18, and everyone
+arriving from one reads the sidebar's Latest, which was still `v0.25.0` —
+whose body says *"no person has run it on a Mac yet"*, falsified by issue #6
+two days earlier. A stale public claim in front of the testers costs more
+than a permalink cut a week early; Show HN needs another Release only if a
+later tag moves Latest off its permalink. § The release nobody had cut is why
+the body was pasted from a file (`gh release create --notes-file`) and then
+diffed against that file: it matched but for a trailing newline GitHub adds,
+and no link had been rewritten.
