@@ -269,11 +269,16 @@ def test_a_sound_routes_export_through_the_writer_with_padded_copies(project: Pr
     root = built["document"]
     entries = root.findall(".//playlist[@id='splaylist0a']/entry")
     chains = {c.get("id"): c.find("property[@name='resource']").text for c in root.findall("chain")}
-    copies = [chains[e.get("producer")] for e in entries if "cache/sounds" in chains[e.get("producer")]]
+    # A resource is written with the OS's own separator, so match on parts: a
+    # "cache/sounds" substring finds none of them on Windows.
+    def is_copy(resource: str) -> bool:
+        return Path(resource).parent.parts[-2:] == ("cache", "sounds")
+
+    copies = [chains[e.get("producer")] for e in entries if is_copy(chains[e.get("producer")])]
     assert len(copies) == 4
     for entry in entries:
         resource = chains[entry.get("producer")]
-        if "cache/sounds" not in resource:
+        if not is_copy(resource):
             continue
         with wave.open(resource) as read:
             length = read.getnframes()
@@ -284,7 +289,7 @@ def test_a_sound_routes_export_through_the_writer_with_padded_copies(project: Pr
     starts, cursor = [], 0
     for entry in entries:
         frames = int(entry.get("out")) - int(entry.get("in")) + 1
-        if "cache/sounds" in chains[entry.get("producer")]:
+        if is_copy(chains[entry.get("producer")]):
             starts.append(cursor)
         cursor += frames
     assert starts == [30, 33, 36, 105]

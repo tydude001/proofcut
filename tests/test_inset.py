@@ -16,6 +16,7 @@ What melt draws is read back by `test_server_stdio.py`
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -396,6 +397,10 @@ def test_a_reel_drops_the_insets(project: Project, tmp_path: Path) -> None:
     assert "insets" not in Project.open(tmp_path / "teaser").read_manifest()
 
 
+@pytest.mark.skipif(
+    shutil.which("magick") is None or shutil.which("ffmpeg") is None,
+    reason="the sheet is ffmpeg's frames drawn on by magick",
+)
 def test_the_framing_sheet_draws_the_inset_rect_inside_its_span(
     project: Project, monkeypatch: pytest.MonkeyPatch
 ) -> None:
