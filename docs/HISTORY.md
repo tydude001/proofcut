@@ -16556,3 +16556,18 @@ i7-8700B, proofcut `3197eae`). whisper resolved torch 2.2.2 with numpy
 1.26.4, `uv sync` took 352 s with the OTIO compile, and transcription took
 108 s. `trial_check.py` passed all of it: 34 of 34 words heard, 289 of 289
 frames, the master at −16.1 LUFS, and both frames the right colour.
+
+**The tester's run stopped at `uv sync` (issue #5; i7-8850H, macOS 15.7.9,
+`3197eae`), and that CI run had hidden the cause.** Every download passed its
+checksum, espeak-ng spoke, and whisper resolved the same torch 2.2.2 with numpy
+1.26.4. Then `cryptography` 50.0.0 (mcp → pyjwt[crypto]) failed to compile:
+uv fetched Rust on its own, and `openssl-sys` found no OpenSSL and no
+`pkg-config`. cryptography's Mac wheels are universal2 up to 48.0.1 and
+arm64-only from 49.0.0. The CI job had compiled the same package in 3 min 40 s
+of its 352 s, not the OTIO build alone, because GitHub's image carries Rust,
+OpenSSL and pkg-config. `pyproject.toml` now constrains `cryptography<49` on
+Intel Macs only, so the lock forks there (48.0.1) and nowhere else (50.0.0).
+A scan of `uv.lock` finds OTIO the only remaining package with no Intel Mac
+wheel. `mac-demo.yml` now fails when the report shows `uv sync` building
+anything besides proofcut and OTIO. The runner is not a stranger's Mac, so
+what it can compile proves nothing.

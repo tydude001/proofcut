@@ -65,6 +65,18 @@ jobs:
             export UV_PYTHON_INSTALL_DIR=~/proofcut-mac-trial/uv/python UV_CACHE_DIR=~/proofcut-mac-trial/uv/cache
           fi
           uv run python scripts/trial_check.py ~/proofcut-mac-trial
+      # The runner has Rust, OpenSSL and pkg-config and a tester's Mac has none of them,
+      # so a package with no wheel for this Mac compiles here and fails there (issue #5,
+      # cryptography). OpenTimelineIO has no Intel wheel and builds with Apple's compiler alone.
+      - name: uv sync compiled nothing unexpected
+        if: always()
+        run: |
+          built=$(sed -n '/^── uv sync$/,/^── /p' ~/proofcut-mac-trial/report.txt |
+            sed -n 's/^ *Building \([^ =@]*\).*/\1/p' | grep -v -x -e proofcut -e opentimelineio || true)
+          if [ -n "$built" ]; then
+            echo "uv sync compiled a package a tester's Mac may not be able to: $built"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:
