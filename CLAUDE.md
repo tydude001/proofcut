@@ -73,6 +73,9 @@ written 2026-09-16 off PRIOR-ART.md's FableCut read and built for Linux the
 same day (HISTORY.md § `proofcut setup`, built). It measured **Shotcut's
 portable Linux melt drawing with no X server**, where both distro MLTs need
 `xvfb-run`.
+How to make the 13-minute suite faster — measure first, then xdist with a
+serial control — is [docs/plans/SUITE-SPEED.md](docs/plans/SUITE-SPEED.md),
+written 2026-09-17.
 Open-item status lives in the wiki, not here. **This repo is public: a
 goodsometimes video's production record (versions, renders, creative calls,
 release state) goes in `goodsometimes/ideas/<video>.md`**, and HISTORY.md
