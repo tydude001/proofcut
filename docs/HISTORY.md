@@ -16601,3 +16601,11 @@ the room LAUNCH.md names first, with the Apple-silicon-only wording, pointing
 at issue #1. Show HN goes on the first weekday morning after an Apple silicon
 report, or on **2026-09-24**, seven days after the post, whichever comes
 first.
+
+Issues #1 and #2 carry `help wanted` as well as their test label. Three more
+rooms that are not launch rooms follow, one a day: r/SideProject on
+2026-09-18, Indie Hackers on 2026-09-19, r/sideprojects on 2026-09-20. They
+use a fuller text, since r/sideprojects asks for the problem, the stack and
+the author's relation to the project. The text is in
+`~/proofcut-work/spikes/launch-listings/POSTS.md` § The Apple silicon tester
+posts.
