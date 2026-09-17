@@ -897,7 +897,9 @@ built; docs/plans/INSTALL.md):
     remote here. **Never `git push --mirror`**: the reflog still reaches the
     pre-rewrite objects. **And never merge a PR on GitHub** — the next sync
     force-pushes over it; the route is wiki `git-server.md` § GitHub push
-    mirrors. HISTORY.md § The repo, readied for strangers.
+    mirrors. **Dependabot's *updates* stay off for that same reason** and its
+    alerts, the dependency graph and secret scanning stay on — same section.
+    HISTORY.md § The repo, readied for strangers.
 - **The version is a hand-typed literal in six places and is bumped
   deliberately, never derived.** `pyproject.toml`, `proofcut/__init__.py`, and
   the four launch listings (`server.json`, `.claude-plugin/plugin.json`, and

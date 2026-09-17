@@ -417,7 +417,14 @@ twos, with time to fix what they find.
   the score landed (HISTORY.md § The tool definitions were graded, and `path`
   was the gap). The
   awesome-list PR is open and waits on that maintainer
-  (punkpeye/awesome-mcp-servers#14483, one line, mergeable).
+  (punkpeye/awesome-mcp-servers#14483, one line, mergeable) — checked against
+  that list's own CONTRIBUTING: right section, alphabetical slot, markers
+  matching its legend, and a badge that resolves. **He merges in batches and
+  not in order**, 255 in the week to 2026-09-16 against 2,227 left open, most
+  within a day of opening, so queue position says nothing and there is nothing
+  to do but wait. Its `🤖🤖🤖` agent fast-track buys nothing measurable — 57%
+  of that week's merges carried it against 50% of the open backlog — and would
+  be untrue of a PR filed by hand.
   Shipped — see HISTORY.md § The launch clip's product defects, fixed,
   § Glama takes a submission, and the probe that missed it.
 - **A Claude Code plugin.** The agent pane already spawns `claude` against a
