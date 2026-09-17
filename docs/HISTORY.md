@@ -16273,3 +16273,87 @@ Two smaller changes came with it. `tests/conftest.py` passes
 scratch plugin of § The capped render with no runtime dir, so a headless run
 needs only the variable. `pytest-xdist` is in the dev group. CI stays
 serial, since its runners have 2 to 4 cores and nobody has measured them.
+
+## Retime, built — 2026-09-17
+
+NATIVE.md § B5. A stretch plays a span of the film, from a word or event to
+another, in a given number of seconds (`retime add/ls/rm`, tools
+`retime_add` …). The spikes are `~/proofcut-work/spikes/mlt-retime/`
+(`timeremap` alone) and `~/proofcut-work/spikes/retime-compose/`
+(`timeremap` inside proofcut's writer). Every number below was read back from
+renders on the flatpak melt and Shotcut's portable melt, and the two agreed.
+
+**What the composition spike measured.**
+- An entry's `in`, a `qtblend` key and a `volume` key on a remapped chain all
+  count the chain's own positions, which are output frames.
+- MLT's `~` spline read `clip.py`'s map backwards 52 times. The curve is
+  proofcut's own PCHIP, sampled once per frame and written as linear keys;
+  melt took the same time for 900 keys as for 16.
+- One remapped chain per entry is frame-exact, and its declared length agrees.
+
+**What the build found, each after a render said so.**
+- **Plain PCHIP bends the whole 1x gap beside a stretch.** Next to a 30x
+  stretch the knot's slope is about 1.9, so a 60 s gap would have played
+  off speed, and been muted, for all 60 s. The warp adds a shoulder knot
+  `RAMP_SECONDS` (0.5 s) inside each gap, and the rest of the gap plays at
+  exactly 1x.
+- **A map ending on an entry's last frame plays that frame silent.** An
+  identity map ending on 59 lost the audio of frames 59 and 119. Every map
+  carries one key past its last frame.
+- **MLT ramps a level across the frame that carries its key.** A mute key on
+  the first off-speed frame left it at 0.036 of the tone's 0.063. The mute
+  is down one frame earlier.
+- **Two muted runs close together lost their floor.** A 1x run of two frames
+  between them made the ramp keys land on each other, and MLT drew one line
+  from −60 dB up to 0 across a whole muted span, measured at 2420 of 2900.
+  Unmuted runs shorter than two fades plus two frames are muted with their
+  neighbours (`retime._bridged`). A test checks the envelope's level on every
+  muted frame.
+- **The first 1x check proved nothing.** The writer check's "quiet 1x frames"
+  used a threshold of 0.1 against a tone whose RMS is 0.063, so every frame
+  counted as quiet. At 0.03 none were.
+- **A reframe step inside a stretch lands where the warp plays it.** A window
+  from source 5.0 s, inside a 2–8 s stretch played in 1 s, switched at render
+  frame 75, where the warp shows 5.0 s. The source-clock key would have put
+  it at 150.
+
+**Where the build departs from the design, and why.**
+- **A picture cue over a stretch retimes with the Edit; it is not refused**
+  (decision 3). A head or a tail needs a cue lane covering the whole film,
+  so refusing a cue over a stretch would have refused every retimed film
+  with an end card, including B7's. The picture lane goes through the same
+  `retime.warp_lane` as the edit, with its audio already off. What b-roll
+  under a stretch *should* do is still an open question. For now it speeds up
+  with the film.
+- **A hold and film audio under the VO refuse a retime, from both sides.**
+  Both are laid out against the Edit's own audio frame by frame, and nothing
+  measured them through a warp. The essays use them; the launch clip does not.
+- **`cut_by_time` and `reel` read their seconds through the warp.** Both take
+  the seconds an export plays at, which a retime makes a different clock from
+  the Edit. `cut_by_time` reports `edit_start`/`edit_end`, and `reel` keeps
+  what the render showed, drops the retime and names it (`retime_dropped`).
+- **`locate` gains `render_start`/`render_end`/`muted`**, since "where does
+  this word play in the render" has a different answer once a retime exists.
+
+**The clocks.** `status`, `timeline_view`, `caption_view` and `locate` stay
+in Edit time and carry a `retime` summary. `status` gives
+`expected_frames: null` when the retime cannot resolve, rather than a number
+that ignores it. `export`, `check_frames` and `finish_check` measure against
+the warped length. `add_captions` burns on the render clock, and it, `verify`
+and `finish_check` leave out the words a stretch mutes, counted as
+`retimed_words_dropped`. The bed, the overlays and the sounds start where
+their moment plays and keep 1x lengths, and the duck is resampled onto the
+render's frames.
+
+**The window** previews at 1x and says so on the preview
+("retimed — preview plays 1x", with the stretches in the tooltip). V1 and A1
+draw each stretch as a hatched band that is never a hit target. Clicks inside
+a band seek at 0 ms and 120 ms dwell, and nothing overflowed at 700, 1000 or
+1400 px.
+
+**Tests.** `tests/test_retime.py` has 37 tests. Two real-melt tests in
+`test_server_stdio.py` decode a counting source frame by frame against the
+warp, check the tone is gone off speed and present at 1x, and find a click
+inside a stretch at its retimed sample. Both pass on both melts:
+`tests/conftest.py` now passes `PROOFCUT_MELT` through to the stdio server as
+well, and a deliberately broken path showed it arrives.

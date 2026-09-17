@@ -66,6 +66,7 @@ from proofcut import duck as dk
 # or the function would shadow it at call time — the `describe`/`verify` fix.
 from proofcut import fonts as proofcut_fonts
 from proofcut import pack as pk
+from proofcut import retime as rt
 from proofcut import sounds as snd
 from proofcut import speakers as spk
 from proofcut import speech as sp
@@ -3584,7 +3585,14 @@ def status(path: Path | str) -> dict[str, Any]:
         }
     edit = _load_edit(project)
     rate = _export_fps(_clips_by_id(project))
-    expected = _frame_total_with_tail(project, edit, rate)
+    retime_summary = _retime_summary(project, edit, rate)
+    # A retime that cannot resolve has no render length to state, and a
+    # number that ignored it would be the wrong one, said confidently.
+    expected = (
+        None
+        if retime_summary and retime_summary["error"]
+        else _frame_total_with_tail(project, edit, rate)
+    )
     stored_pack = _stored_pack(project)
     pack_section = (
         {"applied": False}
@@ -3617,7 +3625,10 @@ def status(path: Path | str) -> dict[str, Any]:
         "head": _stored_head(project),
         "tail": _stored_tail(project),
         "expected_frames": expected,
-        "expected_duration": expected / rate,
+        "expected_duration": None if expected is None else expected / rate,
+        # None with no retime; else its stretches, the render length it gives
+        # the Edit, the muted spans, and `error` when it cannot resolve.
+        "retime": retime_summary,
         "pack": pack_section,
     }
 
@@ -4689,6 +4700,10 @@ def timeline_view(
         # head exists without yet drawing where it plays.
         "head_seconds": _head_seconds(project),
         "head": head_view,
+        # None with no retime; else each stretch in Edit seconds with where it
+        # renders, the muted Edit spans, and `error` if it cannot resolve.
+        # Edit-relative like everything here: the window previews at 1x.
+        "retime": _retime_summary(project, edit, shots_rate),
         "segments": _placed_segments(edit),
         "seams": _seams(edit, clip_id, placements),
     }
@@ -6194,10 +6209,17 @@ def cut_by_time(
     edit = _load_edit(project)
     before = edit.duration
 
+    # A retime makes the seconds an export plays at a different clock from the
+    # Edit's: a note taken off the render is mapped back through the warp.
+    warp = _project_warp(project, edit)
+    edit_requests = (
+        [(warp.edit_at(start), warp.edit_at(end)) for start, end in requests] if warp else requests
+    )
+
     # Resolved against the pre-cut timeline, all at once, before any span is
     # applied — this is what makes a list of notes taken against one watch
     # stay valid together.
-    pieces_by_span = [edit.source_spans(start, end) for start, end in requests]
+    pieces_by_span = [edit.source_spans(start, end) for start, end in edit_requests]
 
     transcripts: dict[str, tx.Transcript | None] = {}
     suspects: dict[str, dict[int, dict[str, Any]]] = {}
@@ -6287,9 +6309,12 @@ def cut_by_time(
         applied.append(
             {"requested_start": req_start, "requested_end": req_end, "pieces": piece_results}
         )
+    if warp is not None:
+        for entry, (edit_start, edit_end) in zip(applied, edit_requests):
+            entry["edit_start"], entry["edit_end"] = round(edit_start, 3), round(edit_end, 3)
 
     removed = before - edit.duration
-    requested_removed = sum(end - start for start, end in requests)
+    requested_removed = sum(end - start for start, end in edit_requests)
     if pad == 0.0 and abs(removed - requested_removed) > tl.MIN_SEGMENT:
         raise tl.TimelineError(
             f"internal invariant failed: requested {requested_removed:.3f}s "
@@ -6578,6 +6603,18 @@ def locate(
     }
     if resolved_event is not None:
         result["event"] = resolved_event
+    retime_summary = _retime_summary(project, edit, _export_fps(_clips_by_id(project)))
+    if retime_summary is not None:
+        # Edit time stays the answer above; this is where a retime renders it.
+        result["retime"] = retime_summary
+        warp = None if retime_summary["error"] else _project_warp(project, edit)
+        if warp is not None and placements:
+            result["render_start"] = round(warp.render_at(placements[0].timeline_start), 3)
+            result["render_end"] = round(warp.render_at(placements[-1].timeline_end), 3)
+            spans = warp.muted_edit_spans()
+            result["muted"] = any(
+                a < p.timeline_end and p.timeline_start < b for p in placements for a, b in spans
+            )
 
     # "Cut" and "never recorded" look identical from the placements alone —
     # missing either way — and only the clip's own duration tells them apart.
@@ -10662,7 +10699,13 @@ def _frame_total_with_tail(project: Project, edit: tl.Edit, rate: float) -> int:
     renders through here byte-identically to `autoeditor.frame_total` alone,
     `_head_frames`/`_tail_frames` both being 0.
     """
-    return autoeditor.frame_total(edit, rate) + _head_frames(project, rate) + _tail_frames(project, rate)
+    edit_total = autoeditor.frame_total(edit, rate)
+    if project.read_manifest().get(RETIME_KEY):
+        # A retime changes how long the Edit's own span renders, and only that.
+        warp = _warp(project, edit, rate, edit_frames=edit_total)
+        if warp is not None:
+            edit_total = warp.frames
+    return edit_total + _head_frames(project, rate) + _tail_frames(project, rate)
 
 
 def _tail_silence(project: Project, seconds: float) -> Path:
@@ -11965,8 +12008,34 @@ def music(
     }
 
 
+class _Clock:
+    """Edit seconds to render frames: `round(s * rate)`, or a retime's warp.
+
+    The planners below take one so that a retime moves where things happen
+    and leaves how long they last alone. Without a warp every number is the
+    one they computed before retimes existed.
+    """
+
+    def __init__(self, rate: float, warp: rt.Warp | None = None) -> None:
+        self.rate = rate
+        self.warp = warp
+
+    def frame(self, edit_seconds: float) -> int:
+        if self.warp is None:
+            return round(edit_seconds * self.rate)
+        return self.warp.frame_of(edit_seconds)
+
+    def seconds(self, edit_seconds: float) -> float:
+        return edit_seconds if self.warp is None else self.warp.render_at(edit_seconds)
+
+
 def _music_plan(
-    project: Project, edit: tl.Edit, rate: float, *, edit_frames: int
+    project: Project,
+    edit: tl.Edit,
+    rate: float,
+    *,
+    edit_frames: int,
+    clock: _Clock | None = None,
 ) -> dict[str, Any] | None:
     """Resolve the music cue to the frame span the writer builds its lane at.
 
@@ -11987,10 +12056,15 @@ def _music_plan(
     An orphaned boundary — the word a cut removed entirely — refuses by name,
     `build_shots`' policy: word-indexing keeps a cue valid across cuts, it
     does not keep the word on the timeline.
+
+    With a retime's `clock`, frames are render frames and `edit_frames` is
+    the render's length for the Edit: the bed starts where its word plays and
+    runs at 1x from there. `timeline_start`/`timeline_end` stay Edit seconds.
     """
     stored = _stored_music(project)
     if stored is None:
         return None
+    frame = (clock or _Clock(rate)).frame
 
     parsed = _transcript(project, stored["clip_id"])
     start_echo = _cue_echo(parsed, stored["word_index_start"])
@@ -12019,9 +12093,9 @@ def _music_plan(
                 "run to the end (music clear_end)"
             )
         end_seconds = end_span[1]
-        end_frame = min(round(end_seconds * rate), edit_frames)
+        end_frame = min(frame(end_seconds), edit_frames)
 
-    start_frame = min(round(start_seconds * rate), end_frame)
+    start_frame = min(frame(start_seconds), end_frame)
     if end_frame <= start_frame:
         raise ProjectError(
             f"the music bed resolves to zero frames — it starts at timeline "
@@ -12054,14 +12128,14 @@ def _music_plan(
                 f"word {passage['word_index_start']} ({echo['text']!r}), which a cut "
                 "removed from the timeline — move the passage's start word"
             )
-        frame = min(round(span[0] * rate), end_frame)
-        if frame <= starts[-1][0]:
+        at = min(frame(span[0]), end_frame)
+        if at <= starts[-1][0]:
             raise ProjectError(
                 f"music passage {passage['asset']!r} starts at word "
                 f"{passage['word_index_start']} ({echo['text']!r}), not after the passage "
                 "before it — passages run forward, each from its own start word"
             )
-        starts.append((frame, passage))
+        starts.append((at, passage))
 
     pieces = _music_pieces(project, stored, starts, end_frame, rate)
     covered: set[int] = set()
@@ -12748,6 +12822,7 @@ def hold_add(
     timeline and not the manifest, `vo_extend`'s own rule.
     """
     project = Project.open(path)
+    _refuse_under_retime(project, "a film-audio hold")
     stored = _stored_holds(project)
 
     parsed = _transcript(project, clip_id)
@@ -13196,6 +13271,7 @@ def hold_under(
     writing. Echoes both boundary words with their neighbours.
     """
     project = Project.open(path)
+    _refuse_under_retime(project, "film audio under the VO")
     parsed = _transcript(project, clip_id)
     start, _ = _resolve_word_or_phrase(
         parsed, word_index=word_index_start, phrase=phrase_start, after=after, occurrence=occurrence, edge="first"
@@ -13597,14 +13673,17 @@ def _overlay_instant(
     event_key: str,
     edge: int,
     what: str,
+    label: str | None = None,
 ) -> tuple[float, dict[str, Any]]:
     """Where one of an overlay's addresses plays, in Edit seconds, and its echo.
 
     A word resolves to its own span (`edge` 0 is where it starts, 1 where it
     ends) and an event to its instant. Either one a cut removed refuses by
-    name — `build_shots`' orphan rule.
+    name — `build_shots`' orphan rule. `label` names the record in that
+    refusal; a retime's stretch passes its own.
     """
     clip_id = record["clip_id"]
+    label = label or f"an overlay ({record['card']!r})"
     if record.get(word_key) is not None:
         parsed = _transcript(project, clip_id)
         index = int(record[word_key])
@@ -13614,7 +13693,7 @@ def _overlay_instant(
         span = edit.timeline_span(clip_id, echo["start"], echo["end"])
         if span is None:
             raise ProjectError(
-                f"an overlay ({record['card']!r}) {what} at {clip_id!r} word {index} "
+                f"{label} {what} at {clip_id!r} word {index} "
                 f"({echo['text']!r}), which a cut removed from the timeline — move it"
             )
         return span[edge], echo
@@ -13622,7 +13701,7 @@ def _overlay_instant(
     at = edit.timeline_time(clip_id, event["at"], closed_end=True)
     if at is None:
         raise ProjectError(
-            f"an overlay ({record['card']!r}) {what} at {clip_id!r} event "
+            f"{label} {what} at {clip_id!r} event "
             f"{record[event_key]!r} ({event['at']}s), which a cut removed from the timeline"
         )
     return at, event
@@ -13635,6 +13714,7 @@ def _overlay_plan(
     *,
     edit_frames: int,
     stored: list[dict[str, Any]] | None = None,
+    clock: _Clock | None = None,
 ) -> list[dict[str, Any]]:
     """Every overlay resolved to the frames the writer draws it on, in stacking order.
 
@@ -13658,8 +13738,20 @@ def _overlay_plan(
             end, end_echo = _overlay_instant(
                 project, edit, record, word_key="until_word_index", event_key="until_event", edge=1, what="ends"
             )
-        start_frame = min(round(start * rate), edit_frames)
-        end_frame = min(round(end * rate), edit_frames)
+        if clock is not None and clock.warp is not None:
+            # Retimed: it starts where its moment plays, and a length is a
+            # length on screen.
+            start_frame = min(clock.frame(start), edit_frames)
+            end_frame = min(
+                start_frame + round(record["seconds"] * rate)
+                if record.get("seconds") is not None
+                else clock.frame(end),
+                edit_frames,
+            )
+            start, end = start_frame / rate, end_frame / rate
+        else:
+            start_frame = min(round(start * rate), edit_frames)
+            end_frame = min(round(end * rate), edit_frames)
         if end_frame <= start_frame:
             raise ProjectError(
                 f"overlay {record['card']!r} starts at timeline {start:.3f}s and ends at "
@@ -13854,6 +13946,282 @@ def overlay_rm(path: Path | str, position: int, *, plan: bool = False) -> dict[s
     return {"removed": removed, "position": int(position), "count": len(remaining), "plan": bool(plan)}
 
 
+# -- retime ----------------------------------------------------------------
+#
+# docs/plans/NATIVE.md § B5, designed. A stretch is a span of the Edit, from a
+# word or an event to a word or an event, played in a number of seconds. As
+# with overlays and sounds, no stored field is a timeline second: the span
+# resolves through the `Edit` on every build. `retime.Warp` turns the list
+# into the curve, and `_build_mlt` lays the edit and picture lanes out on it.
+
+RETIME_KEY = "retime"
+
+
+def _stored_retime(project: Project) -> list[dict[str, Any]]:
+    """Every stored stretch, validated — `_stored_overlays`' discipline."""
+    stored = project.read_manifest().get(RETIME_KEY, [])
+    if not isinstance(stored, list):
+        raise ProjectError(f"{project.manifest_path}'s {RETIME_KEY!r} must be a JSON array")
+    stretches: list[dict[str, Any]] = []
+    for item in stored:
+        if not isinstance(item, dict):
+            raise ProjectError(f"{project.manifest_path}'s {RETIME_KEY!r} entries must be JSON objects")
+        try:
+            record: dict[str, Any] = {"clip_id": str(item["clip_id"]), "seconds": float(item["seconds"])}
+            for key, kind in (
+                ("word_index", int),
+                ("event", str),
+                ("until_word_index", int),
+                ("until_event", str),
+            ):
+                if item.get(key) is not None:
+                    record[key] = kind(item[key])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ProjectError(
+                f"{project.manifest_path} has a retime stretch that is not "
+                f"(clip_id, a start, an end, seconds): {item!r} ({exc})"
+            ) from None
+        if ("word_index" in record) == ("event" in record):
+            raise ProjectError(f"retime stretch {item!r} needs exactly one of word_index or event")
+        if ("until_word_index" in record) == ("until_event" in record):
+            raise ProjectError(
+                f"retime stretch {item!r} needs exactly one of until_word_index or until_event"
+            )
+        stretches.append(record)
+    return stretches
+
+
+def _retime_plan(
+    project: Project, edit: tl.Edit, stored: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
+    """Each stretch resolved to its Edit span, with the addresses it resolved to."""
+    records = _stored_retime(project) if stored is None else stored
+    plans: list[dict[str, Any]] = []
+    for position, record in enumerate(records):
+        label = f"retime stretch {position}"
+        start, start_echo = _overlay_instant(
+            project, edit, record, word_key="word_index", event_key="event",
+            edge=0, what="starts", label=label,
+        )  # fmt: skip
+        end, end_echo = _overlay_instant(
+            project, edit, record, word_key="until_word_index", event_key="until_event",
+            edge=1, what="ends", label=label,
+        )  # fmt: skip
+        if end <= start:
+            raise ProjectError(
+                f"{label} runs from Edit {start:.3f}s to {end:.3f}s — its end has to come "
+                "after its start, or it would run the film backwards"
+            )
+        plans.append(
+            {
+                "position": position,
+                **record,
+                "edit_start": start,
+                "edit_end": end,
+                "start_echo": start_echo,
+                "end_echo": end_echo,
+                "stretch": rt.Stretch(start, end, record["seconds"]),
+            }
+        )
+    return plans
+
+
+def _warp(
+    project: Project,
+    edit: tl.Edit,
+    rate: float,
+    *,
+    edit_frames: int,
+    stored: list[dict[str, Any]] | None = None,
+) -> rt.Warp | None:
+    """The project's warp on the render grid, or None with no stretches."""
+    plans = _retime_plan(project, edit, stored)
+    if not plans:
+        return None
+    try:
+        return rt.Warp([plan["stretch"] for plan in plans], edit_frames, rate)
+    except rt.RetimeError as exc:
+        raise ProjectError(str(exc)) from None
+
+
+def _retime_refusals(project: Project) -> None:
+    """The lanes a retime cannot yet carry, refused by name.
+
+    A hold and film audio under the VO are laid out against the Edit's own
+    audio frame by frame, and nothing has measured them through a warp.
+    """
+    manifest = project.read_manifest()
+    for key, what in ((HOLDS_KEY, "a film-audio hold"), (UNDER_VO_KEY, "film audio under the VO")):
+        if manifest.get(key):
+            raise ProjectError(
+                f"this project has {what} and a retime, and a retime cannot carry one yet — "
+                "remove one of the two (docs/plans/NATIVE.md § B5, built)"
+            )
+
+
+def _refuse_under_retime(project: Project, what: str) -> None:
+    """`_retime_refusals` from the other side: a hold added to a retimed film."""
+    if project.read_manifest().get(RETIME_KEY):
+        raise ProjectError(
+            f"this project has a retime, and a retime cannot carry {what} yet — remove "
+            "the retime first (retime_rm) or cut this film without one"
+        )
+
+
+def _retime_view(plan: dict[str, Any], warp: rt.Warp | None) -> dict[str, Any]:
+    view = {key: value for key, value in plan.items() if key != "stretch"}
+    if warp is not None:
+        view["render_start"] = round(warp.render_at(plan["edit_start"]), 3)
+        view["render_end"] = round(warp.render_at(plan["edit_end"]), 3)
+        view["speed"] = round((plan["edit_end"] - plan["edit_start"]) / plan["seconds"], 3)
+    return view
+
+
+def _retime_summary(project: Project, edit: tl.Edit, rate: float) -> dict[str, Any] | None:
+    """What a view says about the retime: None without one, else its stretches
+    and the render length it gives the Edit, or the refusal as `error`."""
+    if not project.read_manifest().get(RETIME_KEY):
+        return None
+    try:
+        plans = _retime_plan(project, edit)
+        warp = _warp(project, edit, rate, edit_frames=_edit_frames(edit, rate))
+    except (ProjectError, tl.TimelineError, tx.TranscriptError, media.MediaError) as exc:
+        return {"stretches": _stored_retime(project), "error": str(exc)}
+    return {
+        "stretches": [_retime_view(plan, warp) for plan in plans],
+        "edit_seconds": round(_edit_frames(edit, rate) / rate, 3),
+        "render_seconds": round(warp.frames / rate, 3) if warp else None,
+        "muted": [[round(a, 3), round(b, 3)] for a, b in warp.muted_edit_spans()] if warp else [],
+        "error": None,
+    }
+
+
+def retime_add(
+    path: Path | str,
+    clip_id: str,
+    seconds: float,
+    word_index: int | None = None,
+    *,
+    phrase: str | None = None,
+    event: str | None = None,
+    until_word_index: int | None = None,
+    until_phrase: str | None = None,
+    until_event: str | None = None,
+    after: int = -1,
+    occurrence: int | None = None,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Play a span of the film in `seconds`, from a word or event of `clip_id` to another.
+
+    The start is one of `word_index`, `phrase` (its first word) or `event`;
+    the end is one of `until_word_index`, `until_phrase` (its last word) or
+    `until_event`. Everything outside every stretch plays at 1x, with the
+    speed eased in and out over `retime.RAMP_SECONDS` either side. The film's
+    own audio is muted wherever it plays off 1x; music, sounds, overlays and
+    captions keep 1x and are placed where the retime puts their moment.
+
+    Resolved against the live timeline before anything is written, with the
+    words and events echoed. `plan=True` writes nothing.
+    """
+    project = Project.open(path)
+    if sum(x is not None for x in (word_index, phrase, event)) != 1:
+        raise ProjectError("a stretch starts at one of word_index, phrase or event")
+    if sum(x is not None for x in (until_word_index, until_phrase, until_event)) != 1:
+        raise ProjectError("a stretch ends at one of until_word_index, until_phrase or until_event")
+    record: dict[str, Any] = {"clip_id": clip_id, "seconds": float(seconds)}
+    if event is not None:
+        record["event"] = event
+    else:
+        record["word_index"], _ = _resolve_word_or_phrase(
+            _transcript(project, clip_id) if phrase is not None else None,
+            word_index=word_index,
+            phrase=phrase,
+            after=after,
+            occurrence=occurrence,
+            edge="first",
+        )
+    if until_event is not None:
+        record["until_event"] = until_event
+    else:
+        _, record["until_word_index"] = _resolve_word_or_phrase(
+            _transcript(project, clip_id) if until_phrase is not None else None,
+            word_index=until_word_index,
+            phrase=until_phrase,
+            after=after,
+            occurrence=occurrence,
+            edge="last",
+        )
+    _retime_refusals(project)
+    updated = [*_stored_retime(project), record]
+    edit = _load_edit(project)
+    rate = _export_fps(_clips_by_id(project))
+    edit_frames = _edit_frames(edit, rate)
+    plans = _retime_plan(project, edit, updated)
+    warp = _warp(project, edit, rate, edit_frames=edit_frames, stored=updated)
+    if not plan:
+        manifest = project.read_manifest()
+        manifest[RETIME_KEY] = updated
+        project.write_manifest(manifest)
+    return {
+        "stretch": _retime_view(plans[-1], warp),
+        "position": len(updated) - 1,
+        "count": len(updated),
+        "edit_seconds": round(edit_frames / rate, 3),
+        "render_seconds": round(warp.frames / rate, 3) if warp else None,
+        "rate": rate,
+        "plan": bool(plan),
+    }
+
+
+def retime_ls(path: Path | str) -> dict[str, Any]:
+    """Every stretch, in the order added, with where it plays now.
+
+    Read-only. A retime that cannot resolve is reported rather than raised —
+    `retime_error`, with the stored records, so the one to fix can be found.
+    """
+    project = Project.open(path)
+    stored = _stored_retime(project)
+    rate = _export_fps(_clips_by_id(project))
+    try:
+        edit = _load_edit(project)
+        edit_frames = _edit_frames(edit, rate)
+        plans = _retime_plan(project, edit, stored)
+        warp = _warp(project, edit, rate, edit_frames=edit_frames, stored=stored)
+    except (ProjectError, tl.TimelineError, tx.TranscriptError, media.MediaError) as exc:
+        return {"stretches": stored, "retime_error": str(exc), "rate": rate}
+    return {
+        "stretches": [_retime_view(p, warp) for p in plans],
+        "retime_error": None,
+        "edit_seconds": round(edit_frames / rate, 3),
+        "render_seconds": round(warp.frames / rate, 3) if warp else None,
+        "rate": rate,
+    }
+
+
+def retime_rm(path: Path | str, position: int, *, plan: bool = False) -> dict[str, Any]:
+    """Take the stretch at `position` (as `retime_ls` numbers it) away; that span plays at 1x.
+
+    `plan=True` writes nothing.
+    """
+    project = Project.open(path)
+    stored = _stored_retime(project)
+    if not 0 <= int(position) < len(stored):
+        raise ProjectError(
+            f"there is no stretch at position {position} — the retime has {len(stored)}"
+            + (f" (0 to {len(stored) - 1})" if stored else "")
+        )
+    removed = stored[int(position)]
+    remaining = [item for i, item in enumerate(stored) if i != int(position)]
+    if not plan:
+        manifest = project.read_manifest()
+        if remaining:
+            manifest[RETIME_KEY] = remaining
+        else:
+            manifest.pop(RETIME_KEY, None)
+        project.write_manifest(manifest)
+    return {"removed": removed, "position": int(position), "count": len(remaining), "plan": bool(plan)}
+
+
 # -- sounds ----------------------------------------------------------------
 #
 # docs/plans/NATIVE.md § B4, designed. A sound is an imported clip placed as a
@@ -13937,6 +14305,7 @@ def _sound_plan(
     edit: tl.Edit,
     *,
     stored: list[dict[str, Any]] | None = None,
+    clock: _Clock | None = None,
 ) -> list[dict[str, Any]]:
     """Every sound record resolved to its hits, in Edit seconds.
 
@@ -13946,8 +14315,12 @@ def _sound_plan(
     counts them (`skipped`), and drops any closer than `min_gap` to the last
     one it kept (`thinned`). The variant and the jitter are drawn for every
     occurrence before either, so cutting one keystroke re-rolls no other.
+
+    With a retime's `clock`, every hit is in render seconds, and the thinning
+    is measured there, where the ear hears the gaps.
     """
     records = _stored_sounds(project) if stored is None else stored
+    when = (clock or _Clock(1.0)).seconds
     plans: list[dict[str, Any]] = []
     for position, record in enumerate(records):
         for asset in record["assets"]:
@@ -13973,7 +14346,7 @@ def _sound_plan(
                 if at is None:
                     skipped += 1
                     continue
-                placed.append((at, asset, gain, row["address"]))
+                placed.append((when(at), asset, gain, row["address"]))
             last = None
             for at, asset, gain, address in sorted(placed):
                 if last is not None and at - last < record["min_gap"]:
@@ -13991,7 +14364,7 @@ def _sound_plan(
                     f"({event['at']}s), which a cut removed from the timeline — move it"
                 )
             asset, gain = _sound_draw(record, rng)
-            hits.append({"at": at, "asset": asset, "gain_db": gain, "address": event["address"]})
+            hits.append({"at": when(at), "asset": asset, "gain_db": gain, "address": event["address"]})
             echo = event
         else:
             parsed = _transcript(project, clip_id)
@@ -14006,7 +14379,7 @@ def _sound_plan(
                     "which a cut removed from the timeline — move it"
                 )
             asset, gain = _sound_draw(record, rng)
-            hits.append({"at": span[0], "asset": asset, "gain_db": gain, "address": f"word {index}"})
+            hits.append({"at": when(span[0]), "asset": asset, "gain_db": gain, "address": f"word {index}"})
         plans.append(
             {
                 "position": position,
@@ -14260,6 +14633,8 @@ def _is_layered(project: Project, edit: tl.Edit) -> bool:
         or manifest.get(OVERLAYS_KEY)
         # A sound is a lane auto-editor cannot write — tenth trigger.
         or manifest.get(SOUNDS_KEY)
+        # auto-editor has no retime — eleventh.
+        or manifest.get(RETIME_KEY)
     )
 
 
@@ -14306,6 +14681,32 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
     for shot in shots:
         if not shot["is_image"]:
             clip_of[shot["asset_path"]] = shot["asset"]
+
+    # A retime lays the edit and the picture lane out on the warp, before a
+    # head or tail is added — neither is part of the Edit a stretch addresses.
+    # Everything after this is in render frames; `plain_frames` is the Edit's
+    # own length, which the duck is measured on.
+    plain_frames = sum(entry.frames for entry in audio)
+    warp = _warp(project, edit, rate, edit_frames=plain_frames)
+    clock = _Clock(rate, warp)
+    retime_report: dict[str, Any] | None = None
+    if warp is not None:
+        _retime_refusals(project)
+        try:
+            audio, dropped = rt.warp_lane(audio, warp, mute=True)
+            if lane:
+                lane, dropped_picture = rt.warp_lane(lane, warp, mute=False)
+                dropped = dropped + dropped_picture
+        except rt.RetimeError as exc:
+            raise ProjectError(str(exc)) from None
+        retime_report = {
+            "stretches": warp.report(),
+            "edit_frames": plain_frames,
+            "render_frames": warp.frames,
+            "muted_seconds": round(sum(warp.muted()) / rate, 3),
+            # Entries a stretch squeezed under one frame — named, never lost silently.
+            "dropped_entries": len(dropped),
+        }
 
     # A tail is two ordinary entries appended after everything above — the
     # card on the picture lane, a silent WAV of the same length on the audio
@@ -14415,7 +14816,7 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
     music_lane: list[mlt.Entry] = []
     music2_lane: list[mlt.Entry] = []
     music_resources: set[str] = set()
-    music_plan = _music_plan(project, edit, rate, edit_frames=edit_frames)
+    music_plan = _music_plan(project, edit, rate, edit_frames=edit_frames, clock=clock)
     if music_plan is not None:
         total_frames = sum(entry.frames for entry in audio)
         # A piece's `start_frame` is resolved against the Edit's own frames
@@ -14443,11 +14844,19 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
             level_db = round(vo_lufs - music_plan["under"] - bed_lufs, 2)
         duck_frames = (
             _duck_frames(
-                project, edit, rate, edit_frames=edit_frames, depth_db=music_plan["duck"], vo_lufs=vo_lufs
+                project, edit, rate, edit_frames=plain_frames, depth_db=music_plan["duck"], vo_lufs=vo_lufs
             )
             if music_plan["duck"]
             else None
         )
+        if duck_frames is not None and warp is not None:
+            # Onto the render's frames: each shows the Edit frame it plays, and
+            # a muted frame has no voice for the bed to dip under.
+            muted = warp.muted()
+            duck_frames = [
+                0.0 if muted[k] else duck_frames[min(int(warp.edit_at_frame(k) * rate), len(duck_frames) - 1)]
+                for k in range(warp.frames)
+            ]
         ducked_frames = 0
         duck_keys = 0
         lanes: list[list[mlt.Entry]] = [music_lane, music2_lane]
@@ -14611,7 +15020,7 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
 
     # The overlays, resolved in Edit frames and moved by the head the way the
     # bed is — a head is not part of the `Edit` an overlay addresses.
-    overlay_plans = _overlay_plan(project, edit, rate, edit_frames=edit_frames)
+    overlay_plans = _overlay_plan(project, edit, rate, edit_frames=edit_frames, clock=clock)
     overlays = [
         replace(plan["overlay"], start=plan["overlay"].start + head_frames)
         for plan in overlay_plans
@@ -14627,7 +15036,7 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
     # The sounds: each hit a padded copy placed between frames, packed onto
     # as few lanes as overlaps need, every lane padded with one silent file
     # as long as the film — moved by the head the way the bed is.
-    sound_plans = _sound_plan(project, edit)
+    sound_plans = _sound_plan(project, edit, clock=clock)
     sound_lanes: list[list[mlt.Entry]] = []
     if sound_plans:
         total_frames = sum(entry.frames for entry in audio)
@@ -14681,6 +15090,8 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         # [] with no sounds, or each record with the hits the render places —
         # `music`'s reasoning again.
         "sounds": sounds_report,
+        # None with no retime, or each stretch as the render draws it.
+        "retime": retime_report,
         # What the render will actually crop, named where the render is built
         # rather than left for a pixel probe to discover.
         "reframed": sorted(
@@ -14724,6 +15135,8 @@ def _mlt_reply(built: dict[str, Any], edit: tl.Edit, **extra: Any) -> dict[str, 
         "overlays": built["overlays"],
         # [] with no sounds, or each record and how many hits it placed.
         "sounds": built["sounds"],
+        # None with no retime, or each stretch's Edit span, render span and speed.
+        "retime": built["retime"],
         # Named on both roads because a crop is a decision about what is on
         # screen, and the render that made it looks entirely plausible.
         "reframed": built["reframed"],
@@ -15389,6 +15802,49 @@ def _caption_cues(
     return cues, placed, cut, {"clips": sorted(transcripts), **unspoken}
 
 
+def _project_warp(project: Project, edit: tl.Edit) -> rt.Warp | None:
+    """The retime's warp at the export rate, or None with no retime."""
+    if not project.read_manifest().get(RETIME_KEY):
+        return None
+    rate = _export_fps(_clips_by_id(project))
+    return _warp(project, edit, rate, edit_frames=_edit_frames(edit, rate))
+
+
+def _unmuted(warp: rt.Warp | None, words: list[Any]) -> tuple[list[Any], int]:
+    """The placed words a retime still lets be heard, and how many it muted.
+
+    A word is muted when its middle falls in a span the Edit's audio is
+    silenced across. What a render cannot say, no check may expect of it —
+    and the count is reported beside the diff, the `unspoken` rule, so a
+    stretch cannot quietly hide a real miss.
+    """
+    if warp is None:
+        return words, 0
+    spans = warp.muted_edit_spans()
+    kept = [
+        word for word in words
+        if not any(a <= (word.start + word.end) / 2 < b for a, b in spans)
+    ]  # fmt: skip
+    return kept, len(words) - len(kept)
+
+
+def _warp_cues(cues: list[captions.Cue], warp: rt.Warp) -> tuple[list[captions.Cue], int]:
+    """Caption cues moved onto the render's clock, muted words left out."""
+    spans = warp.muted_edit_spans()
+    moved: list[captions.Cue] = []
+    dropped = 0
+    for cue in cues:
+        words = []
+        for word in cue.words:
+            if any(a <= (word.start + word.end) / 2 < b for a, b in spans):
+                dropped += 1
+                continue
+            words.append(replace(word, start=warp.render_at(word.start), end=warp.render_at(word.end)))
+        if words:
+            moved.append(replace(cue, words=tuple(words), end=max(warp.render_at(cue.end), words[-1].end)))
+    return moved, dropped
+
+
 def _offset_cues(cues: list[captions.Cue], offset: float) -> list[captions.Cue]:
     """Shift every cue, and every word inside it, forward by `offset` seconds.
 
@@ -15851,6 +16307,9 @@ def caption_view(
     result["cues"] = [cue.as_dict() for cue in cues]
     result["words"] = len(placed)
     result["words_cut"] = cut
+    # Edit-relative cues, as the window previews them; a burn moves them onto
+    # the retime and leaves out the muted words (`add_captions`).
+    result["retime"] = _retime_summary(project, edit, _export_fps(_clips_by_id(project)))
     if not cues:
         result["cues_error"] = "no transcribed word survives on the timeline"
     return window_list(result, "cues", first, limit)
@@ -15923,6 +16382,12 @@ def add_captions(
     # `caption_view`/`_caption_cues` stay Edit-relative; only the ASS write
     # moves.
     head_seconds = _head_seconds(project)
+    warp = _project_warp(project, edit)
+    retimed_words_dropped = 0
+    if warp is not None:
+        cues, retimed_words_dropped = _warp_cues(cues, warp)
+        if not cues:
+            raise captions.CaptionError("every captioned word plays inside a muted retime — nothing to caption")
     ass_cues = _offset_cues(cues, head_seconds)
 
     destination = Path(output).expanduser()
@@ -15949,6 +16414,8 @@ def add_captions(
         "captioned_duration": cues[-1].end - cues[0].start,
         "timeline_duration": edit.duration,
         "head_seconds": head_seconds,
+        # Words a retime plays off speed and mutes — not burned, and counted.
+        "retimed_words_dropped": retimed_words_dropped,
     }
 
     if burn is not None:
@@ -16693,6 +17160,7 @@ def verify(
     transcripts, unspoken = _spoken_transcripts(project, transcripts)
 
     placed, cut = captions.place(edit, transcripts)
+    placed, retimed_words_dropped = _unmuted(_project_warp(project, edit), placed)
     if not placed:
         raise vfy.VerifyError(
             "no transcribed word survives on the timeline — there is nothing "
@@ -16801,6 +17269,8 @@ def verify(
             "timeline_duration": edit.duration,
             "head_seconds": head_seconds,
             "head_words_trimmed": head_words_trimmed,
+            # Expected words a retime mutes, left out of the diff and counted.
+            "retimed_words_dropped": retimed_words_dropped,
             **vfy.compare(expected, heard),
         }
     )
@@ -17094,6 +17564,7 @@ def finish_check(
     transcripts = _transcripts_for(project, clip_id)
     transcripts, unspoken = _spoken_transcripts(project, transcripts)
     placed, cut = captions.place(edit, transcripts)
+    placed, retimed_words_dropped = _unmuted(_project_warp(project, edit), placed)
     if not placed:
         raise vfy.VerifyError(
             "no transcribed word survives on the timeline — there is nothing "
@@ -17218,6 +17689,7 @@ def finish_check(
         "clips": sorted(transcripts),
         "words_cut_from_transcript": cut,
         **unspoken,
+        "retimed_words_dropped": retimed_words_dropped,
         "similarity": diff["similarity"],
         "diff": diff["diff"],
         "repeated": diff["repeated"],
@@ -17572,6 +18044,18 @@ def reel(
     edit = _load_edit(source)
     duration = edit.duration
     start, end = float(start), float(end)
+    # A retimed film's watch times are render seconds; the reel keeps the
+    # Edit span they showed, and plays it at 1x (`retime_dropped`).
+    warp = _project_warp(source, edit)
+    if warp is not None:
+        render_duration = warp.frames / warp.rate
+        if end > render_duration + tl.MIN_SEGMENT:
+            raise tl.TimelineError(
+                f"this film renders {render_duration:.3f}s long with its retime, so it has "
+                f"nothing at {end}s to keep"
+            )
+        if start >= 0 and end > start:
+            start, end = warp.edit_at(start), warp.edit_at(end)
 
     if start < 0:
         raise tl.TimelineError(f"a reel starts inside the timeline, not at {start}")
@@ -17635,6 +18119,9 @@ def reel(
     # rule, never carried across.
     overlays_dropped = _stored_overlays(source)
     sounds_dropped = _stored_sounds(source)
+    # A stretch is addressed by the film's words and events and plays the
+    # film's own pacing — dropped and named, the tail's rule.
+    retime_dropped = _stored_retime(source)
     # Checked here rather than left to `cut_by_time`, at the granularity a reel
     # actually has a boundary at — see `_reel_suspect_edges`. Under `plan` it
     # is reported and never refused, which is `cut_by_time`'s own convention
@@ -17705,6 +18192,7 @@ def reel(
         "under_vo_dropped": under_vo_dropped,
         "overlays_dropped": overlays_dropped,
         "sounds_dropped": sounds_dropped,
+        "retime_dropped": retime_dropped,
         "plan": bool(plan),
     }
     report["over_platform_cap"] = report["duration"] > PLATFORM_CAP
@@ -17744,6 +18232,7 @@ def reel(
         manifest.pop(UNDER_VO_KEY, None)
         manifest.pop(OVERLAYS_KEY, None)
         manifest.pop(SOUNDS_KEY, None)
+        manifest.pop(RETIME_KEY, None)
         # Provenance, and the answer to the question a hand-made scratch copy
         # could not answer once already: which film is this, and which seconds
         # of it (HISTORY.md § The VO the project was holding). Additive and

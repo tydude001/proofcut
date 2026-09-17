@@ -613,6 +613,32 @@ frames long, at exit 0. Sounds do not duck the music bed, and `--loudness`
 masters them with everything else. The window draws an SFX lane of ticks.
 The preview does not play them, just as it does not play the bed.
 
+### Retime: a span at another speed
+
+A screen recording's waits can play in a second, and a moment can play slow.
+A stretch runs from a word or event to another, in the seconds you give it:
+
+```sh
+proofcut -C myproject retime add screen 1.0 --event sent --until-event words   # a 31 s wait in 1 s
+proofcut -C myproject retime add screen 4.0 --phrase "struck" --until-phrase "through"
+proofcut -C myproject retime ls              # Edit span, render span and speed of each
+proofcut -C myproject retime rm 0            # that span plays at 1x again
+```
+
+Everything outside a stretch plays at 1x, and the speed eases in and out over
+half a second on either side. The film's own audio is muted wherever it plays
+off speed. Music, sounds, overlays and captions keep 1x and land where the
+retime puts their moment. A picture cue over a stretch speeds up with the
+film. Stretches may not overlap, and a cut through an end word makes `export`
+refuse until the end is moved. A film-audio hold cannot share a project with
+a retime yet.
+
+**It creates another clock.** `timeline-view`, `locate`, `status` and
+`caption-view` stay in Edit time and carry a `retime` summary; `locate` also
+says where the render plays the words. `cut-at` and `reel` take the
+seconds a retimed export plays at. The preview plays the Edit at 1x, says so
+on its header, and draws each stretch as a band on V1 and A1.
+
 ### A cold open
 
 ```sh

@@ -57,7 +57,7 @@ INSTRUCTIONS = (
     "Phases, and the tools to search for in each:\n"
     "- footage in: init, import_media, list_media, footage_sheet, synopsis, events\n"
     "- transcript: transcribe or attach_transcript; get_transcript with search=\n"
-    "- cut: seed_timeline, then cut_by_transcript / cut_by_time, restore, locate\n"
+    "- cut: seed_timeline, then cut_by_transcript / cut_by_time, restore, locate, retime_add\n"
     "- picture: cue_add (b-roll under a line), broll_brief, shot_sheet, canvas, "
     "reframe, reframe_sheet\n"
     "- sound: music (the bed), hold_add, vo_extend, vo_synth, sound_add (one-shots at events)\n"
@@ -342,7 +342,7 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "transcript_checks", "describe_ls", "card_templates", "card_safe_zones",
             "pack_show", "pack_status", "cue_ls", "assets", "unspoken_ls", "build_shots",
             "locate", "timeline_status", "timeline_view", "changes", "properties", "finish_report",
-            "caption_view", "hold_ls", "hold_check", "overlay_ls", "sound_ls", "finish_check", "reframe_coverage",
+            "caption_view", "hold_ls", "hold_check", "overlay_ls", "sound_ls", "retime_ls", "finish_check", "reframe_coverage",
             "continuity_check", "continuity_ls", "thumbnail", "contact_sheet",
             "broll_brief", "verify", "check_frames", "check_black", "spot_frames",
             "speech_overlap", "review_list",
@@ -356,6 +356,8 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "overlay_add",
             # Appends a record; never replaces one.
             "sound_add",
+            # Appends a stretch; one overlapping another is refused, never merged.
+            "retime_add",
             # `apply` writes a label only where none is set, and never over one.
             "attribute_speakers",
             # `apply` never writes over an existing override (CLAUDE.md).
@@ -393,7 +395,7 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "clip_rm", "transcribe", "cue_rm", "unspoken_rm", "unspoken_detect",
             "cut_by_transcript", "cut_by_time", "undo", "vo_extend", "vo_synth",
             "hold_add", "hold_rm", "hold_under_rm", "reel", "continuity_reject",
-            "overlay_rm", "sound_rm",
+            "overlay_rm", "sound_rm", "retime_rm",
             "review_add",
         ],
         _EDIT,
@@ -1659,6 +1661,25 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
     },
     "overlay_rm": {
         "position": "The overlay to remove, by its position in overlay_ls (0 is the bottom).",
+    },
+    "retime_add": {
+        "clip_id": (
+            "The clip whose words or events address the span — the transcript the "
+            "word indices index, or the recording the events belong to."
+        ),
+        "seconds": (
+            "How long the span plays for in the render. Shorter than the span speeds it "
+            "up (a 31 s wait in 1.0), longer slows it down."
+        ),
+        "word_index": "The word the stretch starts on. One of word_index, phrase or event.",
+        "phrase": "Start on this phrase's FIRST word, resolved against clip_id's transcript.",
+        "event": "Start on this event of clip_id: `name`, or `name#k` when the name repeats.",
+        "until_word_index": "End as this word ends. One of until_word_index, until_phrase or until_event.",
+        "until_phrase": "End as this phrase's LAST word ends.",
+        "until_event": "End on this event of clip_id.",
+    },
+    "retime_rm": {
+        "position": "The stretch to remove, by its position in retime_ls; that span plays at 1x again.",
     },
     "sound_add": {
         "assets": (
@@ -4743,6 +4764,71 @@ def overlay_rm(path: ProjectPath = None, *, position: int, plan: bool = False) -
     above the removed one move down by one.
     """
     return ops.overlay_rm(path, position, plan=plan)
+
+
+@_tool()
+def retime_add(
+    path: ProjectPath = None,
+    *,
+    clip_id: str,
+    seconds: float,
+    word_index: int | None = None,
+    phrase: str | None = None,
+    event: str | None = None,
+    until_word_index: int | None = None,
+    until_phrase: str | None = None,
+    until_event: str | None = None,
+    after: int = -1,
+    occurrence: int | None = None,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Play a span of the film faster or slower: "from event sent to event words in 1.0 s".
+
+    The span starts at a word, phrase or event of `clip_id` and ends at one;
+    it is resolved through the timeline on every build, never stored as
+    seconds. Everything outside every stretch plays at 1x, with the speed
+    eased in and out over half a second either side. The film's own audio is
+    muted wherever it plays off speed; music, sounds, overlays and captions
+    keep 1x and land where the retime puts their moment. Stretches may not
+    overlap.
+
+    The reply gives the span in Edit seconds and render seconds, its speed,
+    and the render's new length; `plan=true` writes nothing. Any retime routes
+    export through the MLT writer. A film-audio hold cannot share a project
+    with a retime yet, and the window previews at 1x.
+    """
+    return ops.retime_add(
+        path,
+        clip_id,
+        seconds,
+        word_index,
+        phrase=phrase,
+        event=event,
+        until_word_index=until_word_index,
+        until_phrase=until_phrase,
+        until_event=until_event,
+        after=after,
+        occurrence=occurrence,
+        plan=plan,
+    )
+
+
+@_tool()
+def retime_ls(path: ProjectPath = None) -> dict[str, Any]:
+    """Every retime stretch, in the order added, with where each plays now.
+
+    Each carries its `position` (as retime_rm takes it), its Edit and render
+    spans and its speed, beside the render's length. A retime that cannot
+    resolve — a cut removed an end word — comes back as `retime_error` beside
+    the stored records.
+    """
+    return ops.retime_ls(path)
+
+
+@_tool()
+def retime_rm(path: ProjectPath = None, *, position: int, plan: bool = False) -> dict[str, Any]:
+    """Take one stretch away, by its position in retime_ls; that span plays at 1x again."""
+    return ops.retime_rm(path, position, plan=plan)
 
 
 @_tool()

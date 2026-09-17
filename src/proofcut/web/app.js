@@ -205,6 +205,26 @@ function renderBar() {
     note.removeAttribute("title");
   }
 
+  // A retime renders the Edit's spans at other speeds, and the preview plays
+  // the Edit at 1x — said on the preview itself, with the stretches in the
+  // tooltip. The lane bands (timeline.js) show where they are.
+  const retimeNote = $("preview-retime-note");
+  const retime = view.retime;
+  retimeNote.hidden = !retime;
+  if (retime && retime.error) {
+    retimeNote.textContent = "retime refused";
+    retimeNote.title = `the retime cannot resolve, so export will refuse too — ${retime.error}`;
+  } else if (retime) {
+    retimeNote.textContent = "retimed — preview plays 1x";
+    const lines = retime.stretches.map(
+      (s) => `${s.edit_start.toFixed(2)}–${s.edit_end.toFixed(2)}s plays in ${s.seconds}s (${s.speed}x)`,
+    );
+    retimeNote.title = [
+      `the render is ${retime.render_seconds}s; this preview plays the ${retime.edit_seconds}s Edit at 1x`,
+      ...lines,
+    ].join("\n");
+  }
+
   const picker = $("clip");
   picker.textContent = "";
   for (const clip of view.clips) {

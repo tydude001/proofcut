@@ -1453,6 +1453,26 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_overlay_add.add_argument("--plan", action="store_true", help="resolve and report without writing")
     overlay_sub.add_parser("ls", help="list overlays, bottom of the stack first, with where each plays")
+    p_retime = sub.add_parser("retime", help="play spans of the film faster or slower")
+    retime_sub = p_retime.add_subparsers(dest="retime_command", required=True)
+    p_retime_add = retime_sub.add_parser(
+        "add", help="play a span from a word or event to another in SECONDS"
+    )
+    p_retime_add.add_argument("clip_id", help="the clip whose words or events address the span")
+    p_retime_add.add_argument("seconds", type=float, help="how long the span plays for in the render")
+    p_retime_add.add_argument("word_index", type=int, nargs="?", help="the word it starts on")
+    p_retime_add.add_argument("--phrase", help="start on this phrase's first word")
+    p_retime_add.add_argument("--event", help="start on this event (name or name#k)")
+    p_retime_add.add_argument("--until-word", type=int, dest="until_word_index", help="end with this word")
+    p_retime_add.add_argument("--until-phrase", help="end with this phrase's last word")
+    p_retime_add.add_argument("--until-event", help="end on this event")
+    p_retime_add.add_argument("--after", type=int, default=-1, help="only match a phrase forward of this word index")
+    p_retime_add.add_argument("--occurrence", type=int, help="pick the Nth phrase match")
+    p_retime_add.add_argument("--plan", action="store_true", help="resolve and report without writing")
+    retime_sub.add_parser("ls", help="list stretches with their Edit and render spans")
+    p_retime_rm = retime_sub.add_parser("rm", help="take a stretch away; its span plays at 1x")
+    p_retime_rm.add_argument("position", type=int, help="its position, as `retime ls` numbers it")
+    p_retime_rm.add_argument("--plan", action="store_true", help="report without writing")
     p_overlay_rm = overlay_sub.add_parser("rm", help="take an overlay off the film (the card stays)")
     p_overlay_rm.add_argument("position", type=int, help="its position, as `overlay ls` numbers it")
     p_overlay_rm.add_argument("--plan", action="store_true", help="report without writing")
@@ -2921,6 +2941,29 @@ def _cmd_overlay(args: argparse.Namespace) -> int:
     return _emit(ops.overlay_rm(args.project, args.position, plan=args.plan))
 
 
+def _cmd_retime(args: argparse.Namespace) -> int:
+    if args.retime_command == "add":
+        return _emit(
+            ops.retime_add(
+                args.project,
+                args.clip_id,
+                args.seconds,
+                args.word_index,
+                phrase=args.phrase,
+                event=args.event,
+                until_word_index=args.until_word_index,
+                until_phrase=args.until_phrase,
+                until_event=args.until_event,
+                after=args.after,
+                occurrence=args.occurrence,
+                plan=args.plan,
+            )
+        )
+    if args.retime_command == "ls":
+        return _emit(ops.retime_ls(args.project))
+    return _emit(ops.retime_rm(args.project, args.position, plan=args.plan))
+
+
 def _cmd_hold(args: argparse.Namespace) -> int:
     if args.hold_command == "add":
         return _emit(
@@ -3428,6 +3471,7 @@ _COMMANDS = {
     "vo-extend": _cmd_vo_extend,
     "vo-synth": _cmd_vo_synth,
     "overlay": _cmd_overlay,
+    "retime": _cmd_retime,
     "sound": _cmd_sound,
     "hold": _cmd_hold,
     "reel": _cmd_reel,

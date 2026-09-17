@@ -214,6 +214,7 @@
  *                             sitting under it
  *   .waveform-canvas            the <canvas> an A1 lane draws its envelope
  *                             into (from `/api/waveform/<clip_id>`)
+ *   .retime-band                a retime stretch on V1/A1, hatched, no hit target
  *   .seam-tick                  a cut boundary, drawn as a 1px line
  *   .gap                        a removed stretch, on a source-coordinate lane
  *   .playhead-line               the shared vertical line, positioned by `left`
@@ -3726,6 +3727,22 @@ textarea {
   bottom: 0;
   width: 1px;
   background: var(--cut);
+}
+
+/* A retime stretch on V1/A1 (timeline.js § buildLaneRow): drawn over the
+   blocks as a hatch, and never a hit target, so trims and seeks still land
+   on the block beneath. */
+.retime-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--wash-partial) 0 4px,
+    transparent 4px 8px
+  );
+  border-inline: 1px solid var(--partial);
 }
 
 .gap {

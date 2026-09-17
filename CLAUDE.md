@@ -1521,6 +1521,24 @@ built; docs/plans/INSTALL.md):
     skipped, so a cut re-rolls no other hit.
   - Judge a hit by the render's PCM, never by the document.
   - HISTORY.md § Sounds on events, built.
+- **A retime (`RETIME_KEY`, `_is_layered`'s eleventh trigger) is a warp
+  from render time to Edit time, and only the edit and picture lanes are
+  remapped** — one `timeremap` chain per entry, keyed from 0; everything
+  else is planned in Edit seconds and placed through `_Clock`, keeping 1x
+  lengths. HISTORY.md § Retime, built.
+  - **Never `~` in a `time_map`**: it ran a launch-clip map backwards at
+    exit 0. The curve is `retime.Warp`'s PCHIP, sampled per frame, and never
+    a `length` on a remapped chain, which freezes it on frame 0.
+  - **Keys on a remapped chain count render frames** — a reframe `rect` or a
+    `volume` level goes through `mlt.Placement`, never `seconds * rate`.
+  - **Every map ends one key past its entry's last frame**, or that frame
+    plays silent; **the mute is down a frame early**, since MLT ramps a
+    level across the frame carrying its key; and **short 1x runs between
+    muted ones are bridged**, or the ramp keys collide and the floor is lost
+    across a whole muted span. Judge a mute by the render's PCM on every
+    muted frame, never by the keys.
+  - `cut_by_time` and `reel` read their seconds through the warp. A hold and
+    film audio under the VO refuse a retime, both ways.
 - **A channel preset pack is a snapshot, never a live reference to a sibling
   repo's file.** `pack.load_pack` resolves one external JSON file (palette,
   fonts, mark, caption presets, weights) once; `pack_apply` writes the fully-

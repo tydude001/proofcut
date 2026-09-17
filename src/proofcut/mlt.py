@@ -61,7 +61,7 @@ from __future__ import annotations
 import math
 import uuid
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 from itertools import pairwise
 from math import gcd
@@ -136,6 +136,13 @@ class Entry:
     #: splits an entry must cut these with `slice_gain_keys`**, or the split
     #: pieces play undipped at exit 0.
     gain_keys: tuple[tuple[int, float], ...] = ()
+    #: A retime's slice for this entry: `(position, source seconds)` keys,
+    #: linear between them, with positions counted from the entry's first
+    #: render frame. Set, the entry reads its own `timeremap` chain from
+    #: position 0 and `src_in` is 0; empty writes exactly what an entry wrote
+    #: before retimes existed. `retime.warp_lane` is the one maker.
+    #: docs/plans/NATIVE.md § B5, designed.
+    time_map: tuple[tuple[int, float], ...] = ()
 
     @property
     def src_out(self) -> int:
@@ -421,6 +428,88 @@ def pane_overlap(rect: tuple[int, int, int, int], pane: tuple[int, int, int, int
     shared = max(0, (lower[0] + lower[2]) - upper[0])
     narrower = min(rect[2], pane[2])
     return round(shared / narrower, 3) if narrower else 0.0
+
+
+#: One reframe key before it is written: the source second its window starts,
+#: the easing of the segment leaving it (None steps), the rect and the opacity.
+_KeyRow = tuple[float, "str | None", tuple[int, int, int, int], int]
+
+
+@dataclass(frozen=True)
+class Placement:
+    """A retimed entry's clock: where each source second falls on its chain.
+
+    `time_map` is the entry's own `(position, source seconds)` keys and
+    `frames` its length. A key before the entry starts collapses onto
+    position 0, and one after it ends is not written, because a remapped
+    chain's filter counts the chain's own positions (spike finding B).
+    """
+
+    time_map: tuple[tuple[int, float], ...]
+    frames: int
+
+    def position(self, seconds: float, rate: float) -> float:
+        keys = self.time_map
+        if seconds <= keys[0][1]:
+            return keys[0][0] - (keys[0][1] - seconds) * rate
+        if seconds >= keys[-1][1]:
+            return keys[-1][0] + (seconds - keys[-1][1]) * rate + 1e-6
+        for (p0, s0), (p1, s1) in pairwise(keys):
+            if s0 <= seconds <= s1:
+                return p0 if s1 <= s0 else p0 + (p1 - p0) * (seconds - s0) / (s1 - s0)
+        return float(keys[-1][0])
+
+
+def _key_string(position: int, ease: str | None, dest: tuple[int, ...], opacity: int) -> str:
+    operator = "|=" if ease is None else f"{EASINGS[ease]}="
+    return f"{position}{operator}{' '.join(str(value) for value in dest)} {opacity}"
+
+
+def _between(
+    a: tuple[int, ...], b: tuple[int, ...], ease: str, fraction: float
+) -> tuple[int, ...]:
+    t = ease_fraction(ease, fraction)
+    return tuple(round(x + (y - x) * t) for x, y in zip(a, b))
+
+
+def _format_keys(rows: list[_KeyRow], rate: float, place: Placement | None) -> str:
+    """The rows as MLT keys: at source frames, or on a retimed chain's clock.
+
+    On a chain, a slide the entry starts or ends inside is cut at the entry's
+    edge at the value the curve has reached there, so the first and last
+    frames draw what the source-clock document would.
+    """
+    if place is None:
+        return ";".join(_key_string(round(seconds * rate), *rest) for seconds, *rest in rows)
+    at = [place.position(seconds, rate) for seconds, *_ in rows]
+    lead = max(i for i in range(len(rows)) if at[i] <= 0)
+    keys: list[tuple[int, str | None, tuple[int, ...], int]] = []
+    _seconds, ease, dest, opacity = rows[lead]
+    if ease is not None and lead + 1 < len(rows) and at[lead + 1] > at[lead]:
+        dest = _between(dest, rows[lead + 1][2], ease, -at[lead] / (at[lead + 1] - at[lead]))
+    keys.append((0, ease, dest, opacity))
+    last = lead
+    for i in range(lead + 1, len(rows)):
+        if at[i] >= place.frames:
+            break
+        position = round(at[i])
+        if position <= keys[-1][0]:
+            keys[-1] = (keys[-1][0], rows[i][1], rows[i][2], rows[i][3])
+        else:
+            keys.append((position, rows[i][1], rows[i][2], rows[i][3]))
+        last = i
+    ease = rows[last][1]
+    end = place.frames - 1
+    if ease is not None and last + 1 < len(rows) and keys[-1][0] < end:
+        span = at[last + 1] - at[last]
+        fraction = (end - at[last]) / span if span > 0 else 1.0
+        keys.append((end, None, _between(rows[last][2], rows[last + 1][2], ease, fraction), rows[last][3]))
+    return ";".join(_key_string(*key) for key in keys)
+
+
+def placement(entry: Entry) -> Placement | None:
+    """A retimed entry's clock for its filters, or None on the source clock."""
+    return Placement(entry.time_map, entry.frames) if entry.time_map else None
 
 
 @dataclass(frozen=True)
@@ -757,7 +846,9 @@ class Reframe:
         fitted = fit_rect(self.source, resolution)
         return all(self._dest(crop, resolution) == fitted for _, crop in self.windows())
 
-    def rect_property(self, resolution: tuple[int, int], rate: float | None = None) -> str:
+    def rect_property(
+        self, resolution: tuple[int, int], rate: float | None = None, place: Placement | None = None
+    ) -> str:
         """The `rect` value: `x y w h opacity`, or MLT's animation of them.
 
         One window writes the bare string it always wrote. More than one
@@ -793,6 +884,10 @@ class Reframe:
         through and only its destination changes. The lower pane is a second
         node, `pane_rect_property`, which has no `interp` of its own
         (`__post_init__` refuses a window that is both).
+
+        `place` is a retimed entry's clock (`placement`): its chain counts
+        render frames, so the keys go where the warp shows each window
+        (docs/plans/NATIVE.md § B5, designed).
         """
         upper, _ = pane_boxes(resolution)
         if not self.later and not self.panes:
@@ -803,7 +898,7 @@ class Reframe:
                 "keyframes are numbered in the source's own frames"
             )
         windows = self.windows()
-        keys = []
+        rows: list[_KeyRow] = []
         for index, (seconds, crop) in enumerate(windows):
             box = upper if self.pane_at(seconds) is not None else None
             dest = self._window_dest(seconds, crop, resolution, box)
@@ -811,14 +906,14 @@ class Reframe:
             # the *next* window's flag that decides — not this one's.
             next_start = windows[index + 1][0] if index + 1 < len(windows) else None
             ease = self.ease_at(next_start) if next_start is not None else None
-            operator = "|=" if ease is None else f"{EASINGS[ease]}="
             if ease is not None and dest[2:] == tuple(self.source):
                 dest = _off_unity(dest)
-            values = " ".join(str(value) for value in dest)
-            keys.append(f"{round(seconds * rate)}{operator}{values} 1")
-        return ";".join(keys)
+            rows.append((seconds, ease, dest, 1))
+        return _format_keys(rows, rate, place)
 
-    def pane_rect_property(self, resolution: tuple[int, int], rate: float) -> str:
+    def pane_rect_property(
+        self, resolution: tuple[int, int], rate: float, place: Placement | None = None
+    ) -> str:
         """The lower pane's own `rect`, on its own node — off where there is no split.
 
         **The pane is hidden by opacity, never by moving it off-canvas.** Both
@@ -840,19 +935,20 @@ class Reframe:
                 "in the source's own frames"
             )
         _, lower = pane_boxes(resolution)
-        parked = " ".join(str(value) for value in fit_rect(self.source, resolution))
-        keys = []
-        for seconds, crop in self.windows():
+        parked = fit_rect(self.source, resolution)
+        rows: list[_KeyRow] = []
+        for seconds, _crop in self.windows():
             pane = self.pane_at(seconds)
             if pane is None:
-                keys.append(f"{round(seconds * rate)}|={parked} 0")
+                rows.append((seconds, None, parked, 0))
                 continue
-            values = " ".join(str(value) for value in self._dest(pane, resolution, lower))
-            keys.append(f"{round(seconds * rate)}|={values} 1")
-        return ";".join(keys)
+            rows.append((seconds, None, self._dest(pane, resolution, lower), 1))
+        return _format_keys(rows, rate, place)
 
 
-    def fill_rect_property(self, resolution: tuple[int, int], rate: float | None = None) -> str:
+    def fill_rect_property(
+        self, resolution: tuple[int, int], rate: float | None = None, place: Placement | None = None
+    ) -> str:
         """The fill background's own `rect`: cover where a window is a fill, off elsewhere.
 
         `pane_rect_property`'s rule, for the same reason: keyed at every window
@@ -871,14 +967,13 @@ class Reframe:
                 "a fill background over more than one window needs the frame rate — "
                 "its keyframes are numbered in the source's own frames"
             )
-        parked = " ".join(str(value) for value in fit_rect(self.source, resolution))
-        keys = []
+        rows: list[_KeyRow] = []
         for seconds, _crop in self.windows():
             if self.is_fill(seconds):
-                keys.append(f"{round(seconds * rate)}|={cover} 1")
+                rows.append((seconds, None, self.cover_rect(resolution), 1))
             else:
-                keys.append(f"{round(seconds * rate)}|={parked} 0")
-        return ";".join(keys)
+                rows.append((seconds, None, fit_rect(self.source, resolution), 0))
+        return _format_keys(rows, rate, place)
 
 
 def plan_picture(shots: list[dict[str, Any]], rate: float) -> list[Entry]:
@@ -1043,7 +1138,32 @@ def _source_node(node_id: str, entry: Entry, bin_id: int, rate: float) -> ET.Ele
     for name, value in properties.items():
         _property(node, name, value)
     _property(node, "kdenlive:id", str(bin_id))
+    if entry.time_map and not entry.is_image:
+        # Tagged, not attached: callers add properties after this, and the
+        # link goes after the last of them (`_attach_links`).
+        node.set("_time_map", ";".join(f"{position}={seconds:g}" for position, seconds in entry.time_map))
     return node
+
+
+def _attach_links(root: ET.Element) -> None:
+    """Give every retimed chain its `timeremap` link, after its properties.
+
+    Never a `length` on such a chain: it pins the link to source frame 0 for
+    every output frame, at exit 0 (`~/proofcut-work/spikes/mlt-retime`).
+    Linear keys only, never `~`, which ran a launch-clip map backwards
+    (`~/proofcut-work/spikes/retime-compose`).
+    """
+    for node in root.findall("chain"):
+        time_map = node.attrib.pop("_time_map", None)
+        if time_map is None:
+            continue
+        if node.find("property[@name='length']") is not None:
+            raise MLTError(f"retimed chain {node.get('id')} has a length, which freezes its link")
+        children = list(node)
+        at = max(i for i, child in enumerate(children) if child.tag == "property") + 1
+        link = ET.Element("link", {"mlt_service": "timeremap"})
+        _property(link, "time_map", time_map)
+        node.insert(at, link)
 
 
 #: Where a fade starts and ends, in dB. Not silence — but the render's own
@@ -1166,7 +1286,13 @@ def _fade_level(entry: Entry) -> str:
     return ";".join(f"{frame}={level:g}" for frame, level in keys)
 
 
-def _playlist(playlist_id: str, entries: list[Entry], nodes: dict[str, str]) -> ET.Element:
+def _node_key(entry: Entry) -> Any:
+    """What a lane's node dict is keyed on: the file, or the entry itself when
+    it carries a retime, since each retimed entry reads its own chain."""
+    return entry if entry.time_map else entry.resource
+
+
+def _playlist(playlist_id: str, entries: list[Entry], nodes: dict[Any, str]) -> ET.Element:
     """One track's entries, laid end to end.
 
     No `<blank>` is emitted, ever — see this module's docstring. The entries
@@ -1185,7 +1311,7 @@ def _playlist(playlist_id: str, entries: list[Entry], nodes: dict[str, str]) -> 
             playlist,
             "entry",
             {
-                "producer": nodes[entry.resource],
+                "producer": nodes[_node_key(entry)],
                 "in": str(entry.src_in),
                 "out": str(entry.src_out),
             },
@@ -1198,7 +1324,7 @@ def _playlist(playlist_id: str, entries: list[Entry], nodes: dict[str, str]) -> 
 
 
 def _pane_playlist(
-    playlist_id: str, entries: list[Entry], nodes: dict[str, str], split: set[str]
+    playlist_id: str, entries: list[Entry], nodes: dict[Any, str], split: set[Any]
 ) -> ET.Element:
     """A split pane's overlay track: the lane's own entries, blanked where it is not split.
 
@@ -1213,7 +1339,7 @@ def _pane_playlist(
     playlist = ET.Element("playlist", {"id": playlist_id})
     pending = 0
     for entry in entries:
-        if entry.resource not in split:
+        if _node_key(entry) not in split:
             pending += entry.frames
             continue
         if pending:
@@ -1223,7 +1349,7 @@ def _pane_playlist(
             playlist,
             "entry",
             {
-                "producer": nodes[entry.resource],
+                "producer": nodes[_node_key(entry)],
                 "in": str(entry.src_in),
                 "out": str(entry.src_out),
             },
@@ -1285,7 +1411,11 @@ def _off_unity(dest: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
 
 
 def _reframe_filter(
-    node: ET.Element, reframe: Reframe, resolution: tuple[int, int], rate: float
+    node: ET.Element,
+    reframe: Reframe,
+    resolution: tuple[int, int],
+    rate: float,
+    place: Placement | None = None,
 ) -> bool:
     """Hang the crop-to-fill filter on one timeline producer, if it says anything.
 
@@ -1301,12 +1431,16 @@ def _reframe_filter(
         return False
     node_filter = ET.SubElement(node, "filter", {"id": f"filter_{node.get('id')}"})
     _property(node_filter, "mlt_service", "qtblend")
-    _property(node_filter, "rect", reframe.rect_property(resolution, rate))
+    _property(node_filter, "rect", reframe.rect_property(resolution, rate, place))
     return True
 
 
 def _pane_filter(
-    node: ET.Element, reframe: Reframe, resolution: tuple[int, int], rate: float
+    node: ET.Element,
+    reframe: Reframe,
+    resolution: tuple[int, int],
+    rate: float,
+    place: Placement | None = None,
 ) -> None:
     """The same filter on a split's second node, carrying the lower pane.
 
@@ -1316,7 +1450,7 @@ def _pane_filter(
     """
     node_filter = ET.SubElement(node, "filter", {"id": f"filter_{node.get('id')}"})
     _property(node_filter, "mlt_service", "qtblend")
-    _property(node_filter, "rect", reframe.pane_rect_property(resolution, rate))
+    _property(node_filter, "rect", reframe.pane_rect_property(resolution, rate, place))
 
 
 #: A blur-fill background's blur, as `box_blur`'s radius. Relative to the
@@ -1332,7 +1466,11 @@ FILL_DARKEN = 0.7
 
 
 def _fill_filters(
-    node: ET.Element, reframe: Reframe, resolution: tuple[int, int], rate: float
+    node: ET.Element,
+    reframe: Reframe,
+    resolution: tuple[int, int],
+    rate: float,
+    place: Placement | None = None,
 ) -> None:
     """Blur, darken, then place — on a fill background's own node.
 
@@ -1348,9 +1486,9 @@ def _fill_filters(
     dark = ET.SubElement(node, "filter", {"id": f"dark_{node_id}"})
     _property(dark, "mlt_service", "brightness")
     _property(dark, "level", str(FILL_DARKEN))
-    place = ET.SubElement(node, "filter", {"id": f"filter_{node_id}"})
-    _property(place, "mlt_service", "qtblend")
-    _property(place, "rect", reframe.fill_rect_property(resolution, rate))
+    place_filter = ET.SubElement(node, "filter", {"id": f"filter_{node_id}"})
+    _property(place_filter, "mlt_service", "qtblend")
+    _property(place_filter, "rect", reframe.fill_rect_property(resolution, rate, place))
 
 
 def reframed_nodes(root: ET.Element) -> dict[str, str]:
@@ -1544,6 +1682,12 @@ def document(
         if wrong:
             raise MLTError(f"sound lane {number} holds a still ({wrong[0]!r})")
     sound_entries = [entry for sound_lane in sounds for entry in sound_lane]
+    for entry in [*music, *music2, *holds, *sound_entries]:
+        if entry.time_map:
+            raise MLTError(
+                f"{entry.resource!r} carries a retime on an audio lane — only the edit and "
+                "the picture lane are retimed; everything else plays at 1x"
+            )
     for entry in [*audio, *picture, *music, *music2, *holds, *sound_entries]:
         if entry.fade_in_frames < 0 or entry.fade_out_frames < 0:
             raise MLTError(f"negative fade frames on {entry.resource!r}")
@@ -1585,14 +1729,15 @@ def document(
     # `kdenlive:id` is keyed on the resource and not on the node.
     sources: dict[str, Entry] = {}
     for entry in [*audio, *picture, *music, *music2, *holds, *sound_entries]:
-        sources.setdefault(entry.resource, entry)
+        # A bin entry is the raw media, so it never carries an entry's retime.
+        sources.setdefault(entry.resource, replace(entry, time_map=(), gain_keys=()))
     bin_ids = {resource: index + 2 for index, resource in enumerate(sources)}
 
     reframe = reframe or {}
     # Every rendered node this should have reached, counted before the nodes
     # exist so the readback below has something independent to check against.
     wants_reframe = {
-        (role, entry.resource)
+        (role, _node_key(entry))
         for role, lane in (("edit", audio), ("picture", picture))
         for entry in lane
         if not entry.is_image
@@ -1607,37 +1752,37 @@ def document(
         Ordered by first appearance, so a document's pane nodes are numbered
         the way its ordinary ones are and a rebuild is byte-identical.
         """
-        found: dict[str, Entry] = {}
+        found: dict[Any, Entry] = {}
         for entry in lane:
             if entry.is_image or not entry.has_video:
                 continue
             if entry.resource in reframe and reframe[entry.resource].panes:
-                found.setdefault(entry.resource, entry)
+                found.setdefault(_node_key(entry), entry)
         return found
 
     def _fill_in(lane: list[Entry]) -> dict[str, Entry]:
         """The resources on this lane with a blur-filled window, first-seen order."""
-        found: dict[str, Entry] = {}
+        found: dict[Any, Entry] = {}
         for entry in lane:
             if entry.is_image or not entry.has_video:
                 continue
             if entry.resource in reframe and reframe[entry.resource].fills:
-                found.setdefault(entry.resource, entry)
+                found.setdefault(_node_key(entry), entry)
         return found
 
     def _fill_lane(
         lane: list[Entry], prefix: str, playlists: tuple[str, str], tractor_id: str, track_name: str
     ) -> dict[str, str]:
         """A lane's blur-fill background: silent nodes, a blanked playlist, a tractor."""
-        nodes: dict[str, str] = {}
-        for resource, entry in _fill_in(lane).items():
+        nodes: dict[Any, str] = {}
+        for key, entry in _fill_in(lane).items():
             node_id = f"{prefix}{len(nodes)}"
-            nodes[resource] = node_id
-            node = _source_node(node_id, entry, bin_ids[resource], rate)
+            nodes[key] = node_id
+            node = _source_node(node_id, entry, bin_ids[entry.resource], rate)
             _property(node, "audio_index", "-1")
             _property(node, "video_index", "0")
             _property(node, "set.test_audio", "1")
-            _fill_filters(node, reframe[resource], resolution, rate)
+            _fill_filters(node, reframe[entry.resource], resolution, rate, placement(entry))
             root.append(node)
         if nodes:
             root.append(_pane_playlist(playlists[0], lane, nodes, set(nodes)))
@@ -1653,17 +1798,17 @@ def document(
 
     edit_fills = _fill_lane(audio, "fchain", ("playlist14", "playlist15"), "tractorD", "Edit fill")
 
-    audio_nodes: dict[str, str] = {}
+    audio_nodes: dict[Any, str] = {}
     for entry in audio:
-        if entry.resource in audio_nodes:
+        if _node_key(entry) in audio_nodes:
             continue
         node_id = f"chain{len(audio_nodes)}"
-        audio_nodes[entry.resource] = node_id
+        audio_nodes[_node_key(entry)] = node_id
         node = _source_node(node_id, entry, bin_ids[entry.resource], rate)
         _property(node, "set.test_audio", "0")
         _property(node, "set.test_video", "0" if entry.has_video else "1")
         if entry.has_video and entry.resource in reframe:
-            _reframe_filter(node, reframe[entry.resource], resolution, rate)
+            _reframe_filter(node, reframe[entry.resource], resolution, rate, placement(entry))
         root.append(node)
 
     root.append(_playlist("playlist0", audio, audio_nodes))
@@ -1682,15 +1827,15 @@ def document(
     # node is a *silent* copy of the lane's — `audio_index=-1` for the picture
     # lane's own reason, and here it also stops the edit's sound being mixed
     # in twice, which is a doubled VO at exit 0.
-    edit_panes: dict[str, str] = {}
-    for resource, entry in _split_in(audio).items():
+    edit_panes: dict[Any, str] = {}
+    for key, entry in _split_in(audio).items():
         node_id = f"pchain{len(edit_panes)}"
-        edit_panes[resource] = node_id
-        node = _source_node(node_id, entry, bin_ids[resource], rate)
+        edit_panes[key] = node_id
+        node = _source_node(node_id, entry, bin_ids[entry.resource], rate)
         _property(node, "audio_index", "-1")
         _property(node, "video_index", "0")
         _property(node, "set.test_audio", "1")
-        _pane_filter(node, reframe[resource], resolution, rate)
+        _pane_filter(node, reframe[entry.resource], resolution, rate, placement(entry))
         root.append(node)
     if edit_panes:
         root.append(_pane_playlist("playlist4", audio, edit_panes, set(edit_panes)))
@@ -1703,13 +1848,13 @@ def document(
         for playlist_id in ("playlist4", "playlist5"):
             ET.SubElement(edit_pane_track, "track", {"producer": playlist_id, "hide": "audio"})
 
-    picture_nodes: dict[str, str] = {}
+    picture_nodes: dict[Any, str] = {}
     if picture:
         for entry in picture:
-            if entry.resource in picture_nodes:
+            if _node_key(entry) in picture_nodes:
                 continue
             node_id = f"vchain{len(picture_nodes)}"
-            picture_nodes[entry.resource] = node_id
+            picture_nodes[_node_key(entry)] = node_id
             node = _source_node(node_id, entry, bin_ids[entry.resource], rate)
             if not entry.is_image:
                 # Film under a VO plays silent — and `audio_index=-1` is what
@@ -1719,7 +1864,9 @@ def document(
                 _property(node, "video_index", "0")
                 _property(node, "set.test_audio", "1")
                 if entry.resource in reframe:
-                    _reframe_filter(node, reframe[entry.resource], resolution, rate)
+                    _reframe_filter(
+                        node, reframe[entry.resource], resolution, rate, placement(entry)
+                    )
             root.append(node)
 
         root.append(_playlist("playlist2", picture, picture_nodes))
@@ -1736,15 +1883,15 @@ def document(
         picture, "fvchain", ("playlist16", "playlist17"), "tractorE", "Picture fill"
     )
 
-    picture_panes: dict[str, str] = {}
-    for resource, entry in _split_in(picture).items():
+    picture_panes: dict[Any, str] = {}
+    for key, entry in _split_in(picture).items():
         node_id = f"pvchain{len(picture_panes)}"
-        picture_panes[resource] = node_id
-        node = _source_node(node_id, entry, bin_ids[resource], rate)
+        picture_panes[key] = node_id
+        node = _source_node(node_id, entry, bin_ids[entry.resource], rate)
         _property(node, "audio_index", "-1")
         _property(node, "video_index", "0")
         _property(node, "set.test_audio", "1")
-        _pane_filter(node, reframe[resource], resolution, rate)
+        _pane_filter(node, reframe[entry.resource], resolution, rate, placement(entry))
         root.append(node)
     if picture_panes:
         root.append(_pane_playlist("playlist6", picture, picture_panes, set(picture_panes)))
@@ -2092,12 +2239,14 @@ def document(
         project, "track", {"producer": sequence_uuid, "in": "0", "out": str(total_frames - 1)}
     )
 
+    _attach_links(root)
+
     # The same discipline as the frame check below, for the same reason: a
     # reframe that reached one of a file's two nodes renders a film that is
     # cropped on one track and letterboxed on the other, and melt exits 0.
     expected = {
-        (audio_nodes if role == "edit" else picture_nodes)[resource]
-        for role, resource in wants_reframe
+        (audio_nodes if role == "edit" else picture_nodes)[key]
+        for role, key in wants_reframe
     } | set(edit_panes.values()) | set(picture_panes.values())
     expected |= set(edit_fills.values()) | set(picture_fills.values())
     found = set(reframed_nodes(root))

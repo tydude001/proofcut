@@ -650,6 +650,19 @@ function buildLaneRow(kind, segments, pxPerSec, duration, state, withFilmstrip) 
     row.append(block);
   }
 
+  // A retime's stretches, as bands under the blocks: where the render plays
+  // this Edit at another speed. Never a hit target — the blocks and handles
+  // under them keep every gesture; the preview's chip carries the numbers.
+  if ((kind === "V1" || kind === "A1") && state.retime && !state.retime.error) {
+    for (const stretch of state.retime.stretches) {
+      const band = el("div", "retime-band");
+      band.style.left = `${(stretch.edit_start * pxPerSec).toFixed(1)}px`;
+      band.style.width = `${Math.max(1, (stretch.edit_end - stretch.edit_start) * pxPerSec).toFixed(1)}px`;
+      band.dataset.speed = stretch.speed;
+      row.append(band);
+    }
+  }
+
   for (const seam of state.seams) {
     const tick = el("div", "seam-tick");
     tick.style.left = `${(seam.timeline_time * pxPerSec).toFixed(1)}px`;

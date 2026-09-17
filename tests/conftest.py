@@ -4,7 +4,9 @@ The SDK's stdio client hands a spawned server only
 `get_default_environment()`'s allow-list, and `QT_QPA_PLATFORM` is not on it,
 so a headless run (no desktop session) could not render through melt even
 with the variable exported to pytest. Pass it through when the caller set
-it, and nothing else: CLAUDE.md § the melt tests, docs/plans/SUITE-SPEED.md.
+it: CLAUDE.md § the melt tests, docs/plans/SUITE-SPEED.md. `PROOFCUT_MELT`
+rides along for the same reason, so the melt tests can be pointed at a
+second melt (Shotcut's portable one) and actually reach it.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ import os
 import mcp.client.stdio as _stdio
 import pytest
 
-_PASSED_THROUGH = ("QT_QPA_PLATFORM",)
+_PASSED_THROUGH = ("QT_QPA_PLATFORM", "PROOFCUT_MELT")
 
 
 @pytest.fixture(autouse=True, scope="session")

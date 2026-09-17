@@ -178,6 +178,10 @@
           preview
           <span class="spacer"></span>
           <span id="preview-canvas-note" class="chip-static mono"></span>
+          <!-- A retimed film previews at 1x: the warning goes on the control
+               it is about (docs/plans/NATIVE.md § B5, designed). app.js fills
+               it from `view.retime` and hides it without one. -->
+          <span id="preview-retime-note" class="chip-static" hidden></span>
         </div>
         <div id="viewer">
           <!-- The frame is the project canvas, not the media's own shape, and

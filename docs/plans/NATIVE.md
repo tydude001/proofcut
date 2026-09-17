@@ -193,7 +193,8 @@ Each step is usable on its own, and each is judged on a served render.
 - **B4. Sound on events.** Shipped — see HISTORY.md § Sounds on events,
   built. A1's cue list plus one-shot effects at events
   (`send`, `land`, keystrokes). Design below (§ B4, designed).
-- **B5. Retime.** The hard one, last on purpose: it is the only step that
+- **B5. Retime.** Shipped — see HISTORY.md § Retime, built, which also
+  records where the build departs from the design below. The hard one, last on purpose: it is the only step that
   changes what "timeline time" means, so captions, cues, holds, `locate`,
   `verify` and `check_frames` all have to compose through it.
   **Recommended authoring unit: a stretch** — "from event `sent` to event
@@ -203,7 +204,7 @@ Each step is usable on its own, and each is judged on a served render.
   runs the recording backwards (`clip.py` already had to). Source audio in a
   stretch that is not 1x is muted by default — `clip.py`'s own choice, with a
   separate VO — and `pitch=1` stays available. Design below (§ B5,
-  designed); its eight decisions wait on Tyler.
+  designed); Tyler took all eight decisions on 2026-09-17.
 - **B6. Inset.** The render drawn into a rectangle of the recording, following
   the camera: composite onto the recording's own track, then frame the
   composite. A nested tractor with the camera filter on it — measure before
@@ -425,7 +426,9 @@ a curve.
 - **It is `_is_layered`'s eleventh trigger**, because auto-editor cannot
   retime.
 
-**Decisions** (a recommendation on each):
+**Decisions** (a recommendation on each; Tyler took all eight on
+2026-09-17, and the build departed from 3 and added two refusals — HISTORY.md
+§ Retime, built):
 
 1. **Stretches, PCHIP between them** (recommended; the unit was taken
    2026-09-15). A stretch says "from `sent` to `words` in 1.0 s". The ramp in

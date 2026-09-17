@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import array
 import inspect
+import itertools
 import json
 import math
 import os
@@ -99,6 +100,9 @@ EXPECTED_TOOLS = {
     "overlay_add",
     "overlay_ls",
     "overlay_rm",
+    "retime_add",
+    "retime_ls",
+    "retime_rm",
     "sound_add",
     "sound_ls",
     "sound_rm",
@@ -713,6 +717,9 @@ TOOL_TO_COMMAND = {
     "overlay_add": "overlay",
     "overlay_ls": "overlay",
     "overlay_rm": "overlay",
+    "retime_add": "retime",
+    "retime_ls": "retime",
+    "retime_rm": "retime",
     "sound_add": "sound",
     "sound_ls": "sound",
     "sound_rm": "sound",
@@ -7325,6 +7332,136 @@ def test_a_sound_lands_on_the_sample_its_event_names(visible_tmp: Path) -> None:
     assert all(abs(pcm[p]) < 16000 * 10 ** (-3 / 20) for p in peaks)
 
 
+def _counting_video(path: Path, seconds: float = 12.0) -> None:
+    """A source whose every frame names itself, over a steady tone.
+
+    The left half is `N mod 32` in steps of 8 and the right half `N // 32` in
+    steps of 20: coarse enough that an x264 export's few levels of noise
+    cannot move either reading, which one sampled pixel per half settles.
+    """
+    subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-y",
+         "-f", "lavfi", "-i", f"color=c=black:size=320x180:rate=30:duration={seconds}",
+         "-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}:sample_rate=48000",
+         "-vf", "format=gray,geq=lum='if(lt(X,W/2),mod(N,32)*8,floor(N/32)*20)',format=yuv420p",
+         "-c:v", "libx264", "-crf", "0", "-c:a", "aac", "-shortest", str(path)],
+        capture_output=True, check=True,
+    )  # fmt: skip
+
+
+def _counted_frames(path: Path) -> list[int]:
+    raw = subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-i", str(path), "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+        capture_output=True, check=True,
+    ).stdout  # fmt: skip
+    width, height = 320, 180
+    frames = []
+    for at in range(0, len(raw) - width * height + 1, width * height):
+        left = raw[at + 90 * width + 80]
+        right = raw[at + 90 * width + 240]
+        frames.append(round(right / 20) * 32 + round(left / 8))
+    return frames
+
+
+def _retimed_project(visible_tmp: Path, extra: Any = None) -> tuple[Path, Path, Any]:
+    film = visible_tmp / "count.mp4"
+    _counting_video(film)
+    project = visible_tmp / "proj"
+    output = visible_tmp / "out.mp4"
+
+    async def body(session: ClientSession) -> Any:
+        client = Client(session)
+        await client.call("init", path=str(project))
+        clip = (await client.call("import_media", path=str(project), source=str(film)))["clip_id"]
+        await client.call("seed_timeline", path=str(project), clip_id=clip, remove_silences=False)
+        for name, at in (("sent", 2.0), ("typing", 5.0), ("words", 8.0)):
+            await client.call("events", path=str(project), clip_id=clip, name=name, at=at)
+        added = await client.call(
+            "retime_add", path=str(project), clip_id=clip, seconds=1.0, event="sent", until_event="words"
+        )
+        if extra is not None:
+            await extra(client, project, clip)
+        rendered = await client.call("export", path=str(project), output=str(output), export_format=None)
+        return added, rendered
+
+    return project, output, anyio.run(_with_server, body)
+
+
+@needs_melt
+def test_a_retimed_render_shows_the_frame_the_warp_names(visible_tmp: Path) -> None:
+    """NATIVE B5 against a real melt: 2–8 s of a counting source played in
+    1.0 s. Every rendered frame reads the source frame the warp says it
+    shows, within the one-frame rounding the spike measured; the 1x frames
+    advance one at a time with no repeat; and the source's own tone is gone
+    wherever the film plays off speed and there wherever it plays at 1x."""
+    from proofcut import retime as rt
+
+    _project, output, (added, rendered) = _retimed_project(visible_tmp)
+    warp = rt.Warp([rt.Stretch(2.0, 8.0, 1.0)], 360, 30.0)
+    assert added["stretch"]["speed"] == pytest.approx(6.0)
+    assert rendered["writer"] == "melt"
+    assert rendered["frames"] == warp.frames
+    assert rendered["retime"]["render_frames"] == warp.frames
+
+    read = _counted_frames(output)
+    assert len(read) == warp.frames
+    want = [int((warp.edit_at_frame(k) + rt.FRAME_BIAS / 30) * 30) for k in range(warp.frames)]
+    assert max(abs(a - b) for a, b in zip(read, want)) <= 1
+    one_x = [
+        k for k in range(warp.frames - 1)
+        if abs(warp.speed_at_frame(k) - 1) < 1e-9 and abs(warp.speed_at_frame(k + 1) - 1) < 1e-9
+    ]  # fmt: skip
+    assert len(one_x) > 100
+    assert all(read[k + 1] - read[k] == 1 for k in one_x)
+    assert all(b >= a for a, b in itertools.pairwise(read))
+
+    pcm = _pcm(output)
+    muted = warp.muted()
+    hop = 1600
+
+    def level(k: int) -> float:
+        window = pcm[k * hop : (k + 1) * hop]
+        return max(abs(v) for v in window) if window else 0.0
+
+    inside = [k for k in range(warp.frames) if all(muted[max(0, k - 2) : k + 3])]
+    outside = [k for k in range(2, warp.frames - 2) if not any(muted[k - 3 : k + 4])]
+    assert inside and outside
+    assert max(level(k) for k in inside) < 300
+    assert min(level(k) for k in outside) > 1500
+
+
+@needs_melt
+def test_a_sound_inside_a_stretch_lands_where_the_retime_plays_its_event(visible_tmp: Path) -> None:
+    """The second half of B5's check: a click at an event 5 s into the source,
+    three seconds inside a 6x stretch, is found in the render's PCM where the
+    warp plays that event — not at 5 s, where the Edit has it."""
+    from proofcut import retime as rt
+
+    click = visible_tmp / "click.wav"
+    with wave.open(str(click), "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(48000)
+        out.writeframes((16000).to_bytes(2, "little", signed=True) + bytes(2 * 4799))
+
+    async def extra(client: Any, project: Path, clip: str) -> None:
+        await client.call("import_media", path=str(project), source=str(click))
+        await client.call("sound_add", path=str(project), assets=["click"], clip_id=clip, event="typing")
+
+    _project, output, (_added, rendered) = _retimed_project(visible_tmp, extra)
+    warp = rt.Warp([rt.Stretch(2.0, 8.0, 1.0)], 360, 30.0)
+    assert [s["hits"] for s in rendered["sounds"]] == [1]
+    pcm = _pcm(output)
+    muted = warp.muted()
+    # search only where the film's own tone is muted, so the tone cannot be mistaken for the click
+    start = next(k for k, m in enumerate(muted) if m) * 1600 + 1600
+    end = (len(muted) - next(k for k, m in enumerate(reversed(muted)) if m)) * 1600 - 1600
+    peak = max(range(start, end), key=lambda i: abs(pcm[i]))
+    assert abs(pcm[peak]) > 4000
+    assert abs(peak - warp.render_at(5.0) * 48000) <= 48
+    assert abs(peak - 5.0 * 48000) > 48000
+
+
 # -- a head's own lead-silence pad, against a real melt render --------------
 #
 # The trap named in CLAUDE.md: `mlt.document`'s validation only checks the
@@ -8326,7 +8463,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
     hung on the parameter in `server.py` that never reached `tools/list` is
     exactly the failure this pins: the two tools whose `path` means *no
     project* (`fonts`, `pack_show`) have to say their own thing, and the
-    other 96 share `ProjectPath`'s sentence."""
+    other 99 share `ProjectPath`'s sentence."""
 
     async def body(session: ClientSession) -> Any:
         return await session.list_tools()
@@ -8344,7 +8481,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
             assert "no project" in description, tool.name
         else:
             assert "bound project" in description, tool.name
-    assert seen == 98
+    assert seen == 101
 
 
 def test_no_tool_advertises_an_argument_with_nothing_said_about_it() -> None:
