@@ -191,7 +191,7 @@ Each step is usable on its own, and each is judged on a served render.
   instead of filling it, with an opacity/position animation — a lower third.
   Also useful to the essays. Design below (§ B3, designed).
 - **B4. Sound on events.** A1's cue list plus one-shot effects at events
-  (`send`, `land`, keystrokes).
+  (`send`, `land`, keystrokes). Design below (§ B4, designed).
 - **B5. Retime.** The hard one, last on purpose: it is the only step that
   changes what "timeline time" means, so captions, cues, holds, `locate`,
   `verify` and `check_frames` all have to compose through it.
@@ -285,6 +285,88 @@ the picture lane and its panes. An overlay is `_is_layered`'s ninth trigger.
 
 Name: `overlay` (`overlay add/list/remove`, tools `overlay_add` …). No
 schema bump, because the key is additive and optional.
+
+### B4, designed — 2026-09-17
+
+The spike is `~/proofcut-work/spikes/sfx-probe/FINDINGS.md`. Every number
+there was read back sample by sample from renders by the flatpak melt and
+Shotcut's portable melt, and the two agreed on every case. **MLT needs
+nothing new.** A hit is an ordinary entry on an audio lane: the silent-WAV
+padding and `mix sum=1` that the bed already uses, with a per-hit `volume`
+filter.
+
+What the launch clip does (`clip.py` § sound):
+- **The keystrokes:** 279 of them, a random pick from 8 generated key
+  variants at −18 dB ±3, thinned to no two within 45 ms.
+- **The one-offs:** `send`, `land` and `strike` at named events, at −12 to
+  −19 dB.
+- Everything is placed to the sample, and the sounds are not ducked.
+
+**Findings the build has to hold to:**
+- **A file MLT counts as one frame long plays nothing, and an entry that
+  claims more frames than its file has moves every later hit early.** Both
+  happen at exit 0. The launch clip's keystrokes are 1.4 frames long, so
+  both traps apply to them. So the writer never places the sound file
+  itself. It places a derived copy padded to a whole number of frames, at
+  least two.
+- **Frame f starts at sample `floor(f × SR / fps)`** on both melts, at 30
+  and at 29.97 fps. So a hit between frames is placed exactly by leading
+  silence in that copy.
+- **Rounding hits to frames moves them by up to 16.7 ms** and turns the
+  run's 36–49 ms gaps into only 33 and 67 ms. Placing them between frames
+  cost 2.6 s of melt for 279 hits, against 0.9 s rounded.
+
+**Decisions** (a recommendation on each):
+
+1. **A sound is an imported clip, and a hit is a record in a new optional
+   key, `sounds`** (recommended). The record is `(asset, clip_id, word_index
+   | event | every, gain_db)`. `every` names an event, such as `key`, and
+   places the sound at each occurrence of it. That makes 279 keystrokes one
+   record, not 279. Import already resolves, probes and dedups files, which
+   is the bed's precedent. No schema bump.
+2. **A run can have variants, jitter and a minimum gap** (recommended):
+   `assets` is a list, `jitter_db` has a default of 0, and `min_gap` has a
+   default of 0.045 s (`clip.py`'s).
+   - The pick and the jitter are seeded from the record, so every build
+     writes the same document.
+   - The alternative is one sound per record and no randomness, which makes
+     a typed run repeat one sample 279 times.
+3. **Placement between frames** (recommended). The derived copy's lead is
+   quantised to 1 ms, so the cache holds at most 34 copies per sound at
+   30 fps, and the error is at most 0.5 ms.
+   - The copies live in `cache/sounds/`, keyed by `(asset, lead)`, and are
+     never entered in the manifest.
+   - The alternative is rounding to frames. It is cheaper, but it changes a
+     typed rhythm. Nobody has listened to the difference; an ear A/B can be
+     served first if you want one.
+4. **Anything that goes missing is named, and some of it refuses**
+   (recommended):
+   - A single hit whose word or event is cut refuses, by overlay's rule.
+   - An `every` run skips the occurrences that are cut and counts them
+     (`sounds_skipped`), because cutting some keystrokes is normal.
+   - `reel` drops sounds and names them (`sounds_dropped`), the tail's rule.
+   - `sounds` becomes `_is_layered`'s tenth trigger.
+5. **Level** (recommended):
+   - Sounds do not duck the bed, and the bed does not duck under them. The
+     duck stays keyed off the Edit's audio, as `clip.py` and `duck.py`
+     already are.
+   - `export --loudness` applies to the whole mix, as it does now.
+   - The lanes are greedy first-fit, with a `mix` transition each.
+6. **Generated sounds ship with proofcut** (recommended):
+   `proofcut sounds generate DIR` writes `make_sfx.py`'s set: 8 keys, plus
+   `send`, `land` and `strike`.
+   - It is ported to the standard library and generated on demand, not
+     vendored, so there is no licence question (`make_demo`'s precedent).
+   - The alternative is to bring your own files.
+7. **The window draws a sound lane of ticks and plays nothing**
+   (recommended). The preview does not play the bed either, so a silent
+   preview is consistent. The alternative is to leave the window out of B4.
+8. **The check is the export reply plus a real-melt readback test**
+   (recommended), as in B3:
+   - `export` names the records and the hits it drew.
+   - A test finds each hit's onset in the rendered PCM, to the sample.
+
+Name: `sound` (`sound add/list/remove`, tools `sound_add` …).
 
 ## Decisions for Tyler
 
