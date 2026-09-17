@@ -48,10 +48,11 @@ uvx proofcut doctor
 The first run downloads Python 3.13 if uv has none, plus proofcut's
 dependencies, about 230 MB together.
 
-On Linux, `proofcut setup` installs whatever doctor marked ✗, for you alone
-and with no sudo, and `proofcut setup --uninstall` removes exactly what it
-added. It says what it will download and asks first; whisper is about 1.9 GB
-of it. On a Mac or a Windows PC, follow the fix doctor prints under each ✗.
+On Linux, Windows and an Intel Mac, `proofcut setup` installs whatever doctor
+marked ✗, for you alone and with no sudo or administrator rights, and
+`proofcut setup --uninstall` removes exactly what it added. It says what it
+will download and asks first; whisper is about 1.9 GB of it. On an Apple
+silicon Mac, follow the fix doctor prints under each ✗.
 
 ```sh
 uvx proofcut setup
@@ -270,9 +271,10 @@ own PC; nobody has tried Apple silicon by hand yet. Where each OS stands is in
 Every hard part of an editor already exists as mature open source, and
 proofcut is the layer that lets an agent drive those tools and check what
 they produced. Run `uv run proofcut doctor` to check everything below at
-once. On Linux, `uv run proofcut setup` installs any of the last four that
-doctor marks ✗: a static ffmpeg, whisper, auto-editor's release binary and
-Shotcut's portable melt, which renders with no display at all
+once. On Linux, Windows and an Intel Mac, `uv run proofcut setup` installs
+any of the last four that doctor marks ✗: a static ffmpeg, whisper,
+auto-editor's release binary and Shotcut's melt — on Linux the portable
+build, which renders with no display at all
 ([docs/plans/INSTALL.md](https://github.com/tydude001/proofcut/blob/main/docs/plans/INSTALL.md)).
 
 | You need | For | Notes |

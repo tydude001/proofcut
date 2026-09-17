@@ -31,16 +31,18 @@ uv run proofcut doctor
 ```
 
 It probes all of them and, for anything missing, prints the fix rather than
-just a ✗. On Linux, `uv run proofcut setup` installs whichever of whisper,
-auto-editor, melt and ffmpeg it marked, for you alone and with no sudo;
-espeak-ng stays your distribution's package. Step 8's end card also needs **ImageMagick 7** (`magick`), and is the
+just a ✗. On Linux, Windows and an Intel Mac, `uv run proofcut setup`
+installs whichever of whisper, auto-editor, melt and ffmpeg it marked, for
+you alone and with no sudo; espeak-ng is yours to install (your
+distribution's package, or `brew install espeak-ng`). Step 8's end card also needs **ImageMagick 7** (`magick`), and is the
 one step you can skip without it.
 
 On a box with no desktop (a server, a container, SSH), step 7's render needs
 Qt to draw without one. `proofcut doctor`'s Display row renders a probe frame and
 says whether `QT_QPA_PLATFORM=offscreen` is enough for your MLT. Where it is
 not, as with Ubuntu 24.04's and Fedora 44's packaged melt, `uv run proofcut
-setup` installs Shotcut's portable melt, which draws under it. Or run the
+setup` installs Shotcut's portable melt, which draws under it. (A desktop is
+not a question on Windows or a Mac, where Qt draws through the OS itself.) Or run the
 render as `xvfb-run -a uv run proofcut …` (`apt install xvfb`, or `dnf install
 xorg-x11-server-Xvfb`).
 
