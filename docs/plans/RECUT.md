@@ -160,12 +160,29 @@ across the overlap. Spike it on the flatpak and the portable melt before
 building it, which is the rule every writer step has followed (§ Insets,
 built).
 
+**Where the material and the instruments are**, for whoever builds this:
+- `~/proofcut-work/spikes/native-b7/`: `prep.py` (stages the material),
+  `brief.txt`, `media/`, `events/`, `sfx/`, and `trial/`, which holds the B7
+  agent's project, its run log and `clip.mp4`;
+- `beats/cut.py`, which cuts A and a render into the nine moments with their
+  lengths and LUFS;
+- `review/`, the served A/B round.
+
+The moment-by-moment page is a claude.ai artifact whose `beats` collection
+holds Tyler's nine taps. Its source is `.b7-beats/` in the checkout, which is
+excluded in `.git/info/exclude` and never committed. To judge a new run,
+re-point `cut.py`'s `B` at the new render, re-cut, and republish that page
+with the new clips.
+
 **9. Run B7 again.** Use the same brief, material and harness, launched with
 `QT_QPA_PLATFORM=offscreen` this time (§ B7). Cut it into the nine moments,
 serve the page, and let Tyler tap. Any moment still "A better" goes back to
 the step that owns it.
 
 ## Decisions for Tyler
+
+**Taken 2026-09-18.** Tyler approved the plan as written ("I like the
+plan"), so all four calls stand as recommended below.
 
 1. **Order.** *Recommended: as written.* The defects go first because they
    would trip the next run. Then the music and the end card, which were the

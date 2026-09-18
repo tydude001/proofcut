@@ -210,9 +210,10 @@ Each step is usable on its own, and each is judged on a served render.
   then frame the composite, with a nested tractor. Measured, that is the
   worst route: soft, off by up to 2px, and colour-shifted. The inset is a
   sibling track that reuses the camera's keys. Design below (§ B6, designed).
-- **B7. Re-cut the launch clip with proofcut**, ideally by an agent through the
-  trial harness, and A/B it against `clip-v6.mp4` on Tyler's phone. Then
-  LAUNCH.md § Step 1's "not cut with proofcut" line is retired with evidence.
+- **B7. Re-cut the launch clip with proofcut.** Ran — see HISTORY.md § B7: an
+  agent re-cut the launch clip. Tyler picked `clip-v6.mp4` at all nine
+  moments, so LAUNCH.md § Step 1's "not cut with proofcut" line stands until
+  docs/plans/RECUT.md closes the gaps the run found.
 
 ### B3, designed — 2026-09-16
 

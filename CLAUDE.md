@@ -765,7 +765,11 @@ built; docs/plans/INSTALL.md):
   on Tailscale), so loopback+Host is replaced by a token every request must
   carry (`?t=`). It is still the right tool for a review round rather than
   `proofcut web --tailscale`: no edit surface at all, and a page that needs no
-  JS, so the token rides the links rather than a cookie.
+  JS, so the token rides the links rather than a cookie. **Its inline
+  `<style>` carries the response's CSP nonce**: `default-src 'self'` blocks
+  an inline sheet as surely as a script, and the page drew unstyled on a
+  phone for weeks with every test green. An A/B round states a `--question`
+  and each member's `about`, and takes one answer (`POST /pick`).
   `review add --kind control --baseline <name>` hashes both files and refuses
   the call on any mismatch — the byte-identical-control rule is enforced at
   registration, not left as a comment. Streaming reuses `webui._stream_file`
