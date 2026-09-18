@@ -16864,3 +16864,24 @@ a gap above:
 - **The lower third** is the overlay's look against clip.py's scrim.
 
 LAUNCH.md § Step 1's "not cut with proofcut" line stands.
+
+**Moment by moment, 2026-09-18: A, nine times out of nine.** Tyler's first
+note was "A is better in many ways, but it's hard to describe all of them",
+so both clips were cut into the same nine moments
+(`~/proofcut-work/spikes/native-b7/beats/cut.py`), and each moment was
+measured and served with one tap for which was better. He picked A at every
+moment. His one written note was on the opener: "The bottom third looks
+better (font and overall style). I also like that the prompting section is
+faster in A."
+
+Two defects came out of the cutting that the whole-clip A/B had hidden:
+- **B's film is 13.8 LU quieter than A's**: −31.5 against −17.7 LUFS over
+  the same 11.2 s. The inset's audio is faint under a bed that elsewhere
+  plays at −19.
+- **B's narrator take runs on under the sheets and the lane.** Whisper hears
+  "three men leave the earth, four days later… two of them walked on the moon"
+  there, and then the film says it again.
+
+With nine out of nine, the target is A itself, measured, and not a list of
+complaints: its beat lengths, its 10 dB duck, its film level, its lower
+third and its end card.
