@@ -16917,3 +16917,33 @@ capture with no audio stream, standing where every older op expected a VO.
 
 `tests/test_silent_recording.py` and one test in
 `test_ops_finish_report.py`; all three fail against the code before this.
+
+## The bed and the cues take an event — 2026-09-18
+
+docs/plans/RECUT.md step 2. A screen recording has no words, so on B7 the
+music bed and the cues had nothing to address but a transcript attached to
+a silent clip (step 1 now refuses that). Overlays, retime and insets already
+took an event through `_overlay_instant`; the bed and the cues now resolve
+through the same function, which gained a `removed` hook so each caller keeps
+its own refusal — `build_shots` still raises `TimelineError` "was cut from
+the edit", now with `'rec' event 'cut' (3.0s)` as the address.
+
+- **The bed:** `event`/`until_event` replace `word_index_start`/`_end`
+  boundary by boundary, and a passage takes `event`. Both keys are written
+  only when set, so a word bed's record is unchanged. Names are resolved
+  against the clip's log at set time, so a typo refuses before a write. The
+  launch clip's drop is a passage: `{asset: music, event: words, src_in:
+  16.0}`. On a copy of the B7 project it starts at Edit 46.65 s, and the
+  `words` event is at 46.6567 s.
+- **The cues:** `cue_add`/`cue_rm` take `event`, and a cue record holds
+  `word_index` *or* `event`. Every reader that indexed `cue["word_index"]`
+  goes through `_cue_key`/`_cue_order` or `.get`: `cue_ls` (an event cue
+  follows its clip's word cues, with `event_error` for a name the log no
+  longer has), `cue_reresolve`, the holds' cue lookups, and `reel`. A reel
+  keeps an event cue when the event plays inside the kept span. A shot dict
+  always carries both `word_index` and `event`, so a shot reader never
+  meets a missing key.
+- The window labels event boundaries and event cues, and inspects no word
+  for them.
+
+`tests/test_event_addressing.py`.

@@ -593,6 +593,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "`proofcut describe ls` reports it. Omitted, the shot reads from wherever "
         "the per-asset cursor is. In-point only — the out-point stays derived",
     )
+    p_cue_add.add_argument(
+        "--event", help="start on this event of clip_id (name or name#k) instead of a word — for a recording"
+    )
 
     p_cue_rm = cue_sub.add_parser("rm", help="remove a cue")
     p_cue_rm.add_argument("clip_id")
@@ -608,6 +611,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_cue_rm.add_argument(
         "--occurrence", type=int, help="pick the Nth match rather than refusing on ambiguity"
     )
+    p_cue_rm.add_argument("--event", help="the event the cue sits on, as it was added")
 
     p_cue_ls = cue_sub.add_parser("ls", help="list the cue table")
     p_cue_ls.add_argument("--clip-id", help="only this clip's cues (default: every clip)")
@@ -1302,6 +1306,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="resolve --clip-id's transcript for the end word instead of --end-word",
     )
     p_music.add_argument(
+        "--event", help="start the bed on this event of --clip-id (name or name#k) instead of a word"
+    )
+    p_music.add_argument(
+        "--until-event", help="end the bed on this event of --clip-id instead of a word"
+    )
+    p_music.add_argument(
         "--after", type=int, default=-1, help="only match a --phrase-* forward of this word index"
     )
     p_music.add_argument(
@@ -1333,7 +1343,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--passage",
         action="append",
         metavar="ASSET,START[,SRC_IN[,CROSSFADE]]",
-        help="a later passage: its asset, its start (a word index, or a phrase), and optionally "
+        help="a later passage: its asset, its start (a word index, event:NAME, or a phrase), and optionally "
         "its in-point and the crossfade into it — repeatable, and replaces every passage; "
         "--clear-passages empties them",
     )
@@ -2446,6 +2456,7 @@ def _cmd_cue(args: argparse.Namespace) -> int:
                 after=args.after,
                 occurrence=args.occurrence,
                 src_start=args.src_start,
+                event=args.event,
             )
         )
     if args.cue_command == "rm":
@@ -2457,6 +2468,7 @@ def _cmd_cue(args: argparse.Namespace) -> int:
                 phrase=args.phrase,
                 after=args.after,
                 occurrence=args.occurrence,
+                event=args.event,
             )
         )
     if args.cue_command == "reresolve":
@@ -2862,6 +2874,8 @@ def _cmd_music(args: argparse.Namespace) -> int:
             clear_under=args.clear_under,
             duck=args.duck,
             clear_duck=args.clear_duck,
+            event=args.event,
+            until_event=args.until_event,
             reset=args.reset,
             plan=args.plan,
         )
@@ -2870,7 +2884,7 @@ def _cmd_music(args: argparse.Namespace) -> int:
 
 def _passages(specs: list[str] | None) -> list[dict[str, Any]] | None:
     """`ASSET,START[,SRC_IN[,CROSSFADE]]` — START is a word index when it is an
-    integer and a phrase otherwise, which is why a phrase with a comma in it
+    integer, an event when it is `event:NAME`, and a phrase otherwise, which is why a phrase with a comma in it
     goes through MCP's `passages` instead."""
     if specs is None:
         return None
@@ -2880,7 +2894,9 @@ def _passages(specs: list[str] | None) -> list[dict[str, Any]] | None:
         if len(parts) < 2 or len(parts) > 4 or not parts[0] or not parts[1]:
             raise SystemExit(f"--passage wants ASSET,START[,SRC_IN[,CROSSFADE]], not {spec!r}")
         passage: dict[str, Any] = {"asset": parts[0]}
-        if parts[1].lstrip("-").isdigit():
+        if parts[1].startswith("event:"):
+            passage["event"] = parts[1].removeprefix("event:")
+        elif parts[1].lstrip("-").isdigit():
             passage["word_index_start"] = int(parts[1])
         else:
             passage["phrase_start"] = parts[1]

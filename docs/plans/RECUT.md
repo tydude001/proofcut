@@ -103,6 +103,7 @@ moment's music.** `_overlay_instant` (ops.py:13706) already resolves a word
   seam that has to stay single.
 - The bed's `src_in` is what puts the drop on `words`. A1 already has it; it
   just has never had an event to line up against.
+- Shipped — see HISTORY.md § The bed and the cues take an event.
 
 **3. A tail with no cue lane (M). Moves: end card.** When a head or tail is
 set and there are zero cues, `_build_mlt` puts in one identity shot covering

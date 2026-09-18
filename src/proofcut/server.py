@@ -770,6 +770,11 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "cursor had got to, which is right for re-using a clip and wrong for "
             "showing the thing you searched for. A card takes none."
         ),
+        "event": (
+            "Start the picture on this event of clip_id instead of a word: `name`, or "
+            "`name#k` when the name repeats — a screen recording's logged moments, "
+            "for a clip with no transcript. Not with word_index or phrase."
+        ),
     },
     "cue_rm": {
         "clip_id": "The transcript the cue was addressed against.",
@@ -778,6 +783,7 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "Address it by wording instead; it resolves to its first word, the way "
             "`cue_add` placed it."
         ),
+        "event": "The event the cue sits on, spelled as `cue_add` was given it.",
     },
     "cue_ls": {
         "clip_id": "List one clip's cues. Omit it for the whole table.",
@@ -1142,7 +1148,7 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "a held frame has no sound. It plays from its own head; shorter than its "
             "span pads with real silence, longer is trimmed."
         ),
-        "clip_id": "The transcript the bed's word indices address — the VO, not the music.",
+        "clip_id": "The clip whose words (or events) the bed addresses — the VO, not the music.",
         "word_index_start": (
             "Where the bed comes in, as a word of `clip_id`. The bed stores words and "
             "never a length, so a cut before either boundary moves it automatically."
@@ -1182,8 +1188,8 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         ),
         "passages": (
             "Replace the list of passages after the bed's own asset: each `{asset, "
-            "word_index_start | phrase_start, src_in?, crossfade?, rotate?}`. `[]` "
-            "clears them."
+            "word_index_start | phrase_start | event, src_in?, crossfade?, rotate?}`. "
+            "`[]` clears them."
         ),
         "under": (
             "Level the whole bed this many LU below the voice, measured. It is a "
@@ -1198,6 +1204,11 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "the audio gate against a word-span duck's 3.39."
         ),
         "clear_duck": "Return the bed to one level, with no ducking.",
+        "event": (
+            "Start the bed on this event of clip_id instead of a word: `name`, or "
+            "`name#k` when the name repeats. Replaces a start word."
+        ),
+        "until_event": "End the bed on this event of clip_id. Replaces an end word; `clear_end` drops it.",
         "reset": "Drop the bed entirely.",
     },
     "vo_extend": {
@@ -2860,8 +2871,11 @@ def cue_add(
     after: int = -1,
     occurrence: int | None = None,
     src_start: float | None = None,
+    event: str | None = None,
 ) -> dict[str, Any]:
     """Add a picture cue: from `word_index` of `clip_id` onward, show `asset`.
+
+    Or from an `event` of `clip_id`, for a recording with no words.
 
     Source-addressed like a word range — `asset` is an opaque key or path,
     not checked against disk here; `build_shots` resolves it, the same way
@@ -2900,6 +2914,7 @@ def cue_add(
         after=after,
         occurrence=occurrence,
         src_start=src_start,
+        event=event,
     )
 
 
@@ -2912,6 +2927,7 @@ def cue_rm(
     phrase: str | None = None,
     after: int = -1,
     occurrence: int | None = None,
+    event: str | None = None,
 ) -> dict[str, Any]:
     """Remove one picture cue, addressed the way `cue_add` placed it.
 
@@ -2921,7 +2937,7 @@ def cue_rm(
     re-project from the cues that remain; no other cue moves. Replacing a cue's asset is `cue_rm` then `cue_add`, since `cue_add`
     refuses an occupied word. `undo` puts it back.
     """
-    return ops.cue_rm(path, clip_id, word_index, phrase=phrase, after=after, occurrence=occurrence)
+    return ops.cue_rm(path, clip_id, word_index, phrase=phrase, after=after, occurrence=occurrence, event=event)
 
 
 @_tool()
@@ -3812,6 +3828,8 @@ def music(
     clear_under: bool = False,
     duck: float | None = None,
     clear_duck: bool = False,
+    event: str | None = None,
+    until_event: str | None = None,
     reset: bool = False,
     plan: bool = False,
 ) -> dict[str, Any]:
@@ -3821,7 +3839,9 @@ def music(
     indices and an asset, never a length: it starts where `word_index_start`
     of `clip_id` (the VO transcript) lands on the timeline and runs to where
     `word_index_end` ends — or to the end of the edit — so a cut before either
-    boundary moves both. Duration is derived at build time.
+    boundary moves both. Duration is derived at build time. On a recording
+    with no words, `event`/`until_event` (and a passage's `event`) address
+    its logged events instead.
 
     The first set needs `asset`, `clip_id` and a start (`word_index_start` or
     `phrase_start`) together; after that each field updates on its own. A
@@ -3857,6 +3877,8 @@ def music(
         clear_under=clear_under,
         duck=duck,
         clear_duck=clear_duck,
+        event=event,
+        until_event=until_event,
         reset=reset,
         plan=plan,
     )

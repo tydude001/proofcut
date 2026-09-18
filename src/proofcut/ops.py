@@ -2432,6 +2432,35 @@ def _cue_echo(parsed: tx.Transcript, word_index: int) -> dict[str, Any]:
     }
 
 
+def _cue_key(cue: dict[str, Any]) -> tuple[str, int | None, str | None]:
+    """A cue's address: its clip and a word index, or its clip and an event.
+
+    Every cue has exactly one of the two (RECUT.md step 2), so this is what
+    identity, lookup and the manifest's order go through — never
+    `cue["word_index"]`, which an event cue has not got.
+    """
+    word = cue.get("word_index")
+    return (str(cue["clip_id"]), None if word is None else int(word), cue.get("event"))
+
+
+def _cue_order(cue: dict[str, Any]) -> tuple[str, bool, int, str]:
+    """`cue_ls`' order: by clip, word cues by index, then event cues by name."""
+    clip_id, word, event = _cue_key(cue)
+    return (clip_id, word is None, word if word is not None else 0, event or "")
+
+
+def _cue_address_text(cue: dict[str, Any]) -> str:
+    clip_id, word, event = _cue_key(cue)
+    return f"{clip_id!r} event {event!r}" if word is None else f"{clip_id!r} word {word}"
+
+
+def _event_echo(project: Project, clip_id: str, event: str) -> dict[str, Any]:
+    """An event address's echo: the event, where it is, and its neighbours —
+    the word echo's shape for the other address space."""
+    resolved = resolve_event(media.get_clip(project, clip_id), event)
+    return {"event": str(event), "at": resolved["at"], "context": resolved["context"]}
+
+
 def cue_add(
     path: Path | str,
     clip_id: str,
@@ -2442,8 +2471,15 @@ def cue_add(
     after: int = -1,
     occurrence: int | None = None,
     src_start: float | None = None,
+    event: str | None = None,
 ) -> dict[str, Any]:
     """Add a cue: from `word_index` of `clip_id` onward, show `asset`.
+
+    **Or from an event of `clip_id`** (`event`, `name` or `name#k`): a
+    screen recording has no words, and its recorder's log is what says when
+    things happen in it (RECUT.md step 2). It resolves through the same
+    instant overlays and insets use, and a cut that removes it refuses the
+    projection the way a cut word does.
 
     Source-addressed, like every other word-indexed tool here — `asset` is
     not resolved or checked against disk; that is the shot projection's job
@@ -2487,15 +2523,21 @@ def cue_add(
         raise tx.TranscriptError(
             "cue_add needs asset — a cue says what to show, not only where"
         )
+    if event is not None and (word_index is not None or phrase is not None):
+        raise ProjectError("a cue is at a word (word_index or phrase) or at an event, not both")
     project = Project.open(path)
     media.get_clip(project, clip_id)
-    parsed = _transcript(project, clip_id)
-    word_index, _ = _resolve_word_or_phrase(
-        parsed, word_index=word_index, phrase=phrase, after=after, occurrence=occurrence, edge="first"
-    )
-    echo = _cue_echo(parsed, word_index)
-
-    cue: dict[str, Any] = {"clip_id": clip_id, "word_index": word_index, "asset": asset}
+    cue: dict[str, Any]
+    if event is not None:
+        echo = _event_echo(project, clip_id, event)
+        cue = {"clip_id": clip_id, "event": str(event), "asset": asset}
+    else:
+        parsed = _transcript(project, clip_id)
+        word_index, _ = _resolve_word_or_phrase(
+            parsed, word_index=word_index, phrase=phrase, after=after, occurrence=occurrence, edge="first"
+        )
+        echo = _cue_echo(parsed, word_index)
+        cue = {"clip_id": clip_id, "word_index": word_index, "asset": asset}
     if phrase is not None:
         cue["phrase"] = phrase
     if src_start is not None:
@@ -2514,13 +2556,14 @@ def cue_add(
 
     manifest = project.read_manifest()
     cues = manifest.setdefault("cues", [])
-    if any(c["clip_id"] == clip_id and c["word_index"] == word_index for c in cues):
+    if any(_cue_key(c) == _cue_key(cue) for c in cues):
+        where = f"event {event!r}" if event is not None else f"word {word_index}"
         raise tx.TranscriptError(
-            f"{clip_id!r} already has a cue at word {word_index} — remove it "
+            f"{clip_id!r} already has a cue at {where} — remove it "
             "with cue_rm first (CLI: `proofcut cue rm`) if you meant to replace it"
         )
     cues.append(cue)
-    cues.sort(key=lambda c: (c["clip_id"], c["word_index"]))
+    cues.sort(key=_cue_order)
     project.write_manifest(manifest)
     return {
         "clip_id": clip_id,
@@ -2540,24 +2583,31 @@ def cue_rm(
     phrase: str | None = None,
     after: int = -1,
     occurrence: int | None = None,
+    event: str | None = None,
 ) -> dict[str, Any]:
     """Remove the cue at `clip_id` word `word_index` — or wherever `phrase`
     resolves to (its first word, `cue_add`'s own binding — the same address
-    space, for symmetry)."""
+    space, for symmetry) — or the cue at `event`, spelled as it was added."""
+    if event is not None and (word_index is not None or phrase is not None):
+        raise ProjectError("a cue is at a word (word_index or phrase) or at an event, not both")
     project = Project.open(path)
-    parsed = _transcript(project, clip_id)
-    word_index, _ = _resolve_word_or_phrase(
-        parsed, word_index=word_index, phrase=phrase, after=after, occurrence=occurrence, edge="first"
-    )
+    parsed: tx.Transcript | None = None
+    if event is None:
+        parsed = _transcript(project, clip_id)
+        word_index, _ = _resolve_word_or_phrase(
+            parsed, word_index=word_index, phrase=phrase, after=after, occurrence=occurrence, edge="first"
+        )
+    wanted = (clip_id, None if event is not None else word_index, None if event is None else str(event))
     manifest = project.read_manifest()
     cues = manifest.get("cues", [])
-    match = next(
-        (c for c in cues if c["clip_id"] == clip_id and c["word_index"] == word_index), None
-    )
+    match = next((c for c in cues if _cue_key(c) == wanted), None)
     if match is None:
-        known = ", ".join(f"{c['clip_id']}:{c['word_index']}" for c in cues) or "none"
+        known = ", ".join(
+            f"{c['clip_id']}:{c['word_index'] if c.get('word_index') is not None else c.get('event')}" for c in cues
+        ) or "none"
+        where = f"event {event!r}" if event is not None else f"word {word_index}"
         raise tx.TranscriptError(
-            f"no cue at {clip_id!r} word {word_index} (existing cues: {known}) — see cue_ls"
+            f"no cue at {clip_id!r} {where} (existing cues: {known}) — see cue_ls"
         )
     manifest["cues"] = [c for c in cues if c is not match]
     project.write_manifest(manifest)
@@ -2566,7 +2616,7 @@ def cue_rm(
         "asset": match["asset"],
         "src_start": match.get("src_start"),
         "cues": len(manifest["cues"]),
-        **_cue_echo(parsed, word_index),
+        **(_cue_echo(parsed, word_index) if parsed is not None else {"event": str(event), "word_index": None}),
     }
 
 
@@ -2576,27 +2626,38 @@ def cue_ls(path: Path | str, clip_id: str | None = None) -> dict[str, Any]:
     Read-only. `clip_id` narrows to one clip's cues; omit it to see every
     cue in the project. Ordered by `(clip_id, word_index)`, not by resolved
     timeline position — that ordering is `build_shots`'s job, because it
-    depends on the edit's surviving ranges.
+    depends on the edit's surviving ranges. An event cue follows its clip's
+    word cues, echoed with its event (`word_index` None); one whose event is
+    no longer in the clip's log says so as `event_error` rather than hiding
+    the rest of the table.
     """
     project = Project.open(path)
     cues = project.read_manifest().get("cues", [])
     if clip_id is not None:
         cues = [c for c in cues if c["clip_id"] == clip_id]
-    cues = sorted(cues, key=lambda c: (c["clip_id"], c["word_index"]))
+    cues = sorted(cues, key=_cue_order)
 
     transcripts: dict[str, tx.Transcript] = {}
     entries = []
     for cue in cues:
         cid = cue["clip_id"]
-        if cid not in transcripts:
-            transcripts[cid] = _transcript(project, cid)
+        echo: dict[str, Any]
+        if cue.get("event") is not None:
+            try:
+                echo = {"word_index": None, **_event_echo(project, cid, cue["event"])}
+            except ProjectError as exc:
+                echo = {"word_index": None, "event": cue["event"], "event_error": str(exc)}
+        else:
+            if cid not in transcripts:
+                transcripts[cid] = _transcript(project, cid)
+            echo = _cue_echo(transcripts[cid], cue["word_index"])
         entries.append(
             {
                 "clip_id": cid,
                 "asset": cue["asset"],
                 "src_start": cue.get("src_start"),
                 "phrase": cue.get("phrase"),
-                **_cue_echo(transcripts[cid], cue["word_index"]),
+                **echo,
             }
         )
     return {"cues": entries, "count": len(entries)}
@@ -2695,10 +2756,11 @@ def cue_reresolve(
         report = {
             "clip_id": cue["clip_id"],
             "asset": cue["asset"],
-            "word_index": cue["word_index"],
+            "word_index": cue.get("word_index"),
+            **({"event": cue["event"]} if cue.get("event") is not None else {}),
             **outcome,
         }
-        if apply and outcome["action"] == "resolved" and outcome["word_index"] != cue["word_index"]:
+        if apply and outcome["action"] == "resolved" and outcome["word_index"] != cue.get("word_index"):
             cue["word_index"] = outcome["word_index"]
             report["applied"] = True
             changed = True
@@ -2725,7 +2787,7 @@ def cue_reresolve(
         if apply:
             if (
                 start_outcome["action"] == "resolved"
-                and start_outcome["word_index"] != bed["word_index_start"]
+                and start_outcome["word_index"] != bed.get("word_index_start")
             ):
                 bed["word_index_start"] = start_outcome["word_index"]
                 music_report["start"] = {**start_outcome, "applied": True}
@@ -2739,7 +2801,7 @@ def cue_reresolve(
                 changed = True
 
     if changed:
-        cues.sort(key=lambda c: (c["clip_id"], c["word_index"]))
+        cues.sort(key=_cue_order)
         marks.sort(key=lambda m: (m["clip_id"], int(m["word_index"])))
         project.write_manifest(manifest)
 
@@ -3186,26 +3248,31 @@ def build_shots(
             "(CLI: `proofcut cue add`) before projecting shots"
         )
 
-    transcripts: dict[str, tx.Transcript] = {}
     marks: list[dict[str, Any]] = []
     for cue in cues:
         clip_id = cue["clip_id"]
-        if clip_id not in transcripts:
-            transcripts[clip_id] = _transcript(project, clip_id)
-        echo = _cue_echo(transcripts[clip_id], cue["word_index"])
-        span = edit.timeline_span(clip_id, echo["start"], echo["end"])
-        if span is None:
-            raise tl.TimelineError(
-                f"cue at {clip_id!r} word {cue['word_index']} ({echo['text']!r}) "
-                "was cut from the edit — remove or move the cue (cue_rm/cue_add) "
-                "before projecting shots"
-            )
-        timeline_start, _ = span
+        # A word or an event, through the one resolver overlays and insets
+        # use (RECUT.md step 2) — this seam stays single.
+        timeline_start, echo = _overlay_instant(
+            project,
+            edit,
+            cue,
+            word_key="word_index",
+            event_key="event",
+            edge=0,
+            what="starts",
+            removed=lambda address: tl.TimelineError(
+                f"cue at {address} was cut from the edit — remove or move the cue "
+                "(cue_rm/cue_add) before projecting shots"
+            ),
+        )
         marks.append(
             {
                 "clip_id": clip_id,
-                "word_index": cue["word_index"],
-                "text": echo["text"],
+                "word_index": cue.get("word_index"),
+                "event": cue.get("event"),
+                # An event has no words; its name is what a lane labels it by.
+                "text": echo["text"] if cue.get("event") is None else cue["event"],
                 "asset": cue["asset"],
                 "src_pin": cue.get("src_start"),
                 **_resolve_asset(project, cue["asset"]),
@@ -3219,9 +3286,9 @@ def build_shots(
     for previous, current in pairwise(marks):
         if current["start_frame"] <= previous["start_frame"]:
             raise tl.TimelineError(
-                f"cue at {current['clip_id']!r} word {current['word_index']} lands "
-                f"at or before the previous cue ({previous['clip_id']!r} word "
-                f"{previous['word_index']}) — two cues resolved to the same instant"
+                f"cue at {_cue_address_text(current)} lands "
+                f"at or before the previous cue ({_cue_address_text(previous)}) "
+                "— two cues resolved to the same instant"
             )
 
     shots = []
@@ -3697,7 +3764,7 @@ def properties(
             f"word_index {word_index} is out of range for {clip_id!r} "
             f"(has {total_words} words)"
         )
-    cue = next((c for c in clip_cues["cues"] if c["word_index"] == word_index), None)
+    cue = next((c for c in clip_cues["cues"] if c.get("word_index") == word_index), None)
     result["cue"] = cue
     if cue is None:
         lo, hi = max(0, word_index - 3), word_index + 3
@@ -11653,18 +11720,26 @@ def _stored_music(project: Project) -> dict[str, Any] | None:
     try:
         asset = str(stored["asset"])
         clip_id = str(stored["clip_id"])
-        word_index_start = int(stored["word_index_start"])
+        # A word or an event starts the bed (RECUT.md step 2); a screen
+        # recording has only events.
+        event = str(stored["event"]) if stored.get("event") is not None else None
+        word_index_start = None if event is not None else int(stored["word_index_start"])
     except (KeyError, TypeError, ValueError) as exc:
         raise ProjectError(
             f"{project.manifest_path}'s {MUSIC_KEY!r} must hold at least "
-            f"'asset', 'clip_id' and an integer 'word_index_start', not {stored!r}"
+            f"'asset', 'clip_id' and an integer 'word_index_start' or an 'event', not {stored!r}"
         ) from exc
     end = stored.get("word_index_end")
+    until_event = stored.get("until_event")
     try:
         passages = [
             {
                 "asset": str(passage["asset"]),
-                "word_index_start": int(passage["word_index_start"]),
+                **(
+                    {"event": str(passage["event"])}
+                    if passage.get("event") is not None
+                    else {"word_index_start": int(passage["word_index_start"])}
+                ),
                 "src_in": float(passage.get("src_in", 0.0)),
                 "crossfade": float(passage.get("crossfade", stored.get("crossfade", 0.0))),
                 "rotate": [str(a) for a in passage.get("rotate", [])],
@@ -11676,7 +11751,7 @@ def _stored_music(project: Project) -> dict[str, Any] | None:
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise ProjectError(
             f"{project.manifest_path}'s {MUSIC_KEY!r} passages must each hold an "
-            f"'asset' and an integer 'word_index_start', and 'rotate' a list of clip ids — {exc}"
+            f"'asset' and an integer 'word_index_start' or an 'event', and 'rotate' a list of clip ids — {exc}"
         ) from exc
     under = stored.get("under")
     duck_db = stored.get("duck")
@@ -11684,7 +11759,11 @@ def _stored_music(project: Project) -> dict[str, Any] | None:
         "asset": asset,
         "clip_id": clip_id,
         "word_index_start": word_index_start,
-        "word_index_end": int(end) if end is not None else None,
+        "word_index_end": int(end) if end is not None and until_event is None else None,
+        # Present only when set, so a word-addressed bed reads exactly as it
+        # did before events could address one.
+        **({"event": event} if event is not None else {}),
+        **({"until_event": str(until_event)} if until_event is not None else {}),
         "fade_in": float(stored.get("fade_in", 0.0)),
         "fade_out": float(stored.get("fade_out", 0.0)),
         # Additive-optional, so a bed stored before passages existed reads as
@@ -11733,10 +11812,20 @@ def music(
     clear_under: bool = False,
     duck: float | None = None,
     clear_duck: bool = False,
+    event: str | None = None,
+    until_event: str | None = None,
     reset: bool = False,
     plan: bool = False,
 ) -> dict[str, Any]:
     """Read or change the A2 music bed this project mixes under its edit.
+
+    **A boundary can be an event of `clip_id` instead of a word** (RECUT.md
+    step 2): `event` starts the bed there, `until_event` ends it there, and a
+    passage takes `event` in place of `word_index_start`. A screen recording
+    has no words, and its recorder's log is what says when the transcript
+    appeared — so a passage at `event="words"` with `src_in` at the track's
+    drop is how the drop lands on it. Setting either address replaces the
+    other for that boundary; `clear_end` clears both.
 
     **`duck` pulls the bed that many dB down while the voice is speaking** and
     lets it back up in the pauses — gated on the Edit's own audio at build
@@ -11818,13 +11907,19 @@ def music(
             phrase_end,
             fade_in,
             fade_out,
+            event,
+            until_event,
         )
     ):
         raise ProjectError("pass fields to change, or `reset`, not both")
-    if clear_end and (word_index_end is not None or phrase_end is not None):
+    if clear_end and (word_index_end is not None or phrase_end is not None or until_event is not None):
         raise ProjectError(
-            "pass `word_index_end`/`phrase_end` or `clear_end`, not both"
+            "pass `word_index_end`/`phrase_end`/`until_event` or `clear_end`, not both"
         )
+    if event is not None and (word_index_start is not None or phrase_start is not None):
+        raise ProjectError("the bed starts at a word (word_index_start/phrase_start) or at an event, not both")
+    if until_event is not None and (word_index_end is not None or phrase_end is not None):
+        raise ProjectError("the bed ends at a word (word_index_end/phrase_end) or at an event, not both")
 
     project = Project.open(path)
     stored = _stored_music(project)
@@ -11845,6 +11940,8 @@ def music(
             passages,
             under,
             duck,
+            event,
+            until_event,
         )
     ) or clear_under or clear_duck
 
@@ -11889,15 +11986,31 @@ def music(
                 edge="last",
             )
 
+        # Each boundary is a word or an event; naming one address drops the
+        # other, and naming neither keeps whichever is stored.
+        start_event = (
+            str(event) if event is not None
+            else None if resolved_start is not None
+            else base.get("event")
+        )  # fmt: skip
+        end_event = (
+            str(until_event) if until_event is not None
+            else None if (clear_end or resolved_end is not None)
+            else base.get("until_event")
+        )  # fmt: skip
         merged: dict[str, Any] = {
             "asset": asset if asset is not None else base.get("asset"),
             "clip_id": resolved_clip_id,
             "word_index_start": (
-                int(resolved_start) if resolved_start is not None else base.get("word_index_start")
+                None
+                if start_event is not None
+                else int(resolved_start)
+                if resolved_start is not None
+                else base.get("word_index_start")
             ),
             "word_index_end": (
                 None
-                if clear_end
+                if clear_end or end_event is not None
                 else int(resolved_end)
                 if resolved_end is not None
                 else base.get("word_index_end")
@@ -11905,6 +12018,10 @@ def music(
             "fade_in": float(fade_in) if fade_in is not None else base.get("fade_in", 0.0),
             "fade_out": float(fade_out) if fade_out is not None else base.get("fade_out", 0.0),
         }
+        if start_event is not None:
+            merged["event"] = start_event
+        if end_event is not None:
+            merged["until_event"] = end_event
         # A raw index invalidates a previously-stored phrase for that same
         # field — the caller is no longer trusting the phrase to find it.
         stored_phrase_start = (
@@ -11931,6 +12048,8 @@ def music(
         if passages is not None:
             resolved_passages: list[dict[str, Any]] = []
             previous = int(merged["word_index_start"]) if merged["word_index_start"] is not None else -1
+            if passages and resolved_clip_id is not None:
+                media.get_clip(project, resolved_clip_id)
             for number, raw in enumerate(passages):
                 if not isinstance(raw, dict) or "asset" not in raw:
                     raise ProjectError(f"music passage {number} needs an 'asset', not {raw!r}")
@@ -11950,16 +12069,20 @@ def music(
                     passage["phrase_start"] = str(raw["phrase_start"])
                 elif raw.get("word_index_start") is not None:
                     passage["word_index_start"] = int(raw["word_index_start"])
+                elif raw.get("event") is not None:
+                    passage["event"] = str(raw["event"])
                 else:
                     raise ProjectError(
-                        f"music passage {number} ({raw['asset']!r}) needs a word_index_start or phrase_start"
+                        f"music passage {number} ({raw['asset']!r}) needs a word_index_start, "
+                        "phrase_start or event"
                     )
                 for key in ("src_in", "crossfade"):
                     if raw.get(key) is not None:
                         passage[key] = float(raw[key])
                 if raw.get("rotate"):
                     passage["rotate"] = [str(a) for a in raw["rotate"]]
-                previous = passage["word_index_start"]
+                if "word_index_start" in passage:
+                    previous = passage["word_index_start"]
                 resolved_passages.append(passage)
         else:
             resolved_passages = [
@@ -11987,13 +12110,15 @@ def music(
                 )
             merged["duck"] = resolved_duck
 
-        if merged["asset"] is None or merged["clip_id"] is None or merged["word_index_start"] is None:
+        if merged["asset"] is None or merged["clip_id"] is None or (
+            merged["word_index_start"] is None and merged.get("event") is None
+        ):
             raise ProjectError(
                 "a music bed needs `asset`, `clip_id` and `word_index_start` "
-                "(or `phrase_start`) set together the first time — there is "
-                "no bed without music to play, a transcript to address, and "
-                "a word to start on. Either alone after that updates its own "
-                "field."
+                "(or `phrase_start`, or `event`) set together the first time — "
+                "there is no bed without music to play, a clip to address, and "
+                "a word or event to start on. Either alone after that updates "
+                "its own field."
             )
         if str(merged["asset"]).startswith("card:"):
             raise ProjectError(
@@ -12016,7 +12141,20 @@ def music(
                     f"music asset must be a clip_id, not {extra!r} — a held frame has no sound to mix"
                 )
             media.get_clip(project, extra)
-        if merged["word_index_end"] is not None and merged["word_index_end"] < merged["word_index_start"]:
+        # An event names itself against the clip's log here, so a typo'd name
+        # fails now and not three calls later inside `_build_mlt`.
+        clip_record = media.get_clip(project, str(merged["clip_id"]))
+        for name in (
+            merged.get("event"), merged.get("until_event"),
+            *(passage.get("event") for passage in merged.get("passages", [])),
+        ):  # fmt: skip
+            if name is not None:
+                resolve_event(clip_record, name)
+        if (
+            merged["word_index_end"] is not None
+            and merged["word_index_start"] is not None
+            and merged["word_index_end"] < merged["word_index_start"]
+        ):
             raise ProjectError(
                 f"music word_index_end ({merged['word_index_end']}) sits before "
                 f"word_index_start ({merged['word_index_start']}) — the bed runs "
@@ -12038,16 +12176,28 @@ def music(
 
     # Anything taking a word index echoes the words it resolved to (CLAUDE.md)
     # — an index one past the intended phrase reads correctly on its own.
+    # An event boundary echoes its event the same way (`_event_echo`).
     start_word: dict[str, Any] | None = None
     end_word: dict[str, Any] | None = None
     passage_words: list[dict[str, Any]] = []
     if state is not None:
-        parsed = _transcript(project, state["clip_id"])
-        start_word = _cue_echo(parsed, state["word_index_start"])
-        if state["word_index_end"] is not None:
-            end_word = _cue_echo(parsed, state["word_index_end"])
+        clip = str(state["clip_id"])
+        words_used = state.get("word_index_start") is not None or state.get("word_index_end") is not None or any(
+            passage.get("event") is None for passage in state.get("passages", [])
+        )
+        parsed = _transcript(project, clip) if words_used else None
+
+        def echo(word: int | None, name: str | None) -> dict[str, Any] | None:
+            if name is not None:
+                return _event_echo(project, clip, name)
+            if word is not None and parsed is not None:
+                return _cue_echo(parsed, word)
+            return None
+
+        start_word = echo(state.get("word_index_start"), state.get("event"))
+        end_word = echo(state.get("word_index_end"), state.get("until_event"))
         passage_words = [
-            {"asset": passage["asset"], **_cue_echo(parsed, passage["word_index_start"])}
+            {"asset": passage["asset"], **(echo(passage.get("word_index_start"), passage.get("event")) or {})}
             for passage in state.get("passages", [])
         ]
 
@@ -12121,33 +12271,28 @@ def _music_plan(
         return None
     frame = (clock or _Clock(rate)).frame
 
-    parsed = _transcript(project, stored["clip_id"])
-    start_echo = _cue_echo(parsed, stored["word_index_start"])
-    span = edit.timeline_span(stored["clip_id"], start_echo["start"], start_echo["end"])
-    if span is None:
-        raise ProjectError(
-            f"the music bed starts at {stored['clip_id']!r} word "
-            f"{stored['word_index_start']} ({start_echo['text']!r}), which a cut "
-            "removed from the timeline — move the start word or restore the "
-            "material (music, or CLI `proofcut music`)"
-        )
-    start_seconds = span[0]
+    # Every boundary is a word or an event, through `_overlay_instant` — the
+    # resolver overlays, insets and the cues share (RECUT.md step 2).
+    start_seconds, _ = _overlay_instant(
+        project, edit, stored, word_key="word_index_start", event_key="event", edge=0, what="starts",
+        removed=lambda address: ProjectError(
+            f"the music bed starts at {address}, which a cut removed from the timeline — "
+            "move the bed's start or restore the material (music, or CLI `proofcut music`)"
+        ),
+    )  # fmt: skip
 
-    to_end = stored["word_index_end"] is None
+    to_end = stored["word_index_end"] is None and stored.get("until_event") is None
     if to_end:
         end_seconds = edit.duration
         end_frame = edit_frames
     else:
-        end_echo = _cue_echo(parsed, stored["word_index_end"])
-        end_span = edit.timeline_span(stored["clip_id"], end_echo["start"], end_echo["end"])
-        if end_span is None:
-            raise ProjectError(
-                f"the music bed ends at {stored['clip_id']!r} word "
-                f"{stored['word_index_end']} ({end_echo['text']!r}), which a cut "
-                "removed from the timeline — move the end word, or clear it to "
-                "run to the end (music clear_end)"
-            )
-        end_seconds = end_span[1]
+        end_seconds, _ = _overlay_instant(
+            project, edit, stored, word_key="word_index_end", event_key="until_event", edge=1, what="ends",
+            removed=lambda address: ProjectError(
+                f"the music bed ends at {address}, which a cut removed from the timeline — "
+                "move the bed's end, or clear it to run to the end (music clear_end)"
+            ),
+        )  # fmt: skip
         end_frame = min(frame(end_seconds), edit_frames)
 
     start_frame = min(frame(start_seconds), end_frame)
@@ -12171,24 +12316,28 @@ def _music_plan(
                 "crossfade": 0.0,
                 "rotate": stored["rotate"],
                 "word_index_start": stored["word_index_start"],
+                **({"event": stored["event"]} if stored.get("event") is not None else {}),
             },
         )
     ]
     for passage in stored["passages"]:
-        echo = _cue_echo(parsed, passage["word_index_start"])
-        span = edit.timeline_span(stored["clip_id"], echo["start"], echo["end"])
-        if span is None:
-            raise ProjectError(
-                f"a music passage ({passage['asset']!r}) starts at {stored['clip_id']!r} "
-                f"word {passage['word_index_start']} ({echo['text']!r}), which a cut "
-                "removed from the timeline — move the passage's start word"
-            )
-        at = min(frame(span[0]), end_frame)
+        passage_seconds, echo = _overlay_instant(
+            project, edit, {**passage, "clip_id": stored["clip_id"]},
+            word_key="word_index_start", event_key="event", edge=0, what="starts",
+            removed=lambda address, asset=passage["asset"]: ProjectError(
+                f"a music passage ({asset!r}) starts at {address}, which a cut removed "
+                "from the timeline — move the passage's start"
+            ),
+        )  # fmt: skip
+        at = min(frame(passage_seconds), end_frame)
         if at <= starts[-1][0]:
+            where = (
+                f"event {passage['event']!r}" if passage.get("event") is not None
+                else f"word {passage['word_index_start']} ({echo['text']!r})"
+            )  # fmt: skip
             raise ProjectError(
-                f"music passage {passage['asset']!r} starts at word "
-                f"{passage['word_index_start']} ({echo['text']!r}), not after the passage "
-                "before it — passages run forward, each from its own start word"
+                f"music passage {passage['asset']!r} starts at {where}, not after the passage "
+                "before it — passages run forward, each from its own start"
             )
         starts.append((at, passage))
 
@@ -13000,7 +13149,7 @@ def hold_add(
             manifest = project.read_manifest()
             cues = manifest.setdefault("cues", [])
             for cue in cues:
-                if cue["clip_id"] == clip_id and cue["word_index"] == resolved_cue:
+                if cue["clip_id"] == clip_id and cue.get("word_index") == resolved_cue:
                     cue["src_start"] = hold_plan["src_start"]
                     break
             holds = manifest.setdefault(HOLDS_KEY, [])
@@ -13028,7 +13177,7 @@ def hold_add(
         (
             c
             for c in manifest.get("cues", [])
-            if c["clip_id"] == clip_id and c["word_index"] == resolved_cue
+            if c["clip_id"] == clip_id and c.get("word_index") == resolved_cue
         ),
         None,
     )
@@ -13057,10 +13206,10 @@ def hold_add(
                 {"clip_id": clip_id, "word_index": resolved_cue, "asset": merged["asset"]}
             )
         for cue in cues:
-            if cue["clip_id"] == clip_id and cue["word_index"] == resolved_cue:
+            if cue["clip_id"] == clip_id and cue.get("word_index") == resolved_cue:
                 cue["asset"] = merged["asset"]
                 cue["src_start"] = hold_plan["src_start"]
-        cues.sort(key=lambda c: (c["clip_id"], c["word_index"]))
+        cues.sort(key=_cue_order)
         holds = manifest.setdefault(HOLDS_KEY, [])
         holds.append(merged)
         holds.sort(key=lambda h: (h["clip_id"], h["gap_word_index"]))
@@ -13101,7 +13250,7 @@ def hold_rm(path: Path | str, clip_id: str, gap_word_index: int) -> dict[str, An
     manifest["cues"] = [
         c
         for c in cues
-        if not (c["clip_id"] == clip_id and c["word_index"] == found["cue_word_index"])
+        if not (c["clip_id"] == clip_id and c.get("word_index") == found["cue_word_index"])
     ]
     project.write_manifest(manifest)
     return {"clip_id": clip_id, "gap_word_index": gap_word_index, "removed": found}
@@ -13154,7 +13303,7 @@ def hold_ls(path: Path | str) -> dict[str, Any]:
     edit = _load_edit(project)
     rate = _rate(project)
     cues_by_key = {
-        (c["clip_id"], c["word_index"]): c for c in project.read_manifest().get("cues", [])
+        (c["clip_id"], c.get("word_index")): c for c in project.read_manifest().get("cues", []) if c.get("event") is None
     }
 
     items: list[dict[str, Any]] = []
@@ -13525,7 +13674,7 @@ def hold_check(path: Path | str, render: Path | str) -> dict[str, Any]:
     rate = _rate(project)
     head_seconds = _head_seconds(project)
     cues_by_key = {
-        (c["clip_id"], c["word_index"]): c for c in project.read_manifest().get("cues", [])
+        (c["clip_id"], c.get("word_index")): c for c in project.read_manifest().get("cues", []) if c.get("event") is None
     }
 
     items: list[dict[str, Any]] = []
@@ -13741,16 +13890,23 @@ def _overlay_instant(
     edge: int,
     what: str,
     label: str | None = None,
+    removed: Callable[[str], Exception] | None = None,
 ) -> tuple[float, dict[str, Any]]:
     """Where one of an overlay's addresses plays, in Edit seconds, and its echo.
 
     A word resolves to its own span (`edge` 0 is where it starts, 1 where it
     ends) and an event to its instant. Either one a cut removed refuses by
     name — `build_shots`' orphan rule. `label` names the record in that
-    refusal; a retime's stretch passes its own.
+    refusal; a retime's stretch passes its own. `removed` builds the refusal
+    from the address instead, for a caller whose error type and wording are
+    already its contract (`build_shots`, the bed).
+
+    The one resolver for "a word or an event" (RECUT.md step 2): overlays,
+    retime, insets, the music bed and the cues all come through here, so
+    there is no second place deciding what an event address means.
     """
     clip_id = record["clip_id"]
-    label = label or f"an overlay ({record['card']!r})"
+    label = label or f"an overlay ({record.get('card')!r})"
     if record.get(word_key) is not None:
         parsed = _transcript(project, clip_id)
         index = int(record[word_key])
@@ -13759,18 +13915,18 @@ def _overlay_instant(
         echo = _cue_echo(parsed, index)
         span = edit.timeline_span(clip_id, echo["start"], echo["end"])
         if span is None:
-            raise ProjectError(
-                f"{label} {what} at {clip_id!r} word {index} "
-                f"({echo['text']!r}), which a cut removed from the timeline — move it"
-            )
+            address = f"{clip_id!r} word {index} ({echo['text']!r})"
+            if removed is not None:
+                raise removed(address)
+            raise ProjectError(f"{label} {what} at {address}, which a cut removed from the timeline — move it")
         return span[edge], echo
     event = resolve_event(media.get_clip(project, clip_id), str(record[event_key]))
     at = edit.timeline_time(clip_id, event["at"], closed_end=True)
     if at is None:
-        raise ProjectError(
-            f"{label} {what} at {clip_id!r} event "
-            f"{record[event_key]!r} ({event['at']}s), which a cut removed from the timeline"
-        )
+        address = f"{clip_id!r} event {record[event_key]!r} ({event['at']}s)"
+        if removed is not None:
+            raise removed(address)
+        raise ProjectError(f"{label} {what} at {address}, which a cut removed from the timeline")
     return at, event
 
 
@@ -18428,6 +18584,19 @@ def _reel_orphan_cues(
                 parsed_by_clip[clip_id] = _transcript(project, clip_id)
             except tx.TranscriptError:
                 parsed_by_clip[clip_id] = None
+        if cue.get("event") is not None:
+            # An event is an instant: it survives when it plays inside the
+            # kept span. One that no longer resolves is left for
+            # `build_shots` to refuse by name, the missing-transcript rule.
+            try:
+                at = edit.timeline_time(
+                    clip_id, resolve_event(media.get_clip(project, clip_id), cue["event"])["at"], closed_end=True
+                )
+            except ProjectError:
+                continue
+            if at is None or not start <= at < end:
+                orphans.append({**cue, "text": cue["event"]})
+            continue
         parsed = parsed_by_clip[clip_id]
         if parsed is None:
             # Nothing to resolve the word index against. Left in place rather
@@ -18441,7 +18610,7 @@ def _reel_orphan_cues(
     return orphans
 
 
-def _reel_cue_pins(project: Project) -> tuple[dict[tuple[str, int], float], str | None]:
+def _reel_cue_pins(project: Project) -> tuple[dict[tuple[str, int | None, str | None], float], str | None]:
     """Where in its asset each of the *film's* shots actually reads.
 
     The counterpart to `_reel_orphan_cues`, and the same class of failure one
@@ -18475,7 +18644,7 @@ def _reel_cue_pins(project: Project) -> tuple[dict[tuple[str, int], float], str 
     except _PICTURE_REFUSALS as exc:
         return {}, str(exc)
     return {
-        (shot["clip_id"], shot["word_index"]): round(float(shot["src_start"]), 3)
+        _cue_key(shot): round(float(shot["src_start"]), 3)
         for shot in shots
         if not shot.get("is_image")
     }, None
@@ -18484,7 +18653,7 @@ def _reel_cue_pins(project: Project) -> tuple[dict[tuple[str, int], float], str 
 def _reel_cue_table(
     cues: list[dict[str, Any]],
     orphans: list[dict[str, Any]],
-    pins: dict[tuple[str, int], float],
+    pins: dict[tuple[str, int | None, str | None], float],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """The derived cue table, and the in-points this derivation had to add.
 
@@ -18493,11 +18662,11 @@ def _reel_cue_table(
     add, and a cue somebody pinned by hand is the last thing a derivation
     should be rewriting.
     """
-    orphaned = {(cue["clip_id"], cue["word_index"]) for cue in orphans}
+    orphaned = {_cue_key(cue) for cue in orphans}
     kept: list[dict[str, Any]] = []
     pinned: list[dict[str, Any]] = []
     for cue in cues:
-        key = (cue["clip_id"], cue["word_index"])
+        key = _cue_key(cue)
         if key in orphaned:
             continue
         if cue.get("src_start") is None and key in pins:
@@ -18505,7 +18674,8 @@ def _reel_cue_table(
             pinned.append(
                 {
                     "clip_id": cue["clip_id"],
-                    "word_index": cue["word_index"],
+                    "word_index": cue.get("word_index"),
+                    **({"event": cue["event"]} if cue.get("event") is not None else {}),
                     "asset": cue["asset"],
                     "src_start": cue["src_start"],
                 }

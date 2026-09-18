@@ -127,6 +127,18 @@ function wordQuote(entry) {
 
 function cueLine(cue) {
   const wrap = el("div");
+  // An event cue has no words to quote (RECUT.md step 2): it says its event.
+  if (cue.event) {
+    wrap.append(
+      el(
+        "div",
+        "asset-meta",
+        `event ${cue.event}${cue.at != null ? ` · ${secs(cue.at)}` : ""} → ${cue.asset}` +
+          (cue.event_error ? ` — ${cue.event_error}` : ""),
+      ),
+    );
+    return wrap;
+  }
   wrap.append(
     el(
       "div",

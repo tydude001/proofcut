@@ -719,7 +719,7 @@ function shotTitle(shot, state, index) {
     shot.is_image
       ? "a card, held for the shot"
       : `reads the asset from ${fmt(shot.src_start)}${pinned ? " — pinned there by the cue" : ""}`,
-    `cue: ${shot.clip_id} word ${shot.word_index} — ${shot.text}`,
+    shot.event ? `cue: ${shot.clip_id} event ${shot.event}` : `cue: ${shot.clip_id} word ${shot.word_index} — ${shot.text}`,
   ];
   if (index === 0) lines.push("(the first shot covers from the open, not from its own cue's word)");
   return lines.join("\n");
@@ -786,7 +786,7 @@ function buildPictureRow(state, pxPerSec, duration) {
     // seekOnClick (below), so a shot click both inspects its cue AND seeks —
     // harmless, and it means this needs no stopPropagation.
     block.addEventListener("click", () => {
-      if (ctx) ctx.emit("inspect-word", { clipId: shot.clip_id, wordIndex: shot.word_index });
+      if (ctx && shot.word_index != null) ctx.emit("inspect-word", { clipId: shot.clip_id, wordIndex: shot.word_index });
     });
     row.append(block);
   });
@@ -875,7 +875,7 @@ function buildMusicRow(state, pxPerSec, duration) {
       music.under != null ? `levelled ${music.under} LU under the VO` : "at the asset's own level",
       music.to_end
         ? "no end word — the bed runs to the end of the timeline"
-        : `cue: ${music.clip_id} words ${music.word_index_start}–${music.word_index_end}`,
+        : `cue: ${music.clip_id} ${bedBoundary(music.word_index_start, music.event)}–${bedBoundary(music.word_index_end, music.until_event)}`,
       ...fades,
     ].join("\n");
     if (piece.fade_in) {
@@ -894,7 +894,10 @@ function buildMusicRow(state, pxPerSec, duration) {
     // and opens the bed's panel on the asset and the fades, the edits that do
     // not want a new span. A drag across the lane is the one that re-spans it.
     block.addEventListener("click", (event) => {
-      if (ctx) ctx.emit("inspect-word", { clipId: music.clip_id, wordIndex: music.word_index_start });
+      // An event-addressed bed has no start word to inspect (RECUT.md step 2).
+      if (ctx && music.word_index_start != null) {
+        ctx.emit("inspect-word", { clipId: music.clip_id, wordIndex: music.word_index_start });
+      }
       const lanes = $("track-lanes");
       if (!lanes) return;
       const rect = lanes.getBoundingClientRect();
@@ -1595,7 +1598,8 @@ function musicEcho() {
     // played: the lane behind this panel is showing the refusal, and a
     // panel that reads like an ordinary bed over it is the surface
     // disagreeing with itself.
-    return bed.refused ? `bed on ${bed.asset} — refused, see the lane` : `bed on ${bed.asset}`;
+    const at = bed.event ? ` from event ${bed.event}` : "";
+    return bed.refused ? `bed on ${bed.asset}${at} — refused, see the lane` : `bed on ${bed.asset}${at}`;
   }
   // A refused bed says so wherever it is drawn — the lane behind this panel
   // is showing the refusal, and a panel reading like an ordinary bed over it
@@ -1604,6 +1608,11 @@ function musicEcho() {
   if (!words) return `${mark}bed from word ${start}${end === null ? "" : ` to ${end}`}`;
   const head = `${mark}from ${cueEcho(words, start)}`;
   return end === null ? head : `${head}\nto ${cueEcho(words, end)}`;
+}
+
+/** A bed boundary as the lane's tooltip names it: a word, or an event. */
+function bedBoundary(word, event) {
+  return event ? `event ${event}` : `word ${word}`;
 }
 
 /** Clamped by the one `clampFloating`, with `--plan-max-h` set before the
