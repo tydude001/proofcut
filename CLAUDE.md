@@ -83,6 +83,12 @@ approved `clip-v6` — Tyler picked it at all nine moments of B7's native cut �
 is [docs/plans/RECUT.md](docs/plans/RECUT.md), written 2026-09-18: events
 for the bed and cues, a tail with no cue lane, a duck that hears every lane,
 trimmable sounds, levelled insets, the lower third's fonts, and a dissolve.
+Whether proofcut runs on local models alone — the four roles that already
+do (whisper, the VLM, faces, TTS), the director that is still Claude, what
+a local one would need from `PROOFCUT_AGENT_BIN` and the tool surface, and
+the hardware — is [docs/plans/LOCAL.md](docs/plans/LOCAL.md), written
+2026-09-18; the director half is **unmeasured**, and the note names the
+trial run that would measure it.
 Open-item status lives in the wiki, not here. **This repo is public: a
 goodsometimes video's production record (versions, renders, creative calls,
 release state) goes in `goodsometimes/ideas/<video>.md`**, and HISTORY.md
