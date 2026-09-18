@@ -93,6 +93,25 @@ uv run proofcut -C myproject mcp                             # ...bound to one p
 claude mcp add proofcut -- uv run --project /path/to/proofcut proofcut mcp
 ```
 
+**A mutating call commits when it lands.** No tool asks for confirmation, and
+`plan` is off unless the caller sets it — `cut_by_transcript` without
+`plan=true` edits the timeline at once. The schema says so to the client
+instead: every tool carries MCP's read-only/destructive/idempotent hints (the
+cuts, `undo` and `reel` are `destructiveHint: true`), and `plan`'s own
+description tells the agent to prefer it over doing and undoing. What makes
+unattended use safe is recovery, not a gate:
+
+- every write snapshots the timeline and manifest first, so `undo` walks it back;
+- a cut never touches the source media, and `restore` brings back anything cut;
+- a cut whose boundary lands on a word with a suspect whisper duration is
+  refused until the caller passes `confirm_suspect`;
+- a write against a manifest that changed under it is refused
+  (`ProjectConflictError`) rather than clobbering the other writer.
+
+If you want a gate, it belongs in the client: leave the destructive tools off
+its allow-list and it will ask before each one. The agent panel and
+`scripts/agent_trial.py` allow `mcp__proofcut__*`, so they never ask.
+
 ## Word indices and `locate`
 
 Word indices address the *original* recording and never renumber, so a range
