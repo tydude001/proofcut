@@ -17262,3 +17262,43 @@ tests in `test_ops_export_mlt.py` and `test_ops_music.py`.
 The three `test_install.py` Windows tests fail on this box with
 `NameError: enum_certificates`, on the unchanged HEAD as well, so they are
 not this change.
+
+## B7, run three — 2026-09-18
+
+Same brief, material and harness as § B7, run again after the recut, with
+goodsometimes' pack at its `launch` variant applied before the agent started.
+Run two's project and renders moved into its run directory
+(`trial/runs/20260918-172926/`). Run `trial/runs/20260918-200054`: 170 turns,
+$11.36, 23 min, a 59.47 s clip (A is 47.02 s). The agent rendered three
+times, watching each render and fixing the framing and a retime between.
+
+**It reached for all three new settings without being told:** `music
+loudness=-23` (A measures −23.3), `over_tail=true`, and `tail fade=1`
+(A's is 0.5).
+
+**Per moment against A**, from the loudness-matched copy at −21.7
+(`beats/round3/`, the moment page republished as round three). Beat
+boundaries come from the recorder's events mapped through the Edit and the
+warp. The same mapping reproduces round two's table to the millisecond.
+
+| Moment | A | B |
+|---|---|---|
+| Typing | 4.4 s −29.3 | 8.6 s −23.5 |
+| Send | 1.5 s −25.0 | 2.1 s −33.3 |
+| False start | 8.5 s −21.5 | 9.8 s −24.7 |
+| Sheets | 4.0 s −26.0 | 3.5 s −25.6 |
+| Timeline | 4.05 s −26.0 | 6.2 s −25.2 |
+| Film | 11.17 s −17.7 | 11.17 s −17.5 |
+| Report | 3.98 s −25.4 | 2.9 s −22.7 |
+| Terminal | 5.6 s −24.5 | 11.2 s −23.2 |
+| End card | 3.82 s −26.5 | 4.0 s −25.9 |
+
+The level now holds from the sheets to the end card. What is left is
+pacing, which is the agent's choice (the terminal at twice A's length, the
+opening at 8.6 s), and the intro lift before the drop that one bed level
+cannot make.
+
+**A candidate defect, not yet judged:** `verify` and `finish_check` refused
+every render with "no transcribed word survives on the timeline". Here the
+voice is a sound over a silent recording, so the agent had no speech check
+on this clip at all.
