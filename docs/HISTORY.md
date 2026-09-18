@@ -16805,3 +16805,29 @@ The rest, each named by the agent and read back here:
 - **`finish_report` calls inset and sound assets "unused".** Also a defect.
 - 117 of 279 keystrokes click, because 162 are thinned at 45 ms. That is the
   thinning rule working as written.
+
+## The review page had no stylesheet — 2026-09-18
+
+Tyler opened B7's A/B on his phone and said the page "looks terrible and is
+not mobile responsive". It had been unstyled since the CSP went in. `_send`
+sends `default-src 'self'`, and that blocks an inline `<style>` exactly as it
+blocks a script. The page's one stylesheet is inline, so the browser dropped
+every rule:
+- the 640px cap;
+- `width: 100%` on the video, so a 1920px `<video>` ran off a 390px screen;
+- the safe-area padding that § The window on an iPhone home screen added.
+
+Every test stayed green, because none of them asked whether a rule applied.
+
+The sheet now carries the page's per-response nonce, and `style-src` names
+it; `test_the_pages_stylesheet_is_allowed_by_its_own_csp` fails on the old
+code. The page was redone at the same time:
+- the A/B picks are large buttons showing which one is playing
+  (`aria-pressed`);
+- the shared player sticks while the verdicts scroll;
+- the forms stack on a phone with 16px fields, so iOS does not zoom;
+- light and dark follow the system.
+
+Checked through `verify-live` at 390x844: no overflow and no console errors,
+with picks landing at 0 ms and at 120 ms dwell. Dark mode was not rendered in
+that pass.

@@ -139,6 +139,11 @@ class Handler(BaseHTTPRequestHandler):
             # page with no script stays covered by default-src's implicit
             # script-src 'none' equivalent (no 'unsafe-inline', no nonce).
             csp += f"; script-src 'nonce-{nonce}'"
+            # The page's stylesheet is inline as well, and `default-src
+            # 'self'` blocks an inline <style> exactly as it blocks a script:
+            # without this every rule was dropped, and a 1920px <video> ran
+            # off a phone's screen at full width (2026-09-18).
+            csp += f"; style-src 'nonce-{nonce}'"
         self.send_header("Content-Security-Policy", csp)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
@@ -255,14 +260,14 @@ def _current_verdict_html(existing: dict[str, Any] | None) -> str:
     if not existing:
         return ""
     note = f" — {escape(existing['note'])}" if existing.get("note") else ""
-    return f'<p>current verdict: <strong>{escape(existing["verdict"])}</strong>{note}</p>'
+    return f'<p class="current">Verdict: <strong>{escape(existing["verdict"])}</strong>{note}</p>'
 
 
 def _verdict_form(name: str, token: str) -> str:
     return f"""<form method="post" action="/verdict?t={quote(token)}">
             <input type="hidden" name="name" value="{escape(name)}">
-            <input type="text" name="verdict" placeholder="verdict" required>
-            <input type="text" name="note" placeholder="note (optional)">
+            <input type="text" name="verdict" placeholder="Verdict" aria-label="verdict" required>
+            <input type="text" name="note" placeholder="Note (optional)" aria-label="note">
             <button type="submit">Save</button>
           </form>"""
 
@@ -290,7 +295,7 @@ def _item_section(
 
     return f"""
         <section>
-          <h2>{escape(name)} <small>({escape(item["kind"])}{badge})</small></h2>
+          <h2>{escape(name)} <small>{escape(item["kind"])}{badge}</small></h2>
           {media_html}
           {current}
           {_verdict_form(name, token)}
@@ -330,14 +335,15 @@ def _render_ab_group(
 
     buttons = "\n            ".join(
         f'<button type="button" data-src="/media/{quote(it["name"])}?t={quote(token)}" '
-        f'data-name="{escape(it["name"])}">{escape(it["name"])}</button>'
-        for it in ab_items
+        f'data-name="{escape(it["name"])}" aria-pressed="{"true" if i == 0 else "false"}">'
+        f"{escape(it['name'])}</button>"
+        for i, it in enumerate(ab_items)
     )
 
     picks = "\n".join(
         f"""
         <div class="ab-pick">
-          <h3>{escape(it["name"])} <small>({escape(it["kind"])}{_finish_badge(it, project)})</small></h3>
+          <h3>{escape(it["name"])} <small>{escape(it["kind"])}{_finish_badge(it, project)}</small></h3>
           {_current_verdict_html(verdicts.get(it["name"]))}
           {_verdict_form(it["name"], token)}
         </div>
@@ -351,6 +357,7 @@ def _render_ab_group(
   var picks = document.querySelectorAll("#{group_id} [data-src]");
   picks.forEach(function (btn) {{
     btn.addEventListener("click", function () {{
+      picks.forEach(function (b) {{ b.setAttribute("aria-pressed", String(b === btn)); }});
       var wasAt = player.currentTime;
       var wasPlaying = !player.paused;
       player.src = btn.getAttribute("data-src");
@@ -367,10 +374,12 @@ def _render_ab_group(
     return f"""
         <section id="{group_id}" class="ab-group">
           <h2>A/B</h2>
-          <{tag} id="{player_id}" controls preload="metadata" src="{first_src}"></{tag}>
+          <p class="hint">Pick one to switch; the playhead stays where it is.</p>
+          <{tag} id="{player_id}" controls playsinline preload="metadata" src="{first_src}"></{tag}>
           <div class="ab-picks">
             {buttons}
           </div>
+          <h2 class="verdicts">Verdicts</h2>
           {picks}
         </section>
         {script}
@@ -410,20 +419,58 @@ def _render_page(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>proofcut review</title>
-<style>
-  /* `viewport-fit=cover` above and these `env()`s are one fix: each is a no-op
-     without the other. This page is opened on a phone by design, and an iPhone
-     home-screen shortcut runs standalone, with the status bar, the dynamic
-     island and the home indicator over the page. 0px everywhere else. */
-  body {{ font-family: system-ui, sans-serif; max-width: 640px; margin: 0 auto;
-          padding: calc(1rem + env(safe-area-inset-top, 0px)) calc(1rem + env(safe-area-inset-right, 0px))
-                   calc(1rem + env(safe-area-inset-bottom, 0px)) calc(1rem + env(safe-area-inset-left, 0px)); }}
-  video, audio, img {{ width: 100%; border-radius: 4px; }}
-  section {{ margin-bottom: 2rem; border-bottom: 1px solid #ccc; padding-bottom: 1rem; }}
-  form {{ display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }}
-  input[type=text] {{ flex: 1; min-width: 8rem; }}
-  .ab-picks {{ display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0; }}
-  .ab-pick {{ border-top: 1px solid #eee; padding-top: 0.75rem; margin-top: 0.75rem; }}
+<style nonce="{nonce}">
+  /* `viewport-fit=cover` above and the `env()`s in `body` are one fix: each
+     is a no-op without the other. This page is opened on a phone by design,
+     and an iPhone home-screen shortcut runs standalone, with the status bar,
+     the dynamic island and the home indicator over the page. 0px everywhere
+     else. The `nonce` is what lets this sheet apply at all: see `_send`. */
+  :root {{ color-scheme: light dark;
+           --bg: #f6f5f2; --card: #ffffff; --ink: #1c1a17; --dim: #6b665e;
+           --line: #e2ded6; --accent: #b86a12; --accent-ink: #ffffff; --field: #ffffff; }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{ --bg: #141311; --card: #1e1c19; --ink: #f1ede6; --dim: #a39c91;
+             --line: #34302a; --accent: #e8a13c; --accent-ink: #1a1714; --field: #16140f; }}
+  }}
+  * {{ box-sizing: border-box; }}
+  html {{ -webkit-text-size-adjust: 100%; }}
+  body {{ margin: 0 auto; max-width: 720px; background: var(--bg); color: var(--ink);
+          font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+          padding: calc(16px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px))
+                   calc(24px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px)); }}
+  h1 {{ font-size: 0.8rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+        color: var(--dim); margin: 0 0 12px; }}
+  h2 {{ font-size: 1.05rem; margin: 0 0 8px; overflow-wrap: anywhere; }}
+  h3 {{ font-size: 1rem; margin: 0 0 6px; overflow-wrap: anywhere; }}
+  h2.verdicts {{ margin-top: 20px; }}
+  small {{ display: block; font-size: 0.8rem; font-weight: 400; color: var(--dim); margin-top: 2px; }}
+  section {{ background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+             padding: 14px; margin: 0 0 16px; }}
+  video, audio, img {{ display: block; width: 100%; max-width: 100%; border-radius: 10px; }}
+  video {{ background: #000; aspect-ratio: 16 / 9; }}
+  /* The shared player stays in view while the verdicts below it scroll, so
+     a switch is never made blind. */
+  .ab-group > video, .ab-group > audio {{ position: sticky; z-index: 1;
+                                           top: calc(8px + env(safe-area-inset-top, 0px)); }}
+  a {{ color: var(--accent); overflow-wrap: anywhere; }}
+  .hint {{ color: var(--dim); font-size: 0.85rem; margin: -2px 0 10px; }}
+  .current {{ margin: 6px 0; }}
+  .ab-picks {{ display: grid; gap: 8px; margin: 12px 0 0;
+               grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }}
+  .ab-picks button {{ min-height: 48px; padding: 10px 12px; text-align: left; line-height: 1.25;
+                      background: transparent; color: var(--ink); border: 1.5px solid var(--line); }}
+  .ab-picks button[aria-pressed="true"] {{ background: var(--accent); color: var(--accent-ink);
+                                           border-color: var(--accent); font-weight: 600; }}
+  .ab-pick {{ border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }}
+  form {{ display: grid; gap: 8px; grid-template-columns: 1fr; margin-top: 8px; }}
+  @media (min-width: 560px) {{ form {{ grid-template-columns: 1fr 1.4fr auto; }} }}
+  input[type=text] {{ width: 100%; min-width: 0; min-height: 44px; font: inherit; padding: 8px 12px;
+                      color: var(--ink); background: var(--field); border: 1px solid var(--line);
+                      border-radius: 10px; }}
+  button {{ font: inherit; border-radius: 10px; cursor: pointer; }}
+  form button {{ min-height: 44px; padding: 8px 18px; font-weight: 600; border: 0;
+                 background: var(--ink); color: var(--bg); }}
+  button:focus-visible, input:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
 </style>
 </head>
 <body>

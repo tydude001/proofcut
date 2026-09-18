@@ -335,6 +335,23 @@ def test_the_csp_header_nonce_matches_the_scripts_own_nonce_attribute(
     assert header_nonce != TOKEN
 
 
+def test_the_pages_stylesheet_is_allowed_by_its_own_csp(server: str) -> None:
+    """`default-src 'self'` blocks an inline <style> as surely as an inline
+    script, so a sheet with no matching `style-src` is dropped whole — the
+    page drew unstyled, and a 1920px <video> ran off a phone's screen, with
+    every test green (2026-09-18)."""
+    status, headers, body = _get(f"{server}/?t={TOKEN}")
+    assert status == 200
+
+    csp = headers["Content-Security-Policy"]
+    style_src = re.search(r"style-src 'nonce-([^']+)'", csp)
+    assert style_src, f"no style-src nonce in CSP header: {csp!r}"
+    tag = re.search(rb'<style nonce="([^"]+)">', body)
+    assert tag, "the page's <style> carries no nonce"
+    assert tag.group(1).decode() == style_src.group(1)
+    assert style_src.group(1) != TOKEN
+
+
 def test_two_successive_requests_get_different_csp_nonces(server: str) -> None:
     _, first_headers, _ = _get(f"{server}/?t={TOKEN}")
     _, second_headers, _ = _get(f"{server}/?t={TOKEN}")
