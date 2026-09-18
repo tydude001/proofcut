@@ -51,9 +51,8 @@ plugin is the one that needs no setup.
 
 **Cut from a shell, by naming words.** Every tool is also a `proofcut`
 subcommand printing JSON, so a cut is a script you can read, re-run and
-diff. Every word in a recording keeps a fixed index that never renumbers,
-`--plan` prints what a range says before anything changes, and `undo` walks
-it back.
+diff. `--plan` prints what a range says before anything changes, and `undo`
+walks it back.
 
 ```sh
 uv run proofcut -C myproject cut vo 111:114 --plan
@@ -72,8 +71,7 @@ uv run proofcut -C myproject open
 **Finish elsewhere, and still prove the file.** Rough-cut here, export a
 `.kdenlive` or OpenTimelineIO file, finish in Kdenlive, Resolve or Premiere,
 and bring the trim back with `import-edit`. Then point `verify` at the
-delivered file: it transcribes the render and diffs it word by word against
-the timeline, so a retake left in is caught before anyone watches.
+delivered file, and a retake left in is caught before anyone watches.
 
 ```sh
 uv run proofcut -C myproject verify final.mp4
