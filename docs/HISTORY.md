@@ -16831,3 +16831,20 @@ code. The page was redone at the same time:
 Checked through `verify-live` at 390x844: no overflow and no console errors,
 with picks landing at 0 ms and at 120 ms dwell. Dark mode was not rendered in
 that pass.
+
+**Then the page asked nothing.** With the styling fixed, Tyler said: "I don't
+understand what I am judging on this page, and the form is unclear." It
+showed two players and a free-text "verdict" box per item, and nothing said
+what the round was for, what either file was, or what to type. An A/B round
+now works like this:
+- It **states its question**: `review serve --question`, defaulting to
+  `DEFAULT_AB_QUESTION`.
+- Each member carries **one line saying what it is**. This is `about` on
+  `review add` and the `review_add` tool, additive and optional.
+- It takes **one answer for the group**: a note first, then one tap on a
+  member or on "Can't tell". `POST /pick` writes `preferred`/`not preferred`,
+  or `can't tell` for every member, through `ops.review_verdict`, so
+  `review list` and the MCP tools read the same record.
+
+Items outside the group keep their own verdict forms. At 390px the page reads
+top to bottom as the question, the player, what A and B are, and the answer.

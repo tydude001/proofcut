@@ -18887,6 +18887,7 @@ def review_add(
     *,
     kind: str,
     baseline: str | None = None,
+    about: str | None = None,
 ) -> dict[str, Any]:
     """Register a rendered file, sheet or A/B member for a review round.
 
@@ -18905,6 +18906,11 @@ def review_add(
     render with no bumper. "Settle a served control by its own measurement —
     duration, shot count — not by its filename." Here the measurement is the
     file's own bytes.
+
+    `about` is one line the served page prints under the name, saying what
+    this item *is* — a reviewer handed "A: clip-v6" and "B: proofcut" with
+    nothing else could not tell what was being judged (2026-09-18). Absent
+    means none, as on every item registered before it existed.
     """
     if kind not in REVIEW_KINDS:
         raise ProjectError(f"review kind must be one of {REVIEW_KINDS}, not {kind!r}")
@@ -18944,6 +18950,8 @@ def review_add(
         "control_ok": control_ok,
         "added_at": datetime.now(UTC).isoformat(),
     }
+    if about:
+        record["about"] = str(about)
 
     manifest = project.read_manifest()
     items = dict(stored["items"])

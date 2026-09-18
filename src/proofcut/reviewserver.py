@@ -81,6 +81,14 @@ DEFAULT_HOST = "127.0.0.1"
 #: and the edit UI are commonly run against the same project at once.
 DEFAULT_PORT = 8720
 
+#: What an A/B round asks when `serve` is given no `question`. A page that
+#: showed two players and a free-text "verdict" box per item asked nothing at
+#: all, and the reviewer could not tell what was being judged (2026-09-18).
+DEFAULT_AB_QUESTION = "Which one is better?"
+
+#: The verdicts an A/B answer writes, one per member of the group.
+PICKED, NOT_PICKED, CANT_TELL = "preferred", "not preferred", "can't tell"
+
 _MEDIA_KIND = {
     ".mp4": "video",
     ".mov": "video",
@@ -105,6 +113,7 @@ class Handler(BaseHTTPRequestHandler):
 
     project_root: Path
     token: str
+    question: str | None = None
     verbose: bool = False
     server_version = "proofcut-review"
     sys_version = ""
@@ -184,13 +193,17 @@ class Handler(BaseHTTPRequestHandler):
         if not self._token_ok(parse_qs(url.query)):
             self._fail(HTTPStatus.FORBIDDEN, "missing or wrong token")
             return
-        if url.path != "/verdict":
+        if url.path not in ("/verdict", "/pick"):
             self._fail(HTTPStatus.NOT_FOUND, f"no such endpoint: {url.path}")
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length > 0 else b""
-            form = parse_qs(raw.decode("utf-8"))
+            form = parse_qs(raw.decode("utf-8"), keep_blank_values=True)
+            if url.path == "/pick":
+                self._record_pick(form)
+                self._redirect_home()
+                return
             name = (form.get("name") or [""])[0]
             verdict = (form.get("verdict") or [""])[0]
             note = (form.get("note") or [""])[0] or None
@@ -200,6 +213,28 @@ class Handler(BaseHTTPRequestHandler):
         except (ReviewServerError, ProjectError) as exc:
             self._fail(HTTPStatus.BAD_REQUEST, str(exc))
             return
+        self._redirect_home()
+
+    def _record_pick(self, form: dict[str, list[str]]) -> None:
+        """One answer for the whole A/B group: the picked member is `PICKED`
+        and every other `NOT_PICKED`, or all `CANT_TELL` for an empty pick —
+        written through `ops.review_verdict`, one call per member, so the
+        record is the same one `review list` and the MCP tools read."""
+        if "pick" not in form:
+            raise ReviewServerError("'pick' is required (an item's name, or empty for can't tell)")
+        pick = form["pick"][0]
+        note = (form.get("note") or [""])[0].strip() or None
+        group = _ab_group(ops.review_list(str(self.project_root))["items"])
+        names = [it["name"] for it in group]
+        if not names:
+            raise ReviewServerError("this round has no A/B group to answer")
+        if pick and pick not in names:
+            raise ReviewServerError(f"{pick!r} is not in this round's A/B group")
+        for name in names:
+            verdict = CANT_TELL if not pick else (PICKED if name == pick else NOT_PICKED)
+            ops.review_verdict(str(self.project_root), name, verdict, note=note)
+
+    def _redirect_home(self) -> None:
         self.send_response(HTTPStatus.FOUND)
         self.send_header("Location", f"/?t={quote(self.token)}")
         self.send_header("Content-Length", "0")
@@ -225,7 +260,9 @@ class Handler(BaseHTTPRequestHandler):
         # review token: see the module docstring's "never the review token
         # reused as a nonce".
         nonce = secrets.token_urlsafe(16)
-        html = _render_page(listing, self.token, Project.open(self.project_root), nonce=nonce)
+        html = _render_page(
+            listing, self.token, Project.open(self.project_root), nonce=nonce, question=self.question
+        )
         if head_only:
             self._send(HTTPStatus.OK, b"", "text/html; charset=utf-8", nonce=nonce)
             return
@@ -292,10 +329,12 @@ def _item_section(
 
     badge = _finish_badge(item, project)
     current = _current_verdict_html(verdicts.get(name))
+    about = f'<p class="about">{escape(item["about"])}</p>' if item.get("about") else ""
 
     return f"""
         <section>
           <h2>{escape(name)} <small>{escape(item["kind"])}{badge}</small></h2>
+          {about}
           {media_html}
           {current}
           {_verdict_form(name, token)}
@@ -311,16 +350,45 @@ def _ab_group_id(ab_items: list[dict[str, Any]]) -> str:
     return "ab-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
 
 
+def _ab_group(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The round's A/B group, or `[]` when there is none to draw.
+
+    Group only when there is something to switch between and every member
+    can share one <video>/<audio> element — a lone "ab" item has nothing to
+    pick against (it renders as an ordinary section), and mixed video/audio
+    can't share a player at all (defensive: don't build a broken one). The
+    page and `/pick` both call this, so an answer is always about the group
+    the page drew.
+    """
+    ab_items = [it for it in sorted(items, key=lambda it: it["added_at"]) if it["kind"] == "ab"]
+    kinds = {_media_kind(it) for it in ab_items}
+    return ab_items if len(ab_items) >= 2 and len(kinds) == 1 and None not in kinds else []
+
+
+def _current_answer_html(ab_items: list[dict[str, Any]], verdicts: dict[str, Any]) -> str:
+    got = [verdicts.get(it["name"]) or {} for it in ab_items]
+    picked = [it["name"] for it, v in zip(ab_items, got) if v.get("verdict") == PICKED]
+    note = next((v.get("note") for v in got if v.get("note")), None)
+    note_html = f'<span class="said">“{escape(note)}”</span>' if note else ""
+    if picked:
+        return f'<p class="answered">You picked <strong>{escape(picked[0])}</strong>. {note_html}</p>'
+    if got and all(v.get("verdict") == CANT_TELL for v in got):
+        return f'<p class="answered">You said you can\'t tell them apart. {note_html}</p>'
+    return ""
+
+
 def _render_ab_group(
     ab_items: list[dict[str, Any]],
     token: str,
     project: Project,
     verdicts: dict[str, Any],
     nonce: str,
+    question: str,
 ) -> str:
-    """Two or more `"ab"` items of one media kind: one shared player carrying
-    the playhead across a pick, plus every item's own unchanged verdict form
-    stacked below it.
+    """Two or more `"ab"` items of one media kind: the question, one shared
+    player carrying the playhead across a switch, each member's own line of
+    what it is, and ONE answer — which is better, or can't tell — rather
+    than a free-text verdict box per member.
 
     The inline script never sees the token: `data-src` is server-rendered
     with `?t=` already in it, exactly like every other `src=` on this page,
@@ -333,22 +401,23 @@ def _render_ab_group(
     tag = "video" if _media_kind(ab_items[0]) == "video" else "audio"
     first_src = f"/media/{quote(ab_items[0]['name'])}?t={quote(token)}"
 
+    def _about(it: dict[str, Any]) -> str:
+        return f'<span class="about">{escape(it["about"])}</span>' if it.get("about") else ""
+
     buttons = "\n            ".join(
         f'<button type="button" data-src="/media/{quote(it["name"])}?t={quote(token)}" '
         f'data-name="{escape(it["name"])}" aria-pressed="{"true" if i == 0 else "false"}">'
-        f"{escape(it['name'])}</button>"
+        f'<span class="play">Play</span> <strong>{escape(it["name"])}</strong>{_about(it)}</button>'
         for i, it in enumerate(ab_items)
     )
-
-    picks = "\n".join(
-        f"""
-        <div class="ab-pick">
-          <h3>{escape(it["name"])} <small>{escape(it["kind"])}{_finish_badge(it, project)}</small></h3>
-          {_current_verdict_html(verdicts.get(it["name"]))}
-          {_verdict_form(it["name"], token)}
-        </div>
-        """
+    answers = "\n              ".join(
+        f'<button type="submit" name="pick" value="{escape(it["name"])}">{escape(it["name"])}</button>'
         for it in ab_items
+    )
+    faults = "".join(
+        f'<p class="fault">{escape(it["name"])}: {escape(badge.strip(" —"))}</p>'
+        for it in ab_items
+        if "⚠" in (badge := _finish_badge(it, project)) or "MISMATCH" in badge
     )
 
     script = f"""<script nonce="{nonce}">
@@ -373,46 +442,60 @@ def _render_ab_group(
 
     return f"""
         <section id="{group_id}" class="ab-group">
-          <h2>A/B</h2>
-          <p class="hint">Pick one to switch; the playhead stays where it is.</p>
+          <h2 class="question">{escape(question)}</h2>
+          <p class="hint">Play each one. Switching keeps your place in the video.</p>
           <{tag} id="{player_id}" controls playsinline preload="metadata" src="{first_src}"></{tag}>
           <div class="ab-picks">
             {buttons}
           </div>
-          <h2 class="verdicts">Verdicts</h2>
-          {picks}
+          {faults}
+        </section>
+        <section class="answer-card">
+          <h2>Your answer</h2>
+          {_current_answer_html(ab_items, verdicts)}
+          <form class="answer" method="post" action="/pick?t={quote(token)}">
+            <label for="{group_id}-note">Why? <span class="opt">(optional)</span></label>
+            <textarea id="{group_id}-note" name="note" rows="2" placeholder="e.g. B's ending is weaker"></textarea>
+            <p class="step">Then tap your answer:</p>
+            <div class="answer-buttons">
+              {answers}
+              <button type="submit" name="pick" value="" class="cant">Can't tell</button>
+            </div>
+          </form>
         </section>
         {script}
         """
 
 
 def _render_page(
-    listing: dict[str, Any], token: str, project: Project, *, nonce: str
+    listing: dict[str, Any],
+    token: str,
+    project: Project,
+    *,
+    nonce: str,
+    question: str | None = None,
 ) -> str:
     items = sorted(listing["items"], key=lambda it: it["added_at"])
     verdicts = listing["verdicts"]
 
-    # Group only when there is something to switch between and every member
-    # can share one <video>/<audio> element — a lone "ab" item has nothing
-    # to pick against (falls back below, same path as any other item), and
-    # mixed video/audio can't share a player at all (defensive: don't build
-    # a broken one).
-    ab_items = [it for it in items if it["kind"] == "ab"]
-    kinds = {_media_kind(it) for it in ab_items}
-    group_ok = len(ab_items) >= 2 and len(kinds) == 1 and None not in kinds
-    ab_names = {it["name"] for it in ab_items} if group_ok else set()
+    ab_items = _ab_group(items)
+    ab_names = {it["name"] for it in ab_items}
 
     sections = []
     group_emitted = False
     for item in items:
         if item["name"] in ab_names:
             if not group_emitted:
-                sections.append(_render_ab_group(ab_items, token, project, verdicts, nonce))
+                sections.append(_render_ab_group(
+                    ab_items, token, project, verdicts, nonce, question or DEFAULT_AB_QUESTION
+                ))
                 group_emitted = True
             continue
         sections.append(_item_section(item, token, project, verdicts))
 
     body = "\n".join(sections) if sections else "<p>Nothing registered yet — `proofcut review add`.</p>"
+    if question and not ab_items:
+        body = f'<h2 class="question">{escape(question)}</h2>\n' + body
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -453,11 +536,28 @@ def _render_page(
   .ab-group > video, .ab-group > audio {{ position: sticky; z-index: 1;
                                            top: calc(8px + env(safe-area-inset-top, 0px)); }}
   a {{ color: var(--accent); overflow-wrap: anywhere; }}
-  .hint {{ color: var(--dim); font-size: 0.85rem; margin: -2px 0 10px; }}
+  .hint {{ color: var(--dim); font-size: 0.9rem; margin: 0 0 12px; }}
+  h2.question {{ font-size: 1.3rem; line-height: 1.25; margin: 0 0 6px; }}
+  .about {{ display: block; font-size: 0.85rem; font-weight: 400; margin-top: 4px; opacity: 0.85; }}
+  p.about {{ color: var(--dim); margin: 0 0 10px; }}
+  .play {{ display: block; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.75; }}
+  .fault {{ color: #c0392b; font-size: 0.85rem; margin: 10px 0 0; }}
+  .answered {{ background: var(--bg); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }}
+  .said {{ color: var(--dim); }}
+  .step {{ font-weight: 600; margin: 16px 0 8px; }}
+  .answer-buttons {{ display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); }}
+  .answer-buttons button {{ min-height: 52px; font-weight: 600; border: 0;
+                            background: var(--ink); color: var(--bg); }}
+  .answer-buttons button.cant {{ background: transparent; color: var(--ink); border: 1.5px solid var(--line); }}
+  form.answer {{ display: block; }}
+  form.answer label {{ display: block; margin: 0 0 6px; font-weight: 600; }}
+  .opt {{ font-weight: 400; color: var(--dim); font-size: 0.85rem; }}
+  textarea {{ width: 100%; font: inherit; padding: 10px 12px; color: var(--ink); background: var(--field);
+              border: 1px solid var(--line); border-radius: 10px; resize: vertical; }}
   .current {{ margin: 6px 0; }}
   .ab-picks {{ display: grid; gap: 8px; margin: 12px 0 0;
                grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }}
-  .ab-picks button {{ min-height: 48px; padding: 10px 12px; text-align: left; line-height: 1.25;
+  .ab-picks button {{ min-height: 56px; padding: 10px 12px; text-align: left; line-height: 1.25;
                       background: transparent; color: var(--ink); border: 1.5px solid var(--line); }}
   .ab-picks button[aria-pressed="true"] {{ background: var(--accent); color: var(--accent-ink);
                                            border-color: var(--accent); font-weight: 600; }}
@@ -486,6 +586,7 @@ def make_server(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
     token: str | None = None,
+    question: str | None = None,
     verbose: bool = False,
 ) -> ThreadingHTTPServer:
     """Build a server for one project's review round. Opens it first, so a
@@ -497,7 +598,8 @@ def make_server(
     handler = type(
         "BoundReviewHandler",
         (Handler,),
-        {"project_root": project.root, "token": resolved_token, "verbose": verbose},
+        {"project_root": project.root, "token": resolved_token, "question": question,
+         "verbose": verbose},
     )
     server = ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
@@ -511,10 +613,11 @@ def serve(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
     token: str | None = None,
+    question: str | None = None,
     verbose: bool = False,
 ) -> None:
     """Run a review round until interrupted. `port=0` picks a free one."""
-    server = make_server(path, host=host, port=port, token=token, verbose=verbose)
+    server = make_server(path, host=host, port=port, token=token, question=question, verbose=verbose)
     bound = server.server_address[1]
     url = f"http://{host}:{bound}/?t={server.token}"  # type: ignore[attr-defined]
     # Flushed, the `webui.serve` reason: this is the one line to copy to a

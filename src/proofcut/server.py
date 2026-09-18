@@ -1909,6 +1909,11 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "call is refused — nothing is labelled a control here unless it is "
             "byte-identical to what it claims."
         ),
+        "about": (
+            "One plain line the served page prints under the name, saying what this "
+            "item is (how it was made, what differs) — a reviewer judges nothing they "
+            "cannot tell apart."
+        ),
     },
     "review_verdict": {
         "name": "The registered item being answered. An unregistered name is refused.",
@@ -5415,6 +5420,7 @@ def review_add(
     source: str,
     kind: str,
     baseline: str | None = None,
+    about: str | None = None,
 ) -> dict[str, Any]:
     """Register a rendered file, sheet or A/B member for `proofcut review serve`.
 
@@ -5436,7 +5442,7 @@ def review_add(
     mislabelled "control" when it was a different, later render. Nothing is
     labelled a control here unless it is byte-identical to what it claims.
     """
-    return ops.review_add(path, name, source, kind=kind, baseline=baseline)
+    return ops.review_add(path, name, source, kind=kind, baseline=baseline, about=about)
 
 
 @_tool()

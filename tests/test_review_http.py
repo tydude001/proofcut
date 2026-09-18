@@ -372,3 +372,82 @@ def test_an_ab_group_member_with_no_token_is_forbidden(project: Path, server: st
 
     status, _, _ = _get(f"{server}/media/a")
     assert status == 403
+
+
+# -- one answer for an A/B round ----------------------------------------------
+#
+# The round's page once showed two players and a free-text "verdict" box per
+# item, and asked nothing: the reviewer could not tell what was being judged
+# (2026-09-18). An A/B round now states its question, says what each member
+# is, and takes one answer for the group.
+
+
+def test_an_ab_round_asks_its_question_and_says_what_each_member_is(project: Path) -> None:
+    (project / "renders" / "a.mp4").write_bytes(b"A" * 500)
+    (project / "renders" / "b.mp4").write_bytes(b"B" * 500)
+    ops.review_add(project, "a", "renders/a.mp4", kind="ab", about="made by a script")
+    ops.review_add(project, "b", "renders/b.mp4", kind="ab", about="cut by an agent")
+    httpd = reviewserver.make_server(project, port=0, token=TOKEN, question="Which would you post?")
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        status, _, body = _get(f"http://127.0.0.1:{httpd.server_address[1]}/?t={TOKEN}")
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)
+
+    assert status == 200
+    assert b"Which would you post?" in body
+    assert b"made by a script" in body and b"cut by an agent" in body
+    assert f'action="/pick?t={TOKEN}"'.encode() in body
+    assert b'name="pick" value="a"' in body and b'name="pick" value="b"' in body
+    assert b'name="pick" value=""' in body  # can't tell
+
+
+def test_an_ab_round_with_no_question_asks_the_default_one(project: Path, server: str) -> None:
+    _add_ab_pair(project)
+    _, _, body = _get(f"{server}/?t={TOKEN}")
+    assert reviewserver.DEFAULT_AB_QUESTION.encode() in body
+
+
+def test_a_pick_marks_the_picked_member_and_every_other(project: Path, server: str) -> None:
+    _add_ab_pair(project)
+    status, headers = _post_form_no_redirect(
+        server, f"/pick?t={TOKEN}", {"pick": "b", "note": "the ending lands"}
+    )
+    assert status == 302
+    assert headers["Location"] == f"/?t={TOKEN}"
+
+    verdicts = ops.review_list(project)["verdicts"]
+    assert verdicts["b"]["verdict"] == reviewserver.PICKED
+    assert verdicts["a"]["verdict"] == reviewserver.NOT_PICKED
+    assert verdicts["a"]["note"] == verdicts["b"]["note"] == "the ending lands"
+    assert "teaser" not in verdicts  # not in the group, so not answered
+
+    _, _, body = _get(f"{server}/?t={TOKEN}")
+    assert b"You picked <strong>b</strong>" in body
+
+
+def test_an_empty_pick_is_cant_tell_for_every_member(project: Path, server: str) -> None:
+    _add_ab_pair(project)
+    status, _ = _post_form_no_redirect(server, f"/pick?t={TOKEN}", {"pick": "", "note": ""})
+    assert status == 302
+
+    verdicts = ops.review_list(project)["verdicts"]
+    assert verdicts["a"]["verdict"] == verdicts["b"]["verdict"] == reviewserver.CANT_TELL
+    assert verdicts["a"]["note"] is None
+
+
+def test_a_pick_outside_the_group_is_refused_and_records_nothing(project: Path, server: str) -> None:
+    _add_ab_pair(project)
+    status, _ = _post_form_no_redirect(server, f"/pick?t={TOKEN}", {"pick": "teaser"})
+    assert status == 400
+    assert ops.review_list(project)["verdicts"] == {}
+
+
+def test_a_pick_with_the_wrong_token_is_refused(project: Path, server: str) -> None:
+    _add_ab_pair(project)
+    status, _ = _post_form_no_redirect(server, "/pick?t=wrong", {"pick": "a"})
+    assert status == 403
+    assert ops.review_list(project)["verdicts"] == {}

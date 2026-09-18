@@ -1669,6 +1669,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="the already-registered item this claims to be byte-identical to "
         "(required, and checked, for --kind control)",
     )
+    p_review_add.add_argument(
+        "--about", help="one plain line the page prints under the name: what this item is"
+    )
 
     p_review_verdict = review_sub.add_parser(
         "verdict", help="record a verdict against a registered review item"
@@ -1696,6 +1699,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_review_serve.add_argument(
         "--token", help="use this token instead of minting a random one"
+    )
+    p_review_serve.add_argument(
+        "--question",
+        help="what the reviewer is asked, printed at the top of the page "
+        f"(an A/B round defaults to {reviewserver.DEFAULT_AB_QUESTION!r})",
     )
     p_review_serve.add_argument("--verbose", action="store_true", help="log every request")
 
@@ -3111,7 +3119,10 @@ def _cmd_reel(args: argparse.Namespace) -> int:
 def _cmd_review(args: argparse.Namespace) -> int:
     if args.review_command == "add":
         return _emit(
-            ops.review_add(args.project, args.name, args.source, kind=args.kind, baseline=args.baseline)
+            ops.review_add(
+                args.project, args.name, args.source, kind=args.kind, baseline=args.baseline,
+                about=args.about,
+            )
         )
     if args.review_command == "verdict":
         return _emit(ops.review_verdict(args.project, args.name, args.verdict, note=args.note))
@@ -3123,6 +3134,7 @@ def _cmd_review(args: argparse.Namespace) -> int:
         host=args.host,
         port=args.port,
         token=args.token,
+        question=args.question,
         verbose=args.verbose,
     )
     return 0
