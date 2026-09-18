@@ -16848,3 +16848,19 @@ now works like this:
 
 Items outside the group keep their own verdict forms. At 390px the page reads
 top to bottom as the question, the player, what A and B are, and the answer.
+
+**The verdict, 2026-09-18: A.** Tyler picked clip-v6 over the level-matched
+native cut. In his words: "A is way better in many ways. The music sounds
+better and is used in the right places - it also ducks the audio
+appropriately. I also think the pacing is better and the ending is better.
+Also the lower third looks better on A." Each of the five reasons traces to
+a gap above:
+- **Music placement** is the bed that could not anchor on a silent
+  recording.
+- **Ducking** is a duck keyed off an Edit with no audio.
+- **Pacing** is the untrimmable narrator take, which pushed the clip to 53.5 s
+  against 47 s.
+- **The ending** is the missing tail and the missing second recording.
+- **The lower third** is the overlay's look against clip.py's scrim.
+
+LAUNCH.md § Step 1's "not cut with proofcut" line stands.
