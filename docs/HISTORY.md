@@ -16610,6 +16610,14 @@ the author's relation to the project. The text is in
 `~/proofcut-work/spikes/launch-listings/POSTS.md` § The Apple silicon tester
 posts.
 
+Posted as planned on
+[r/SideProject](https://www.reddit.com/r/SideProject/comments/1wjqf8g/a_local_ai_video_editor_needs_its_first_run_on_an/)
+on 2026-09-18. Neither post carried the launch clip. The drafts left it out
+with no recorded reason, and a tester is being asked for half an hour on
+text alone. So both posts were edited the same day to add one line linking
+the README, where GitHub plays the clip. The remaining posts carry the line
+too, and attach the file wherever a room takes uploads.
+
 ## `proofcut setup` on Windows and an Intel Mac — 2026-09-17
 
 INSTALL.md § Step 5 was gated on a person's report from each OS. Windows had
