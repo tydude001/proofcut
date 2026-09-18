@@ -1193,6 +1193,13 @@ built; docs/plans/INSTALL.md):
       keys with `mlt.slice_gain_keys`**: a rebuilt piece without them plays
       undipped at exit 0, which is `_gate_music_lane`'s two splits.
       HISTORY.md § The duck.
+      - **It also hears audible insets and sounds flagged `ducks`, each gated
+        against its own loudness** (`_duck_voice_frames`), so a silent
+        screen recording still dips the bed. Never every sound hit: a gate
+        that heard keystrokes pumps the bed on every click. With a duck, an
+        audible inset dips the bed instead of taking it out; a hold still
+        takes it out. HISTORY.md § The duck hears every lane, and a sound can
+        be trimmed.
     - **`export --loudness` is one gain and a true-peak limiter, never
       `loudnorm`'s second pass.** `loudnorm` keeps `linear=true` only while
       the gain fits under the ceiling and otherwise switches to dynamic mode,
@@ -1549,6 +1556,9 @@ built; docs/plans/INSTALL.md):
     skipped, so a cut re-rolls no other hit.
   - Judge a hit by the render's PCM, never by the document.
   - HISTORY.md § Sounds on events, built.
+  - **A sound's `src_in`/`src_out` slice is decoded, never the file then
+    cut**, and the slice and `ducks` stay out of the record's dice
+    (`_SOUND_UNROLLED`), so a trim re-rolls no hit.
 - **A retime (`RETIME_KEY`, `_is_layered`'s eleventh trigger) is a warp
   from render time to Edit time, and only the edit and picture lanes are
   remapped** — one `timeremap` chain per entry, keyed from 0; everything
@@ -1583,6 +1593,20 @@ built; docs/plans/INSTALL.md):
   - **Lossless-RGB sources drawn smaller than themselves shift colour** in
     melt, on every route; yuv420p ones do not. A colour finding on an RGB
     fixture is the fixture until a yuv one agrees.
+- **A dissolve (`DISSOLVES_KEY`, `_is_layered`'s thirteenth trigger) is the
+  incoming clip's pre-roll on its own track, never two overlapping Edit
+  entries** — `follow` butt-joins the recordings, and `mlt.Dissolve` draws
+  the `seconds` before the incoming in-point fading in over the join, alpha
+  reaching 1 on the join frame itself. So the film is no longer for it and
+  every declared length stays the Edit's; the cost is that much of the file
+  before its start, refused when absent. Addressed by `(clip_id,
+  src_start)`, never a timeline second. The window hard-cuts where the
+  render dissolves. HISTORY.md § A second recording follows the first,
+  through a dissolve.
+- **With no cues, a head or tail goes on the Edit's own track** — a card is
+  a silent `qimage` entry after the last frame. A picture lane copied from
+  the Edit would draw over every inset, which sit under it. HISTORY.md § A
+  tail with no cue lane.
 - **A channel preset pack is a snapshot, never a live reference to a sibling
   repo's file.** `pack.load_pack` resolves one external JSON file (palette,
   fonts, mark, caption presets, weights) once; `pack_apply` writes the fully-
