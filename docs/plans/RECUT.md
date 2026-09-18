@@ -91,6 +91,7 @@ the next run must not trip on any of them.
   `SOUNDS_KEY` (`assets`).
 - **`attach_transcript`** refuses a clip whose probe says `has_audio: false`.
   That refusal is what stops the next agent's false-transcript workaround.
+- Shipped — see HISTORY.md § The recut's three defects and one guard.
 
 **2. The bed and the cues take an event (M–L). Moves: false start, and every
 moment's music.** `_overlay_instant` (ops.py:13706) already resolves a word

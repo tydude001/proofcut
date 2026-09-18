@@ -195,6 +195,25 @@ def test_unused_clips_names_a_clip_referenced_nowhere(project: Project) -> None:
     assert ops.finish_report(project.root)["unused_clips"] == ["delivered"]
 
 
+
+def test_unused_clips_counts_an_inset_and_a_sound_as_referenced(project: Project) -> None:
+    """The B7 agent's report called its film and its click "unused": the
+    inset and the sound lanes were never read (RECUT.md step 1). Both a
+    lane's footage and its addressing clip count, the cue's own rule."""
+    _with_one_pinned_cue(project)
+    manifest = project.read_manifest()
+    manifest["clips"] += [
+        {**CLIPS["clipa"], "clip_id": "film", "source": "/tmp/film.mp4"},
+        {**CLIPS["vo"], "clip_id": "click", "source": "/tmp/click.wav"},
+        {**CLIPS["clipa"], "clip_id": "delivered", "source": "/tmp/d.mp4"},
+    ]
+    manifest["insets"] = [{"clip_id": "vo", "asset": "film", "rect": [0, 0, 640, 360], "word_index": 0}]
+    manifest["sounds"] = [{"assets": ["click"], "clip_id": "vo", "word_index": 0}]
+    project.write_manifest(manifest)
+
+    assert ops._referenced_clip_ids(project.read_manifest(), {"vo"}) >= {"film", "click"}
+    assert ops.finish_report(project.root)["unused_clips"] == ["delivered"]
+
 # -- captions.burned / the render log --------------------------------------------
 
 

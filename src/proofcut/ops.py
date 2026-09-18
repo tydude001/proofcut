@@ -333,6 +333,15 @@ def attach_transcript(
     """
     project = Project.open(path)
     clip = media.get_clip(project, clip_id)
+    # A transcript is word times on the clip's own audio. Attached to a clip
+    # with none, it is times nothing can check — the B7 agent hung the bed on
+    # one (RECUT.md step 1). Only an explicit `False` refuses: a clip
+    # registered before `has_audio` was probed says nothing either way.
+    if clip.get("has_audio") is False:
+        raise media.MediaError(
+            f"clip {clip_id!r} has no audio track, so a transcript's word times have nothing "
+            "to be times of — address it by its events instead"
+        )
     parsed = tx.load(transcript_path, clip_id=clip["clip_id"])
     tx.save(parsed, project.transcript_path(clip_id))
     return {
@@ -3697,7 +3706,8 @@ def properties(
 
 
 def _referenced_clip_ids(manifest: dict[str, Any], on_timeline: set[str]) -> set[str]:
-    """Every clip_id the timeline, a cue, a hold or the music bed names.
+    """Every clip_id the timeline, a cue, a hold, an inset, a sound or the
+    music bed names.
 
     `on_timeline` is handed in rather than derived from a fresh `Edit` read
     — `finish_report`'s own caller already has `timeline_view`'s `segments`,
@@ -3716,6 +3726,12 @@ def _referenced_clip_ids(manifest: dict[str, Any], on_timeline: set[str]) -> set
     for hold in [*manifest.get(HOLDS_KEY, []), *manifest.get(UNDER_VO_KEY, [])]:
         referenced.add(hold["clip_id"])
         referenced.add(hold["asset"])
+    for inset in manifest.get(INSETS_KEY, []):
+        referenced.add(inset.get("clip_id"))
+        referenced.add(inset.get("asset"))
+    for sound in manifest.get(SOUNDS_KEY, []):
+        referenced.add(sound.get("clip_id"))
+        referenced.update(sound.get("assets") or [])
     bed = manifest.get(MUSIC_KEY)
     if bed:
         referenced.add(bed.get("clip_id"))
@@ -12559,6 +12575,18 @@ def _vo_loudness(project: Project, edit: tl.Edit) -> float:
         raise ProjectError(
             "this timeline has no audio at all, so there is nothing to measure "
             "a hold's level against"
+        )
+    # A video-only clip on the Edit has no `:a` stream for `[i:a]` to name,
+    # and ffmpeg's "matches no streams" is what the B7 agent got from export
+    # (RECUT.md step 1). A bed's duck or `under` and a hold's level are all
+    # measured against this, so the refusal says which clip, not which filter.
+    silent = sorted(
+        {seg.clip_id for seg in edit.segments if media.get_clip(project, seg.clip_id).get("has_audio") is False}
+    )
+    if silent:
+        raise ProjectError(
+            f"this timeline's video has no audio track ({', '.join(map(repr, silent))}), so there is "
+            "no VO to measure a bed's duck or under, or a hold's level, against"
         )
 
     resource_index: dict[str, int] = {}

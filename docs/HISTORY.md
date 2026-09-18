@@ -16888,3 +16888,32 @@ Two things came out of the cutting that the whole-clip A/B had hidden:
 With nine out of nine, the target is A itself, measured, and not a list of
 complaints: its beat lengths, its 10 dB duck, its film level, its lower
 third and its end card.
+
+## The recut's three defects and one guard — 2026-09-18
+
+docs/plans/RECUT.md § The build order, step 1: the three things the B7 run
+tripped on, none of which moves a moment but each of which the next run
+would meet again. All three are the same recording's fault — a screen
+capture with no audio stream, standing where every older op expected a VO.
+
+- **Export no longer crashes inside ffmpeg.** `_vo_loudness` built `[0:a]`
+  for every Edit segment, and on a video-only clip ffmpeg answered "Stream
+  specifier ':a' … matches no streams", which the agent got back from
+  `export` because its bed had a `duck`. It now refuses by name before
+  ffmpeg runs: "this timeline's video has no audio track ('rec')". Only an
+  empty Edit was guarded before. The duck still cannot hear such a film —
+  that is step 4 — but it says so.
+- **`finish_report` counts insets and sounds.** `_referenced_clip_ids` read
+  the timeline, cues, holds and the bed, so the B7 project's film and click
+  were reported `unused_clips`. An inset adds its footage and its
+  addressing clip; a sound its assets and its clip.
+- **`attach_transcript` refuses a clip with `has_audio: false`.** That is the
+  guard: the B7 agent attached a transcript to the silent recording so the
+  bed and its cues had words to hang on, and the bed then played against
+  times nothing could check. Only an explicit `false` refuses, since a clip
+  registered before the probe recorded `has_audio` says nothing either way.
+  What the agent needed instead — the bed and the cues addressed by events
+  — is step 2.
+
+`tests/test_silent_recording.py` and one test in
+`test_ops_finish_report.py`; all three fail against the code before this.
