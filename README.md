@@ -15,24 +15,159 @@ film the agent cut): [the workspace](https://github.com/tydude001/proofcut/relea
 (2:26) and [Claude Code with the proofcut plugin](https://github.com/tydude001/proofcut/releases/download/v0.23.0/proofcut-v0.23.0-uncut-claude-code-run.mp4)
 (3:09).
 
-That is not a staged run. [TRIAL.md](https://github.com/tydude001/proofcut/blob/main/docs/TRIAL.md) scores three unattended
-ones, each handed a goal and no steps, and each passed every one of its checks.
+That is not a staged run. [TRIAL.md](https://github.com/tydude001/proofcut/blob/main/docs/TRIAL.md)
+scores three unattended ones, each handed a goal and no steps, and each
+passed every one of its checks:
+
 - **The demo cut**, the one above.
-- **Real footage:** 96 seconds of narration with its fluffed takes left in,
+- **Real footage.** 96 seconds of narration with its fluffed takes left in,
   plus four clips of film footage. The agent cut it to 45 seconds, chose
   footage by what each line was about, burned captions, and checked its own
   render: all 123 expected words heard back.
-- **A whole film:** the demo material plus a score, briefed as a finished film
-  ready to upload. In 192 seconds and $2.27 the agent cut it, laid the music
-  under the voice, ended on a card, mastered it to −16 LUFS, and checked it.
-  The score, the level and the end card were each measured in the delivered
-  file, not taken from the project.
+- **A whole film.** The demo material plus a score, briefed as a finished
+  film ready to upload. In 192 seconds and $2.27 the agent cut it, laid the
+  music under the voice, ended on a card, mastered it to −16 LUFS, and
+  checked it. The score, the level and the end card were each measured in
+  the delivered file, not taken from the project.
 
-> **Have a Mac or a Windows PC and half an hour?** One person has run
-> proofcut on an Intel Mac and nobody yet on Apple silicon, and on Windows
-> only its author has. One script runs the whole test and removes what it
-> installed:
-> [§ Help wanted](#help-wanted-a-mac-or-a-windows-run).
+proofcut makes no footage and writes no script. It takes what you recorded
+to a film, and proves the film matches the edit.
+
+## How people use it
+
+**Tell an agent what film you want.** In Claude Code, install the plugin and
+describe the film: which recording is the voice, what the b-roll is, where
+the music goes, what it ends on. The agent imports, transcribes, cuts the
+retakes, hangs footage off the lines it belongs to, scores, masters and
+checks the render, using proofcut's tools and nothing else. It can look at
+the picture track as a labelled grid while it works, so it sees what it
+placed rather than a filename. Every MCP client runs the same server; the
+plugin is the one that needs no setup.
+
+```
+/plugin marketplace add tydude001/proofcut
+/plugin install proofcut@proofcut
+```
+
+**Cut from a shell, by naming words.** Every tool is also a `proofcut`
+subcommand printing JSON, so a cut is a script you can read, re-run and
+diff. Every word in a recording keeps a fixed index that never renumbers,
+`--plan` prints what a range says before anything changes, and `undo` walks
+it back.
+
+```sh
+uv run proofcut -C myproject cut vo 111:114 --plan
+```
+
+**Edit by hand in the workspace.** Strike words in the transcript, drag-trim
+and razor on the timeline, review every crop in place, and export from
+Finish. It plays the source through the edit, so seeing a cut costs no
+render, and the truth strip warns while you edit if the film would ship
+wrong. The agent sits in a side rail of the same window.
+
+```sh
+uv run proofcut -C myproject open
+```
+
+**Finish elsewhere, and still prove the file.** Rough-cut here, export a
+`.kdenlive` or OpenTimelineIO file, finish in Kdenlive, Resolve or Premiere,
+and bring the trim back with `import-edit`. Then point `verify` at the
+delivered file: it transcribes the render and diffs it word by word against
+the timeline, so a retake left in is caught before anyone watches.
+
+```sh
+uv run proofcut -C myproject verify final.mp4
+```
+
+Each of these is walked in [§ Try it](#try-it).
+
+## From recordings to a finished film
+
+One project, and proofcut's own commands from the first import to the
+delivered file. No NLE finishes the film, and nothing else touches the render.
+Each stage is one command, and each row links the section of the
+[manual](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md) that
+walks it.
+
+| Stage | Command |
+|---|---|
+| [Bring in the voiceover and footage, and transcribe](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#the-core-loop) | `import`, `transcribe` |
+| [Cut retakes and asides by naming their words](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#word-indices-and-locate) | `cut vo 111:114` |
+| [Hang b-roll and cards off the lines they belong to](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#cards-cues-and-tails) | `cue add`, `card new` |
+| [Open cold on a scene](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#a-cold-open), [end on a card](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#cards-cues-and-tails) | `head`, `tail` |
+| [Play the footage's own lines in a gap, or under the narration](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#holds-the-films-own-lines) | `hold add`, `hold under` |
+| [Score it: placed passages, crossfaded, levelled under the voice](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#the-music-bed) | `music` |
+| [Pull breaths down without cutting them](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#attenuation) | `attenuate` |
+| [Render](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#renders-presets-undo-migration) and [master to a loudness target](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#the-master) | `export --render --loudness -16` |
+| [Burn in captions](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#captions) | `captions --burn` |
+| [Check the render says what the edit says](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#verifying-a-render) | `verify`, [`frames`](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#frames-film-check-black-spots), [`hold check`](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#holds-the-films-own-lines) |
+
+Two video essays of five to six minutes, first finished in Kdenlive, have
+been rebuilt with these commands alone and measured against the delivered
+files. One came out the same length to the frame. The other matched all 63
+of its voiceover ranges to the millisecond, with the voice aligned to the
+sample. Both master at the original's −16 LUFS. The measurements are in
+[HISTORY.md](https://github.com/tydude001/proofcut/blob/main/docs/HISTORY.md).
+
+Beyond those stages, one line each:
+
+- **An agent that can look.** `shot-sheet` draws the whole picture track as
+  one labelled grid, and `footage-sheet` browses a clip you haven't cut yet.
+  Both return the image itself over MCP, not a path the agent can't open.
+- **B-roll by description.** `describe` writes what is on screen in each
+  ~10-second window of footage, so an agent can choose a clip by what a line
+  is about.
+- **Transcript self-checks.** Retake seams, invented words, swallowed repeats
+  and suspect durations are reported when a transcript is attached, and
+  `unspoken` lets the render itself testify to words nobody said.
+- **Reframing for another aspect.** Per-shot crop windows, face-aware
+  proposals (`reframe-detect`), a review sheet, and stacked splits for two
+  speakers. Cards are redrawn at the new frame size, never stretched.
+- **Derived reels.** `reel` cuts part of the film into a new project, such as
+  a vertical teaser. It reports every picture it dropped and pins the ones it
+  kept.
+- **Screen recordings.** Named instants (`events`) that a crop, a sound or a
+  speed change can hang off, a clip inset into the recording, and a retime
+  for the slow parts.
+
+![Frame mode: a shot list beside the selected shot's windows — each crop
+drawn as a rect on three of the source's own frames, over a filmstrip of the
+whole shot with the sampled instants ticked on it, the window's rect quoted
+in source pixels, Approve/Re-frame beside it, and coverage chips for stale
+framing and unexplained steps](https://raw.githubusercontent.com/tydude001/proofcut/main/docs/img/frame-mode.png)
+
+## Why proofcut
+
+- **It checks its own work.** `verify` transcribes the finished file and
+  diffs it word by word against the timeline. Frame counts and the picture
+  are measured too, because ffmpeg, melt and auto-editor all exit 0 on some
+  failures. What `verify`, `frames` and `hold check` report is read off the
+  file, never off the project.
+- **Local, with an agent surface.** Commercial AI editors are apps around a
+  metered cloud service. proofcut transcribes, edits and renders on your
+  machine and calls no cloud service of its own: no account, no per-minute
+  billing, and your footage stays where it is. The only thing that talks to
+  a model provider is the agent you choose to run. The optional
+  footage-description and voice models download once and run locally.
+- **Cuts stay addressable.** A word's index never renumbers, so
+  `cut vo 111:114` names the same words however many cuts came before it,
+  and a cue hung off a phrase stays addressed through every cut around it.
+- **Built for agents.** 109 MCP tools with typed inputs, structured returns
+  and read/write annotations, so Claude Code, Codex or your own agent can
+  drive it and a permission layer can tell a look from a change.
+- **One engine, three ways in.** The MCP server, the command line and the
+  workspace all call the same operations. Every tool has a matching command
+  and the test suite enforces it, so anything an agent does, you can script
+  or re-run by hand.
+- **No lock-in.** The timeline is OpenTimelineIO, the manifest is JSON, and
+  the render is ffmpeg's and MLT's. Export a `.kdenlive` or OTIO file and
+  finish anywhere.
+
+![The proofcut workspace on the demo project: the transcript with a retake struck
+through, the preview drawing the shot under the playhead with its captions, the
+side rail on its agent tab reporting a finished render against the timeline,
+and the layered timeline below — picture, waveform and captions as three
+projections of one edit](https://raw.githubusercontent.com/tydude001/proofcut/main/docs/img/edit-mode.png)
 
 ## Try it
 
@@ -67,11 +202,11 @@ uv sync
 
 ### The two-minute demo
 
-No footage needed. [docs/DEMO.md](https://github.com/tydude001/proofcut/blob/main/docs/DEMO.md) generates a voiceover with a
-real retake, b-roll and a score, then walks a whole small film: cut the retake
-by naming its words, hang b-roll off a phrase, lay the score under the voice,
-render and master it, end on a card, and check the render against the
-timeline.
+No footage needed. [docs/DEMO.md](https://github.com/tydude001/proofcut/blob/main/docs/DEMO.md)
+makes a voiceover with a real retake, b-roll and a score, then walks a whole
+small film: cut the retake by naming its words, hang b-roll off a phrase, lay
+the score under the voice, render and master it, end on a card, and check the
+render against the timeline.
 
 ```sh
 uv run python scripts/make_demo.py ~/proofcut-demo
@@ -79,8 +214,8 @@ uv run python scripts/make_demo.py ~/proofcut-demo
 
 ### In Claude Code
 
-The plugin registers proofcut's MCP server, so all 93 tools are available
-with no setup of your own:
+The plugin registers proofcut's MCP server, so every tool is available with
+no setup of your own:
 
 ```
 /plugin marketplace add tydude001/proofcut
@@ -114,123 +249,29 @@ uv run proofcut -C myproject export final.mp4 --render      # or a .kdenlive to 
 uv run proofcut -C myproject verify final.mp4               # did the render say what you edited?
 ```
 
-To watch the edit instead, open the workspace. It plays the source through
-the edit, so seeing a cut costs no render:
+To watch the edit instead, open the workspace:
 
 ```sh
 uv run proofcut -C myproject open        # server plus an app window
 uv run proofcut -C myproject web --open  # the same page in a browser tab
 ```
 
-## From recordings to a finished film
-
-One project, and proofcut's own commands from the first import to the
-delivered file. No NLE finishes the film, and nothing else touches the render.
-Each stage is one command, and each row links the section of the
-[manual](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md) that
-walks it.
-
-| Stage | Command |
-|---|---|
-| [Bring in the voiceover and footage, and transcribe](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#the-core-loop) | `import`, `transcribe` |
-| [Cut retakes and asides by naming their words](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#word-indices-and-locate) | `cut vo 111:114` |
-| [Hang b-roll and cards off the lines they belong to](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#cards-cues-and-tails) | `cue add`, `card new` |
-| [Open cold on a scene](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#a-cold-open), [end on a card](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#cards-cues-and-tails) | `head`, `tail` |
-| [Play the footage's own lines in a gap, or under the narration](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#holds-the-films-own-lines) | `hold add`, `hold under` |
-| [Score it: placed passages, crossfaded, levelled under the voice](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#the-music-bed) | `music` |
-| [Pull breaths down without cutting them](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#attenuation) | `attenuate` |
-| [Render](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#renders-presets-undo-migration) and [master to a loudness target](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#the-master) | `export --render --loudness -16` |
-| [Burn in captions](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#captions) | `captions --burn` |
-| [Check the render says what the edit says](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#verifying-a-render) | `verify`, [`frames`](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#frames-film-check-black-spots), [`hold check`](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#holds-the-films-own-lines) |
-
-Two video essays of five to six minutes have been rebuilt this way and
-measured against their originals, which had been finished outside proofcut.
-One came out the same length to the frame. The other matched its original's
-63 voiceover ranges to the millisecond, with the voice aligned to the sample,
-starting from a retake pass made in Kdenlive. Both master at the original's
-−16 LUFS (HISTORY.md § The Lambs/Longlegs native rebuild, § The Scream native
-rebuild).
-
-proofcut makes no footage and writes no script. It takes what you recorded to
-a film, and proves the film matches the edit.
-
-Beyond the stages above, one line each:
-
-- **The workspace.** Edit (transcript, preview, drag-trim and razor), Frame
-  (review every crop in place) and Finish (presets, verify, and the finished
-  file). The truth strip warns while you edit if the film would ship wrong.
-- **An agent that can look.** `shot-sheet` draws the whole picture track as
-  one labelled grid, and `footage-sheet` browses a clip you haven't cut yet.
-  Both return the image itself over MCP.
-- **Transcript self-checks.** Retake seams, invented words, swallowed repeats
-  and suspect durations are reported when a transcript is attached, and
-  `unspoken` lets the render itself testify to words nobody said.
-- **B-roll by description.** `describe` writes what is on screen in each
-  ~10-second window of footage, so an agent can choose a clip by what a line
-  is about.
-- **Reframing.** Per-shot crop windows for aspect changes, face-aware
-  proposals (`reframe-detect`), a review sheet, and stacked splits for two
-  speakers. Cards are redrawn at the new frame size, never stretched.
-- **Derived reels.** `reel` cuts part of the film into a new project, such as
-  a vertical teaser. It reports every picture it dropped and pins the ones it
-  kept.
-- **NLE round-trip.** Export to Kdenlive or OTIO, finish elsewhere, and
-  `import-edit` the trim back.
-
-![Frame mode: a shot list beside the selected shot's windows — each crop
-drawn as a rect on three of the source's own frames, over a filmstrip of the
-whole shot with the sampled instants ticked on it, the window's rect quoted
-in source pixels, Approve/Re-frame beside it, and coverage chips for stale
-framing and unexplained steps](https://raw.githubusercontent.com/tydude001/proofcut/main/docs/img/frame-mode.png)
-
 proofcut is 0.x software. A project from an older version is refused rather
 than guessed at, and `proofcut migrate` brings it forward.
-
-## Why proofcut
-
-- **It checks its own work.** `verify` transcribes the finished file and
-  diffs it word by word against the timeline, so a retake left in the film is
-  caught before anyone watches it. Frame counts and the picture are measured
-  too, because ffmpeg, melt and auto-editor all exit 0 on some failures.
-- **Cuts stay addressable.** Every word in a recording keeps a fixed index
-  that never renumbers, so `cut vo 111:114` names the same words however many
-  cuts came before it. `--plan` prints what a range says before anything
-  changes, and `restore` and `undo` walk it back.
-- **Built for agents.** 93 MCP tools with typed inputs and structured
-  returns, so Claude Code, Codex or your own agent can drive it. Tools like
-  `shot-sheet` return an image of the edit, not a file path the agent can't
-  open.
-- **One engine, three ways in.** The MCP server, the `proofcut` command line
-  and a browser workspace all call the same operations. Every tool has a
-  matching command (the test suite enforces it), so anything an agent does,
-  you can script or re-run by hand.
-- **Local-first.** Commercial AI editors are apps around a metered cloud
-  service. proofcut transcribes, edits and renders on your machine, and calls
-  no cloud service of its own: no account, no per-minute billing. The only
-  thing that talks to a model provider is the agent you choose to run (the
-  optional footage-description and voice models download once, on first use).
-- **No lock-in.** The timeline is OpenTimelineIO. Export a `.kdenlive` or
-  OTIO file, finish in Resolve, Premiere or Kdenlive, and bring your trim back
-  with `import-edit`.
-
-![The proofcut workspace on the demo project: the transcript with a retake struck
-through, the preview drawing the shot under the playhead with its captions, the
-side rail on its agent tab reporting a finished render against the timeline,
-and the layered timeline below — picture, waveform and captions as three
-projections of one edit](https://raw.githubusercontent.com/tydude001/proofcut/main/docs/img/edit-mode.png)
 
 ## Help wanted: a Mac or a Windows run
 
 GitHub's macOS and Windows runners take the demo to a checked render, but a
 runner never reads the instructions. On a Mac, one person has taken the demo
 to a checked render, on an Intel Mac (i7-8850H, macOS 15.7.9); nobody has on
-Apple silicon. On Windows, the author's own Windows 11 laptop has, twice, and nobody else's PC;
-Windows 10 and ARM64 PCs have not been tried at all. If you have one of these
-machines and half an hour, one script installs what proofcut needs, makes a
-short test video, has proofcut cut, score, master and check it, and puts a
-report on your Desktop. It asks before it starts, records what it added, and
-removes exactly that on request, nothing you already had. A run that stops at
-the first step is just as useful, because where it stops is the finding.
+Apple silicon. On Windows, the author's own Windows 11 laptop has, twice, and
+nobody else's PC; Windows 10 and ARM64 PCs have not been tried at all. If you
+have one of these machines and half an hour, one script installs what
+proofcut needs, makes a short test video, has proofcut cut, score, master and
+check it, and puts a report on your Desktop. It asks before it starts,
+records what it added, and removes exactly that on request, nothing you
+already had. A run that stops at the first step is just as useful, because
+where it stops is the finding.
 
 On a Mac:
 
@@ -262,10 +303,9 @@ your Desktop with your home folder's name taken out; [file the report](https://g
 
 ## Requirements
 
-proofcut is developed on Linux (a Fedora-based desktop). On macOS and
-Windows the test suite passes on CI and GitHub's runners take the demo to a
-checked render. A person's Intel Mac has too, and on Windows the author's
-own PC; nobody has tried Apple silicon by hand yet. Where each OS stands is in
+proofcut is developed on Linux (a Fedora-based desktop). On macOS and Windows
+the test suite passes on CI; where each OS stands by hand is
+[§ Help wanted](#help-wanted-a-mac-or-a-windows-run) above, and in detail
 [docs/plans/PORTABILITY.md](https://github.com/tydude001/proofcut/blob/main/docs/plans/PORTABILITY.md).
 
 Every hard part of an editor already exists as mature open source, and

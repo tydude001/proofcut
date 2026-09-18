@@ -17308,3 +17308,36 @@ cannot make.
 every render with "no transcribed word survives on the timeline". Here the
 voice is a sound over a silent recording, so the agent had no speech check
 on this clip at all.
+
+## The README, reordered around the reader — 2026-09-18
+
+The README was accurate in every claim and arranged like a manual. After
+the hero clip came the Mac/Windows callout and then ninety lines of
+`doctor`, `setup`, clone and plugin commands before anything said who
+proofcut is for or how they would use it. The three ways in were one bullet,
+fourth under § Why proofcut. The stages table that § The whole film, said
+placed directly under the clip had shipped after § Try it. The Mac/Windows
+status was stated three times, the tool count twice (as 93, against 109
+registered), and the essay-rebuild sentence cited HISTORY.md section titles
+a stranger cannot read.
+
+**Restructured, not rewritten.** The order is now: tagline, clip, the three
+scored trials, then a new **§ How people use it** with four short
+paragraphs each ending in one command — an agent told what film to make,
+the shell cutting by word index, the workspace by hand, and finishing in an
+NLE while `verify` still proves the delivered file. Then the stages table,
+the "one line each" list (which gains a screen-recording line for `events`,
+`inset` and `retime`), § Why proofcut with the local-versus-cloud contrast
+moved to second, and only then § Try it. The stages table sits one section
+below where § The whole film, said put it, deliberately: the reader meets
+how they would use proofcut before the order it builds a film in. Every
+measured claim is kept; the section-title citations are replaced by one
+link to this file. The tool count is 109, stated once. § Help wanted keeps
+its heading, which the two issue templates name. Nothing in `tests/` or
+`scripts/` pins README text beyond `pyproject.toml`'s `readme`, and the
+`mcp-name` marker and the absolute links PyPI needs are untouched.
+
+The file is 410 lines against 370: the pitch grew by about 55 and the
+duplicated status lines went. The old text is kept beside the tree at
+`~/proofcut-work/README.pre-restructure.md` until this is judged on the
+project page.
