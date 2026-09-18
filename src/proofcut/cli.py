@@ -1463,6 +1463,25 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_overlay_add.add_argument("--plan", action="store_true", help="resolve and report without writing")
     overlay_sub.add_parser("ls", help="list overlays, bottom of the stack first, with where each plays")
+    p_follow = sub.add_parser("follow", help="put a second recording on the timeline after the first, cut or dissolved")
+    p_follow.add_argument("clip_id", help="the incoming recording")
+    p_follow.add_argument("after", help="the clip on the timeline it follows")
+    p_follow.add_argument("--at-event", help="splice in after this event of AFTER (default: after the last of it)")
+    p_follow.add_argument("--src-start", type=float, help="seconds into CLIP_ID where it starts (default its head)")
+    p_follow.add_argument("--src-end", type=float, help="seconds into CLIP_ID where it ends (default its end)")
+    p_follow.add_argument("--from-event", help="start at this event of CLIP_ID")
+    p_follow.add_argument("--until-event", help="end at this event of CLIP_ID")
+    p_follow.add_argument("--dissolve", type=float, default=0.0, help="seconds of crossfade into it (default 0, a cut)")
+    p_follow.add_argument("--ease", choices=tuple(EASINGS), default="linear", help="the crossfade's curve")
+    p_follow.add_argument("--plan", action="store_true", help="resolve and report without writing")
+
+    p_dissolve = sub.add_parser("dissolve", help="set, change or clear the crossfade at a join follow made")
+    p_dissolve.add_argument("clip_id", help="the incoming clip of the join")
+    p_dissolve.add_argument("src_start", type=float, help="where it starts at that join, in its own seconds")
+    p_dissolve.add_argument("seconds", type=float, help="seconds of crossfade; 0 makes the join a cut again")
+    p_dissolve.add_argument("--ease", choices=tuple(EASINGS), default="linear", help="the crossfade's curve")
+    p_dissolve.add_argument("--plan", action="store_true", help="resolve and report without writing")
+
     p_inset = sub.add_parser("inset", help="a clip drawn into a rectangle of the recording, following its camera")
     inset_sub = p_inset.add_subparsers(dest="inset_command", required=True)
     p_inset_add = inset_sub.add_parser(
@@ -3012,6 +3031,20 @@ def _cmd_overlay(args: argparse.Namespace) -> int:
     return _emit(ops.overlay_rm(args.project, args.position, plan=args.plan))
 
 
+def _cmd_follow(args: argparse.Namespace) -> int:
+    return _emit(
+        ops.follow(
+            args.project, args.clip_id, args.after, at_event=args.at_event, src_start=args.src_start,
+            src_end=args.src_end, from_event=args.from_event, until_event=args.until_event,
+            dissolve=args.dissolve, ease=args.ease, plan=args.plan,
+        )
+    )
+
+
+def _cmd_dissolve(args: argparse.Namespace) -> int:
+    return _emit(ops.dissolve_set(args.project, args.clip_id, args.src_start, args.seconds, ease=args.ease, plan=args.plan))
+
+
 def _cmd_inset(args: argparse.Namespace) -> int:
     if args.inset_command == "add":
         try:
@@ -3589,6 +3622,8 @@ _COMMANDS = {
     "overlay": _cmd_overlay,
     "retime": _cmd_retime,
     "inset": _cmd_inset,
+    "follow": _cmd_follow,
+    "dissolve": _cmd_dissolve,
     "sound": _cmd_sound,
     "hold": _cmd_hold,
     "reel": _cmd_reel,

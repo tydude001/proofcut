@@ -106,6 +106,8 @@ EXPECTED_TOOLS = {
     "inset_add",
     "inset_ls",
     "inset_rm",
+    "follow",
+    "dissolve",
     "sound_add",
     "sound_ls",
     "sound_rm",
@@ -726,6 +728,8 @@ TOOL_TO_COMMAND = {
     "inset_add": "inset",
     "inset_ls": "inset",
     "inset_rm": "inset",
+    "follow": "follow",
+    "dissolve": "dissolve",
     "sound_add": "sound",
     "sound_ls": "sound",
     "sound_rm": "sound",
@@ -8659,7 +8663,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
             assert "no project" in description, tool.name
         else:
             assert "bound project" in description, tool.name
-    assert seen == 104
+    assert seen == 106
 
 
 def test_no_tool_advertises_an_argument_with_nothing_said_about_it() -> None:
@@ -10527,3 +10531,63 @@ def test_a_hold_from_a_six_channel_clip_with_no_layout_is_heard(visible_tmp: Pat
     hold = result["holds"][0]
     centre = _tone_window(Path(result["output"]), 700.0, hold["timeline_start"] + 0.4, 1.0)
     assert centre > 500.0, "the centre channel is the film's dialogue and must reach the render"
+
+
+def _counting_sources(root: Path) -> tuple[Path, Path]:
+    """A flat grey-250 recording, and one whose luma is 60 + 2N at its own
+    frame N — so one sampled pixel says which source frame is on screen."""
+    first, second = root / "window.mp4", root / "terminal.mp4"
+    for path, expr in ((first, "250"), (second, "60+2*N")):
+        subprocess.run(
+            ["ffmpeg", "-nostdin", "-v", "error", "-y",
+             "-f", "lavfi", "-i", "color=c=black:size=640x360:rate=30:duration=4",
+             "-vf", f"format=gray,geq=lum='{expr}',format=yuv420p", "-c:v", "libx264", "-qp", "0", str(path)],
+            capture_output=True, check=True,
+        )  # fmt: skip
+    return first, second
+
+
+@needs_melt
+def test_a_second_recording_follows_the_first_through_a_dissolve(visible_tmp: Path) -> None:
+    """RECUT.md step 8 against a real melt. The terminal follows the window
+    from its 1.0 s with a 0.5 s dissolve: frames 105..119 blend the window
+    with the terminal's pre-roll (its frames 15..29) at alpha (k-105)/15, and
+    from the join at 120 the Edit plays terminal frame 30 on — so the source
+    frame runs on unbroken across the join, and the film is no longer for it."""
+    first, second = _counting_sources(visible_tmp)
+    project = visible_tmp / "proj"
+    output = visible_tmp / "out.mp4"
+
+    async def body(session: ClientSession) -> Any:
+        client = Client(session)
+        await client.call("init", path=str(project))
+        window = (await client.call("import_media", path=str(project), source=str(first)))["clip_id"]
+        terminal = (await client.call("import_media", path=str(project), source=str(second)))["clip_id"]
+        await client.call("seed_timeline", path=str(project), clip_id=window, remove_silences=False)
+        followed = await client.call(
+            "follow", path=str(project), clip_id=terminal, after=window, src_start=1.0, src_end=3.0, dissolve=0.5,
+        )  # fmt: skip
+        rendered = await client.call("export", path=str(project), output=str(output), export_format=None)
+        return followed, rendered
+
+    followed, rendered = anyio.run(_with_server, body)
+    assert followed["dissolve"]["join_frame"] == 120
+    assert rendered["writer"] == "melt"
+    frames = _rgb_frames(output, 640, 360)
+    assert len(frames) == 120 + 60
+
+    def centre(pixels: bytes) -> float:
+        i = (180 * 640 + 320) * 3
+        return 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2]
+
+    worst = 0.0
+    for k, pixels in enumerate(frames):
+        if k < 105:
+            want = 250.0
+        elif k < 120:
+            alpha = (k - 105) / 15
+            want = (1 - alpha) * 250 + alpha * (60 + 2 * (k - 90))
+        else:
+            want = 60 + 2 * (k - 90)
+        worst = max(worst, abs(centre(pixels) - want))
+    assert worst <= 4, worst

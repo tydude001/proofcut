@@ -59,7 +59,8 @@ INSTRUCTIONS = (
     "- transcript: transcribe or attach_transcript; get_transcript with search=\n"
     "- cut: seed_timeline, then cut_by_transcript / cut_by_time, restore, locate, retime_add\n"
     "- picture: cue_add (b-roll under a line), broll_brief, shot_sheet, canvas, "
-    "reframe, reframe_sheet, inset_add (a clip inside the recording)\n"
+    "reframe, reframe_sheet, inset_add (a clip inside the recording), follow "
+    "(a second recording after the first, dissolved)\n"
     "- sound: music (the bed), hold_add, vo_extend, vo_synth, sound_add (one-shots at events)\n"
     "- cards and ends: card_templates, card_new, overlay_add (type over the film), head, tail\n"
     "- finish: add_captions, caption_style, export (render with export_format=null)\n"
@@ -377,6 +378,8 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "add_captions", "caption_style", "canvas", "head", "tail", "music", "reframe",
             "reframe_sheet", "shot_sheet", "footage_sheet", "synopsis", "events", "film_check",
             "import_edit", "review_verdict",
+            # Replaces the dissolve at its join, or clears it.
+            "dissolve",
             # Rewrites the generated WAVs with the same bytes; imports only
             # the clip ids not yet registered.
             "sound_generate",
@@ -399,6 +402,8 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "hold_add", "hold_rm", "hold_under_rm", "reel", "continuity_reject",
             "overlay_rm", "sound_rm", "retime_rm", "inset_rm",
             "review_add",
+            # Splices a second recording in; the timeline grows, as vo_extend's does.
+            "follow",
         ],
         _EDIT,
     ),
@@ -1736,6 +1741,30 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
     },
     "inset_rm": {
         "position": "The inset to remove, by its position in inset_ls.",
+    },
+    "follow": {
+        "clip_id": "The incoming recording, a registered clip with picture.",
+        "after": "The clip on the timeline it follows — the first recording.",
+        "at_event": (
+            "Splice in after this event of `after` (name or name#k). Omitted: after the last of "
+            "`after` the timeline plays."
+        ),
+        "src_start": "Seconds into clip_id where it starts. Default its head. Not with from_event.",
+        "src_end": "Seconds into clip_id where it ends. Default its end. Not with until_event.",
+        "from_event": "Start at this event of clip_id instead of src_start.",
+        "until_event": "End at this event of clip_id instead of src_end.",
+        "dissolve": (
+            "Seconds of crossfade into it; 0, the default, is a cut. Drawn from clip_id's own "
+            "frames before its in-point, so it needs that much of the file before the start, and "
+            "the film is no longer for it."
+        ),
+        "ease": "The crossfade's curve: linear (the default), ease, ease-in or ease-out.",
+    },
+    "dissolve": {
+        "clip_id": "The incoming clip of a join `follow` made.",
+        "src_start": "Where clip_id starts at that join, in its own seconds (follow's reply says).",
+        "seconds": "Seconds of crossfade; 0 clears it back to a cut.",
+        "ease": "The crossfade's curve: linear (the default), ease, ease-in or ease-out.",
     },
     "retime_rm": {
         "position": "The stretch to remove, by its position in retime_ls; that span plays at 1x again.",
@@ -4946,6 +4975,57 @@ def inset_rm(path: ProjectPath = None, *, position: int, plan: bool = False) -> 
     The clip stays registered. Positions above the removed one move down by one.
     """
     return ops.inset_rm(path, position, plan=plan)
+
+
+@_tool()
+def follow(
+    path: ProjectPath = None,
+    *,
+    clip_id: str,
+    after: str,
+    at_event: str | None = None,
+    src_start: float | None = None,
+    src_end: float | None = None,
+    from_event: str | None = None,
+    until_event: str | None = None,
+    dissolve: float = 0.0,
+    ease: str = "linear",
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Put a second recording on the timeline after the first, cut or dissolved.
+
+    The window's recording, then the terminal's: `clip_id` plays its span
+    spliced in after `after`, and everything after moves later. Words, events,
+    retime stretches and reframe windows of either clip keep their meaning, so
+    the incoming clip is retimed and framed like any other. `dissolve` seconds
+    crossfade into it from its own frames before the in-point; the film is no
+    longer for it. The reply gives the join and the dissolve; `plan=true`
+    writes nothing, and `undo` takes the splice back.
+    """
+    return ops.follow(
+        path, clip_id, after, at_event=at_event, src_start=src_start, src_end=src_end,
+        from_event=from_event, until_event=until_event, dissolve=dissolve, ease=ease, plan=plan,
+    )  # fmt: skip
+
+
+@_tool()
+def dissolve(
+    path: ProjectPath = None,
+    *,
+    clip_id: str,
+    src_start: float,
+    seconds: float,
+    ease: str = "linear",
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Set, change or clear the crossfade at a join `follow` made.
+
+    Addressed by the incoming clip and where it starts there, never a timeline
+    second, so a cut elsewhere moves it. `seconds=0` makes the join a cut
+    again. Checked against the timeline before writing; `plan=true` writes
+    nothing.
+    """
+    return ops.dissolve_set(path, clip_id, src_start, seconds, ease=ease, plan=plan)
 
 
 @_tool()

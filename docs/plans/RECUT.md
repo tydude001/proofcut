@@ -178,6 +178,10 @@ across the overlap. Spike it on the flatpak and the portable melt before
 building it, which is the rule every writer step has followed (§ Insets,
 built).
 
+Shipped — see HISTORY.md § A second recording follows the first, through a
+dissolve. Nothing overlaps: the dissolve is the incoming clip's pre-roll on its
+own track, so the plan's risk did not arise.
+
 **Where the material and the instruments are**, for whoever builds this:
 - `~/proofcut-work/spikes/native-b7/`: `prep.py` (stages the material),
   `brief.txt`, `media/`, `events/`, `sfx/`, and `trial/`, which holds the B7

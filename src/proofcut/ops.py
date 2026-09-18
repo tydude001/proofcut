@@ -15139,6 +15139,222 @@ def inset_rm(path: Path | str, position: int, *, plan: bool = False) -> dict[str
 # a typed run of 279 keystrokes is one record. Like overlays, nothing stored is
 # a timeline second: each hit resolves through the `Edit` on every build.
 
+DISSOLVES_KEY = "dissolves"
+
+
+def _stored_dissolves(project: Project) -> list[dict[str, Any]]:
+    """Every stored dissolve, validated — `_stored_insets`' discipline."""
+    stored = project.read_manifest().get(DISSOLVES_KEY, [])
+    if not isinstance(stored, list):
+        raise ProjectError(f"{project.manifest_path}'s {DISSOLVES_KEY!r} must be a JSON array")
+    records = []
+    for item in stored:
+        try:
+            record = {
+                "clip_id": str(item["clip_id"]),
+                "src_start": float(item["src_start"]),
+                "seconds": float(item["seconds"]),
+                "ease": str(item.get("ease", "linear")),
+            }
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ProjectError(
+                f"{project.manifest_path} has a dissolve that is not (clip_id, src_start, seconds): {item!r} ({exc})"
+            ) from None
+        records.append(record)
+    return records
+
+
+def _dissolve_plan(
+    project: Project, edit: tl.Edit, rate: float, *, clock: _Clock | None = None, stored: list[dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
+    """Every dissolve resolved to the render frames it covers (RECUT.md step 8).
+
+    A dissolve is addressed by the incoming clip's in-point — `(clip_id,
+    src_start)` — never by a timeline second, so a cut elsewhere moves it with
+    nothing to refresh. The join is the segment of `clip_id` that starts
+    there with another clip before it; one a cut removed or merged refuses by
+    name. The pre-roll is the `seconds` of `clip_id` just before its
+    in-point, so a clip that starts sooner than that into its own file
+    refuses rather than reading before its first frame.
+    """
+    records = _stored_dissolves(project) if stored is None else stored
+    if not records:
+        return []
+    frame = (clock or _Clock(rate)).frame
+    layout = autoeditor.frame_layout(edit, rate)
+    plans = []
+    for position, record in enumerate(records):
+        clip_id, src_start = record["clip_id"], record["src_start"]
+        label = f"the dissolve into {clip_id!r} at {src_start:g}s"
+        joined = None
+        edit_frame = 0
+        for index, (segment, (_, frames)) in enumerate(zip(edit.segments, layout)):
+            if (
+                index
+                and segment.clip_id == clip_id
+                and abs(segment.start - src_start) * rate < 1
+                and edit.segments[index - 1].clip_id != clip_id
+            ):
+                joined = index
+                break
+            edit_frame += frames
+        if joined is None:
+            raise ProjectError(
+                f"{label}: no join on the timeline has {clip_id!r} starting at {src_start:g}s after "
+                "another clip — the splice was cut or moved; set the dissolve again, or undo"
+            )
+        clip = media.get_clip(project, clip_id)
+        if not clip.get("has_video"):
+            raise ProjectError(f"{label}: {clip_id!r} has no picture to dissolve into")
+        frames = round(record["seconds"] * rate)
+        if frames < 1:
+            raise ProjectError(f"{label} lasts {record['seconds']}s — under one frame; a cut is no dissolve")
+        if src_start < record["seconds"] - 1e-9:
+            raise ProjectError(
+                f"{label} needs {record['seconds']:g}s of {clip_id!r} before its in-point and the file "
+                f"has {src_start:g}s — shorten the dissolve, or start the clip later"
+            )
+        join = frame(edit_frame / rate)
+        if join < frames:
+            raise ProjectError(f"{label}: the join is {join} frames in, under the dissolve's {frames}")
+        dissolve = mlt.Dissolve(
+            resource=str(media.media_path(project, clip)),
+            src_in=round(src_start * rate) - frames,
+            start=join - frames,
+            frames=frames,
+            ease=record["ease"],
+        )
+        plans.append(
+            {
+                "position": position,
+                **record,
+                "after": edit.segments[joined - 1].clip_id,
+                "join_frame": join,
+                "timeline_join": round(edit_frame / rate, 3),
+                "dissolve": dissolve,
+            }
+        )
+    return plans
+
+
+def _dissolve_view(plan: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in plan.items() if key != "dissolve"}
+
+
+def follow(
+    path: Path | str,
+    clip_id: str,
+    after: str,
+    *,
+    at_event: str | None = None,
+    src_start: float | None = None,
+    src_end: float | None = None,
+    from_event: str | None = None,
+    until_event: str | None = None,
+    dissolve: float = 0.0,
+    ease: str = "linear",
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Put a second recording on the timeline after the first, cut or dissolved.
+
+    RECUT.md step 8: the launch clip goes from the window's recording to the
+    terminal's. `clip_id` (the incoming recording) plays from `src_start` or
+    `from_event` (default its head) to `src_end` or `until_event` (default its
+    end), spliced in after `after`'s source instant `at_event` — or, with
+    none, after the last of `after` the timeline plays. `Edit.insert` does the
+    splice, so everything downstream of it moves later and every word, event,
+    retime and reframe of either clip keeps its meaning.
+
+    `dissolve` is seconds of crossfade into it (0, the default, is a cut),
+    drawn from the incoming clip's own frames before its in-point, so the
+    film is exactly as long as without it; `ease` shapes the fade. The join
+    is resolved and checked before anything is written. `plan=True` writes
+    nothing.
+    """
+    project = Project.open(path)
+    incoming = media.get_clip(project, clip_id)
+    if not incoming.get("has_video"):
+        raise ProjectError(f"clip {clip_id!r} has no picture — follow puts a recording on the timeline")
+    if src_start is not None and from_event is not None:
+        raise ProjectError("start at src_start or from_event, not both")
+    if src_end is not None and until_event is not None:
+        raise ProjectError("end at src_end or until_event, not both")
+    if dissolve < 0:
+        raise ProjectError(f"dissolve is seconds of crossfade, not {dissolve}")
+    if ease not in mlt.EASINGS:
+        raise ProjectError(f"ease {ease!r} is not one of {', '.join(mlt.EASINGS)}")
+    start = resolve_event(incoming, from_event)["at"] if from_event is not None else float(src_start or 0.0)
+    bound = _timeline_bound(project, incoming)
+    end = resolve_event(incoming, until_event)["at"] if until_event is not None else float(src_end if src_end is not None else bound)
+    if not 0 <= start < end <= bound + 1e-6:
+        raise ProjectError(f"{clip_id!r} from {start:g}s to {end:g}s is not inside its {bound:.3f}s")
+
+    edit = _load_edit(project)
+    if at_event is not None:
+        at = resolve_event(media.get_clip(project, after), at_event)["at"]
+    else:
+        own = [segment for segment in edit.segments if segment.clip_id == after]
+        if not own:
+            raise ProjectError(f"{after!r} is not on the timeline, so nothing is there to follow")
+        at = own[-1].end
+    try:
+        edit.insert(after, at, clip_id, start, end)
+    except tl.TimelineError as exc:
+        raise ProjectError(str(exc)) from None
+
+    stored = _stored_dissolves(project)
+    stored = [d for d in stored if not (d["clip_id"] == clip_id and abs(d["src_start"] - start) < 1e-6)]
+    if dissolve:
+        stored.append({"clip_id": clip_id, "src_start": start, "seconds": float(dissolve), "ease": ease})
+    rate = _export_fps(_clips_by_id(project))
+    plans = _dissolve_plan(project, edit, rate, stored=stored)
+    joined = next((p for p in plans if p["clip_id"] == clip_id and abs(p["src_start"] - start) < 1e-6), None)
+    if not plan:
+        _save_edit(project, edit)
+        manifest = project.read_manifest()
+        if stored:
+            manifest[DISSOLVES_KEY] = stored
+        else:
+            manifest.pop(DISSOLVES_KEY, None)
+        project.write_manifest(manifest)
+    return {
+        "clip_id": clip_id,
+        "after": after,
+        "at": at,
+        "src_start": start,
+        "src_end": end,
+        "timeline_duration": edit.duration,
+        "dissolve": None if joined is None else _dissolve_view(joined),
+        "written": not plan,
+        "plan": bool(plan),
+    }
+
+
+def dissolve_set(
+    path: Path | str, clip_id: str, src_start: float, seconds: float, *, ease: str = "linear", plan: bool = False
+) -> dict[str, Any]:
+    """Set, change or clear (`seconds=0`) the dissolve into `clip_id` where it
+    starts at `src_start` on the timeline — a join `follow` made. Resolved
+    against the timeline before writing; `plan=True` writes nothing."""
+    project = Project.open(path)
+    if seconds < 0:
+        raise ProjectError(f"seconds is a length, not {seconds}")
+    if ease not in mlt.EASINGS:
+        raise ProjectError(f"ease {ease!r} is not one of {', '.join(mlt.EASINGS)}")
+    stored = [d for d in _stored_dissolves(project) if not (d["clip_id"] == clip_id and abs(d["src_start"] - src_start) < 1e-6)]
+    if seconds:
+        stored.append({"clip_id": clip_id, "src_start": float(src_start), "seconds": float(seconds), "ease": ease})
+    plans = _dissolve_plan(project, _load_edit(project), _export_fps(_clips_by_id(project)), stored=stored)
+    if not plan:
+        manifest = project.read_manifest()
+        if stored:
+            manifest[DISSOLVES_KEY] = stored
+        else:
+            manifest.pop(DISSOLVES_KEY, None)
+        project.write_manifest(manifest)
+    return {"dissolves": [_dissolve_view(p) for p in plans], "written": not plan, "plan": bool(plan)}
+
+
 SOUNDS_KEY = "sounds"
 
 #: The closest two hits of one `every` run may land, in timeline seconds —
@@ -15605,6 +15821,8 @@ def _is_layered(project: Project, edit: tl.Edit) -> bool:
         or manifest.get(RETIME_KEY)
         # An inset is a lane over the recording — twelfth.
         or manifest.get(INSETS_KEY)
+        # The thirteenth: a dissolve is drawn on its own track (RECUT.md step 8).
+        or manifest.get(DISSOLVES_KEY)
     )
 
 
@@ -16079,6 +16297,8 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
     reframes = {
         resource: by_clip[clip] for resource, clip in clip_of.items() if clip in by_clip
     }
+    dissolve_plans = _dissolve_plan(project, edit, rate, clock=clock)
+    dissolves = [replace(plan["dissolve"], start=plan["dissolve"].start + head_frames) for plan in dissolve_plans]
     document = mlt.document(
         audio=audio,
         picture=lane,
@@ -16088,6 +16308,7 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         overlays=overlays,
         sounds=sound_lanes,
         insets=insets,
+        dissolves=dissolves,
         rate=rate,
         resolution=resolution,
         reframe=reframes,
@@ -16104,6 +16325,8 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         "rate": rate,
         "resolution": resolution,
         "shots": shots,
+        # [] with none, or each join the render dissolves across.
+        "dissolves": [_dissolve_view(plan) for plan in dissolve_plans],
         # True when a head or tail went on the Edit's own track, for want of
         # a picture lane to join.
         "on_edit_track": on_edit_track and (head_report is not None or tail_report is not None),
@@ -19182,6 +19405,8 @@ def reel(
     # An inset is placed against the film's own recording and words — the
     # tail's rule again.
     insets_dropped = _stored_insets(source)
+    # A dissolve names a join between two recordings the reel may not keep.
+    dissolves_dropped = _stored_dissolves(source)
     # Checked here rather than left to `cut_by_time`, at the granularity a reel
     # actually has a boundary at — see `_reel_suspect_edges`. Under `plan` it
     # is reported and never refused, which is `cut_by_time`'s own convention
@@ -19254,6 +19479,7 @@ def reel(
         "sounds_dropped": sounds_dropped,
         "retime_dropped": retime_dropped,
         "insets_dropped": insets_dropped,
+        "dissolves_dropped": dissolves_dropped,
         "plan": bool(plan),
     }
     report["over_platform_cap"] = report["duration"] > PLATFORM_CAP
@@ -19295,6 +19521,7 @@ def reel(
         manifest.pop(SOUNDS_KEY, None)
         manifest.pop(RETIME_KEY, None)
         manifest.pop(INSETS_KEY, None)
+        manifest.pop(DISSOLVES_KEY, None)
         # Provenance, and the answer to the question a hand-made scratch copy
         # could not answer once already: which film is this, and which seconds
         # of it (HISTORY.md § The VO the project was holding). Additive and

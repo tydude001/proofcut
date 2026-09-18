@@ -17097,3 +17097,49 @@ rerun. Second, the pack is the channel's whole brand: `title_font` is Zilla
 Slab there on purpose (goodsometimes `branding.md`, the paragraph on the
 proofcut pack), and swapping it restyles the essays' receipt, reveal and
 rerate titles the next time `card_reauthor` sweeps. It waits on Tyler.
+
+## A second recording follows the first, through a dissolve — 2026-09-18
+
+docs/plans/RECUT.md step 8. A goes from the window's recording to Claude
+Code's, crossfading over 0.5 s. B7 had no way to put a second recording
+after the first, so it faked the terminal with three full-frame insets, and
+an inset plays at 1x.
+
+**`follow`** (`proofcut follow`, MCP `follow`) splices the incoming clip's
+span, `src_start`/`from_event` to `src_end`/`until_event`, in after the
+first clip's `at_event`, or after the last of it that the timeline plays,
+through `Edit.insert`. Every word, event, retime stretch and reframe window
+of either clip keeps its meaning, so the terminal is retimed and framed like
+the window. **`dissolve`** sets, changes or clears the crossfade at such a
+join. A dissolve is stored as `(clip_id, src_start, seconds, ease)` under
+`dissolves`, addressed by the incoming clip's in-point and never by a
+timeline second, and `_is_layered` takes it as its thirteenth trigger.
+`reel` drops dissolves and names them (`dissolves_dropped`). `follow` is one
+undo.
+
+**The plan's risk is designed out rather than handled.** The plan expected
+the first overlap of two sequential entries, with `declared_frames` to keep
+exact across it. Nothing overlaps. The Edit butt-joins the two clips, and
+the dissolve is the incoming clip's *pre-roll*, the `seconds` just before
+its in-point, drawn on its own silent track (`mlt.Dissolve`,
+`xchain`/`xplaylist`/`tractorX`) over the join's last frames. Its
+`brightness` alpha keys `src_in=0;src_in+frames=1`, so the pre-roll's last
+frame is one step short of opaque and the Edit's own track shows the next
+source frame at the join. The film is exactly as long as a cut, and every
+declared length is the Edit's. What it costs is that much of the incoming
+file before its start, and a clip that has not got it is refused. The node
+carries its resource's reframe, so the pre-roll is framed by the incoming
+clip's own camera, and the writer's reframe readback expects it. The
+pre-roll plays at 1x whatever retime covers the join.
+
+**Spiked on both melts before building** (`~/proofcut-work/spikes/dissolve-probe`):
+a grey-250 clip, then a clip whose luma is 60 + 2N at its own frame N,
+reframed onto a window. Over 120 frames, the flatpak's melt and Shotcut's
+portable 7.41 are each within 1 luma level of the arithmetic everywhere:
+the blend, and the source frame running on unbroken across the join. The
+same check runs over MCP against real melt in
+`test_a_second_recording_follows_the_first_through_a_dissolve`, within 4.
+
+**Not in the window yet:** the preview hard-cuts at a join the render
+dissolves, for 0.5 s. `timeline_view` does not carry dissolves, and the
+render is the witness for now.

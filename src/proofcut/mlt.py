@@ -494,6 +494,48 @@ def rect_at(keys: str, frame: int) -> tuple[float, ...]:
     return parsed[-1][2]
 
 
+@dataclass(frozen=True)
+class Dissolve:
+    """The incoming recording's last `frames` before its in-point, drawn over
+    the join and fading in (docs/plans/RECUT.md step 8).
+
+    **Two entries never overlap on the Edit's track**: the Edit butt-joins the
+    outgoing clip to the incoming one, and the dissolve is the incoming clip's
+    *pre-roll* — the frames just before its in-point — on its own silent track
+    over the join's last `frames`, its alpha rising from 0 to reach 1 exactly
+    at the join, where the Edit's own track takes over on the very next source
+    frame. So every declared length stays the Edit's, and `declared_frames`
+    needs nothing new. Render frames, like every position here; `src_in` is the
+    pre-roll's first source frame. Its node carries the resource's reframe, so
+    it is framed by its own camera, and never a retime: the pre-roll plays at
+    1x whatever the join's stretch.
+    """
+
+    resource: str
+    src_in: int
+    start: int
+    frames: int
+    ease: str = "linear"
+
+    @property
+    def end(self) -> int:
+        """The join: the first render frame after the dissolve."""
+        return self.start + self.frames
+
+
+def _check_dissolve(dissolve: Dissolve, total_frames: int) -> None:
+    where = f"the dissolve into {dissolve.resource!r} at frame {dissolve.end}"
+    if dissolve.frames < 1 or dissolve.start < 0 or dissolve.end > total_frames:
+        raise MLTError(
+            f"{where} runs frames {dissolve.start}..{dissolve.end} of a "
+            f"{total_frames}-frame timeline — a dissolve has to sit inside the film"
+        )
+    if dissolve.src_in < 0:
+        raise MLTError(f"{where} would read {-dissolve.src_in} frames before its clip starts")
+    if dissolve.ease not in EASINGS:
+        raise MLTError(f"{where}: ease {dissolve.ease!r} is not one of {', '.join(EASINGS)}")
+
+
 def _alpha_keys(inset: Inset, first: int, plateau: float) -> str:
     """A `brightness` alpha animation: 0 → plateau over the fade in, back to 0
     over the fade out, keyed from `first` — `overlay_rect`'s timing."""
@@ -1737,6 +1779,7 @@ def document(
     overlays: list[Overlay] | None = None,
     sounds: list[list[Entry]] | None = None,
     insets: list[Inset] | None = None,
+    dissolves: list[Dissolve] | None = None,
     rate: float,
     resolution: tuple[int, int] = DEFAULT_RESOLUTION,
     reframe: dict[str, Reframe] | None = None,
@@ -1908,6 +1951,9 @@ def document(
     for inset in insets:
         _check_inset(inset, total_frames)
         _host_entry(inset, audio)
+    dissolves = dissolves or []
+    for dissolve in dissolves:
+        _check_dissolve(dissolve, total_frames)
     for entry in [*music, *music2, *holds, *sound_entries]:
         if entry.time_map:
             raise MLTError(
@@ -1955,7 +2001,8 @@ def document(
     # `kdenlive:id` is keyed on the resource and not on the node.
     sources: dict[str, Entry] = {}
     inset_entries = [Entry(inset.resource, inset.src_in, inset.frames, has_video=True) for inset in insets]
-    for entry in [*audio, *picture, *music, *music2, *holds, *sound_entries, *inset_entries]:
+    dissolve_entries = [Entry(d.resource, d.src_in, d.frames, has_video=True) for d in dissolves]
+    for entry in [*audio, *picture, *music, *music2, *holds, *sound_entries, *inset_entries, *dissolve_entries]:
         # A bin entry is the raw media, so it never carries an entry's retime.
         sources.setdefault(entry.resource, replace(entry, time_map=(), gain_keys=()))
     bin_ids = {resource: index + 2 for index, resource in enumerate(sources)}
@@ -2194,6 +2241,44 @@ def document(
             ET.SubElement(track, "track", {"producer": playlist_id, **hide})
         inset_tracks.append((f"tractorI{index}", inset.has_audio))
 
+    # The dissolves, each on its own silent track over the join it covers —
+    # see `Dissolve`. Ids in their own namespace (xchain/xplaylist/tractorX),
+    # so a document with none is byte-identical to one built before them.
+    dissolve_tracks: list[str] = []
+    for index, (dissolve, entry) in enumerate(zip(dissolves, dissolve_entries)):
+        node = _source_node(f"xchain{index}", entry, bin_ids[dissolve.resource], rate)
+        _property(node, "audio_index", "-1")
+        _property(node, "video_index", "0")
+        _property(node, "set.test_audio", "1")
+        if dissolve.resource in reframe:
+            _reframe_filter(node, reframe[dissolve.resource], resolution, rate, None)
+        fade = ET.SubElement(node, "filter", {"id": f"fade_xchain{index}"})
+        _property(fade, "mlt_service", "brightness")
+        _property(fade, "level", "1")
+        # Keyed in the producer's frames, the inset fade's rule, and 1 on the
+        # join itself so the pre-roll's last frame is still a step short of it.
+        _property(
+            fade, "alpha", f"{dissolve.src_in}{EASINGS[dissolve.ease]}=0;{dissolve.src_in + dissolve.frames}=1"
+        )
+        root.append(node)
+        playlist = ET.SubElement(root, "playlist", {"id": f"xplaylist{index}a"})
+        if dissolve.start:
+            ET.SubElement(playlist, "blank", {"length": str(dissolve.start)})
+        ET.SubElement(
+            playlist, "entry", {"producer": f"xchain{index}", "in": str(entry.src_in), "out": str(entry.src_out)}
+        )
+        if dissolve.end < total_frames:
+            ET.SubElement(playlist, "blank", {"length": str(total_frames - dissolve.end)})
+        ET.SubElement(root, "playlist", {"id": f"xplaylist{index}b"})
+        track = ET.SubElement(
+            root, "tractor", {"id": f"tractorX{index}", "in": "0", "out": str(total_frames - 1)}
+        )
+        _property(track, "kdenlive:timeline_active", "1")
+        _property(track, "kdenlive:track_name", f"Dissolve {index + 1}")
+        for playlist_id in (f"xplaylist{index}a", f"xplaylist{index}b"):
+            ET.SubElement(track, "track", {"producer": playlist_id, "hide": "audio"})
+        dissolve_tracks.append(f"tractorX{index}")
+
     picture_fills = _fill_lane(
         picture, "fvchain", ("playlist16", "playlist17"), "tractorE", "Picture fill"
     )
@@ -2403,6 +2488,9 @@ def document(
     # An inset is part of the recording's picture: over the edit, under
     # anything the cue table lays over the recording.
     stack.extend(track for track, _ in inset_tracks)
+    # A dissolve is the next recording arriving over this one, its insets
+    # included; still under anything the cue table lays over the film.
+    stack.extend(dissolve_tracks)
     if picture_fills:
         stack.append("tractorE")
     if picture:
@@ -2584,6 +2672,12 @@ def document(
         for role, key in wants_reframe
     } | set(edit_panes.values()) | set(picture_panes.values())
     expected |= set(edit_fills.values()) | set(picture_fills.values())
+    # A dissolve's pre-roll is framed by its own camera, like the edit's node.
+    expected |= {
+        f"xchain{index}"
+        for index, dissolve in enumerate(dissolves)
+        if dissolve.resource in reframe and not reframe[dissolve.resource].is_identity(resolution)
+    }
     found = set(reframed_nodes(root))
     if expected != found:
         raise MLTError(
