@@ -96,10 +96,19 @@ claude mcp add proofcut -- uv run --project /path/to/proofcut proofcut mcp
 **A mutating call commits when it lands.** No tool asks for confirmation, and
 `plan` is off unless the caller sets it — `cut_by_transcript` without
 `plan=true` edits the timeline at once. The schema says so to the client
-instead: every tool carries MCP's read-only/destructive/idempotent hints (the
-cuts, `undo` and `reel` are `destructiveHint: true`), and `plan`'s own
-description tells the agent to prefer it over doing and undoing. What makes
-unattended use safe is recovery, not a gate:
+instead: every tool carries MCP's read-only/destructive/idempotent hints, in
+four classes. Read-only (`verify`, the views, `thumbnail`, `contact_sheet`);
+add (`import_media`, `cue_add`, `sound_add` — inserts that never replace a
+record); set (`card_new`, `hold_under`, `export`, `reframe` — replaces one
+record at its address, or writes a file where told; `destructiveHint: true`,
+`idempotentHint: true`); and edit (the cuts, `hold_add`, `undo`, `vo_extend`,
+`reel` — `destructiveHint: true`, `idempotentHint: false`). A permission layer
+in front of the server should key on those hints rather than on a list of
+names, which goes stale with the next tool; note that `shot_sheet`,
+`footage_sheet` and `reframe_sheet` are *set*, not read-only, because each
+writes a PNG under `cache/`. `plan`'s own description tells the agent to
+prefer it over doing and undoing. What makes unattended use safe is recovery,
+not a gate:
 
 - every write snapshots the timeline and manifest first, so `undo` walks it back;
 - a cut never touches the source media, and `restore` brings back anything cut;
