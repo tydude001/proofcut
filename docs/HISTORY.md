@@ -17032,3 +17032,28 @@ in the film's own pauses. Whether that reads as A is for the moment taps
 (step 9) to say.
 
 Tests in `test_inset.py` and `test_sound.py`.
+
+## An inset can be levelled — 2026-09-18
+
+docs/plans/RECUT.md step 6. B7's film played its file at 0 dB, −23.8 LUFS,
+and A had levelled it to −18 dBFS RMS with `clip.py`'s `speech_level`.
+`inset_add` now takes `level="speech"` (`inset add --level speech`). It
+measures the span the inset plays, once, when the inset is added, and
+records the gain that brings it to `INSET_SPEECH_DBFS` (−18) as `gain_db`.
+Beside that it stores `level: {kind, measured_dbfs, target_dbfs}`, which
+`_stored_insets` carries through every rewrite. The level is never
+re-measured per build (`export --loudness`'s one-gain rule), so re-adding
+the inset re-levels it. `gain_db` and `level` together are refused.
+
+**`energy.speech_rms_db` differs from `speech_level` on purpose.** It keeps
+the rest: RMS over the live samples (any channel above 1e-3), at 48 kHz.
+`clip.py` decoded with `-ac 2`, and ffmpeg upmixes mono at −3 dB, so a mono
+source would be levelled 3 dB hot. This measures each file in its own
+channels. For a stereo file, like the agent's render, the two agree. The
+unit test caught the difference: a mono sine of amplitude 1/8 read −23.98
+where its RMS is −21.07.
+
+Measured in melt on a copy of B7 with the bed and the sounds removed. The
+render measures −26.38 dBFS as a source, is levelled +8.34 dB, and reads
+−18.35 dBFS across the film span of the render (32.0–42.4 s). The inset's
+fades are unchanged.

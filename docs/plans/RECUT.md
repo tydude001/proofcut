@@ -144,6 +144,8 @@ edges from clicking stays. A is the precedent for the target, −18 dBFS RMS.
 It is measured and recorded as `gain_db`, never recomputed per build, on
 `export --loudness`'s one-gain rule.
 
+Shipped — see HISTORY.md § An inset can be levelled.
+
 **7. The lower third looks like A (S). Moves: every headline.**
 - The `lowerthird` template gains a `footnote_rise` and `footnote_delay`
   (16px, 0.25 s), so one card staggers its lines the way A's does. Today a

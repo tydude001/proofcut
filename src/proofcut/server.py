@@ -1729,6 +1729,10 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         ),
         "mute": "Play none of the asset's audio (and leave the bed alone).",
         "position": "Where in the stack it goes: 0 is the bottom, omitted is the top.",
+        "level": (
+            "'speech' measures the span the inset plays, once, and records the gain_db that brings "
+            "its speech to -18 dBFS RMS, the launch clip's film level. Not with gain_db."
+        ),
     },
     "inset_rm": {
         "position": "The inset to remove, by its position in inset_ls.",
@@ -4870,9 +4874,10 @@ def inset_add(
     leave_seconds: float | None = None,
     leave_ease: str | None = None,
     dim: float = 0.0,
-    gain_db: float = 0.0,
+    gain_db: float | None = None,
     mute: bool = False,
     position: int | None = None,
+    level: str | None = None,
     plan: bool = False,
 ) -> dict[str, Any]:
     """Draw a clip into a rectangle of the recording, following its camera — a render inside the app's preview.
@@ -4887,7 +4892,7 @@ def inset_add(
 
     It fades in and out by default, can dim the recording around it, and plays
     its own audio with the music bed out underneath (dipped, with a duck)
-    unless `mute`. The reply
+    unless `mute`; `level="speech"` measures it and sets `gain_db`. The reply
     echoes where it plays and `dest`, where its rect lands in the canvas;
     `plan=true` writes nothing. Any inset routes export through the MLT
     writer, and export's reply gives each inset's rect at its first and last
@@ -4918,6 +4923,7 @@ def inset_add(
         gain_db=gain_db,
         mute=mute,
         position=position,
+        level=level,
         plan=plan,
     )
 

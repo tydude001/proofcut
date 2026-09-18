@@ -475,3 +475,32 @@ def test_the_framing_sheet_draws_the_inset_rect_inside_its_span(
     assert inside == [[(218, 63, 228, 171)]]
     assert outside == [[]]
     assert any("+ inset 218,63,228,171" in label for label, _ in drawn)
+
+
+def test_level_speech_measures_the_span_once_and_records_the_gain(project: Project) -> None:
+    """RECUT.md step 6. `cut` is ffmpeg's default sine, amplitude 1/8, whose
+    RMS is 0.125/sqrt(2): -21.07 dBFS, so the gain to -18 is +3.07."""
+    result = ops.inset_add(project.root, "rec", "cut", RECT, event="playing", seconds=1.0, level="speech")
+
+    stored = project.read_manifest()["insets"][0]
+    assert stored["level"]["measured_dbfs"] == pytest.approx(-21.07, abs=0.2)
+    assert stored["gain_db"] == pytest.approx(3.07, abs=0.2)
+    assert result["inset"]["gain_db"] == stored["gain_db"]
+    # Carried through a rewrite, and what the writer draws.
+    ops.inset_add(project.root, "rec", "cut", RECT, phrase="lands", seconds=0.9)
+    assert project.read_manifest()["insets"][0]["level"] == stored["level"]
+    built = ops._build_mlt(project, ops._load_edit(project), fps=RATE)
+    assert built["insets"][0]["audible"] is True
+    assert any(
+        inset.gain_db == stored["gain_db"]
+        for inset in [plan["inset"] for plan in ops._inset_plan(
+            project, ops._load_edit(project), RATE, edit_frames=300, clock=ops._Clock(RATE)
+        )]
+    )  # fmt: skip
+
+
+def test_level_and_gain_together_are_refused(project: Project) -> None:
+    with pytest.raises(ProjectError, match="gain_db or level='speech', not both"):
+        ops.inset_add(project.root, "rec", "cut", RECT, event="playing", level="speech", gain_db=-3.0)
+    with pytest.raises(ProjectError, match="level is 'speech'"):
+        ops.inset_add(project.root, "rec", "cut", RECT, event="playing", level="loud")

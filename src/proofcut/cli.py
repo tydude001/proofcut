@@ -1491,7 +1491,10 @@ def _build_parser() -> argparse.ArgumentParser:
             f"--{side}-ease", choices=tuple(EASINGS), help=f"{fade_eases} (default {ops.INSET_FADE[2]})"
         )
     p_inset_add.add_argument("--dim", type=float, default=0.0, help="darken the recording around it, 0 to 1")
-    p_inset_add.add_argument("--gain-db", type=float, default=0.0, help="its own audio's level")
+    p_inset_add.add_argument("--gain-db", type=float, help="its own audio's level (default 0)")
+    p_inset_add.add_argument(
+        "--level", choices=("speech",), help="measure it once and level its speech to -18 dBFS RMS"
+    )
     p_inset_add.add_argument("--mute", action="store_true", help="play none of its audio")
     p_inset_add.add_argument("--position", type=int, help="where in the stack (0 = bottom; default the top)")
     p_inset_add.add_argument("--plan", action="store_true", help="resolve and report without writing")
@@ -3041,6 +3044,7 @@ def _cmd_inset(args: argparse.Namespace) -> int:
                 gain_db=args.gain_db,
                 mute=args.mute,
                 position=args.position,
+                level=args.level,
                 plan=args.plan,
             )
         )

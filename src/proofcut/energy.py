@@ -37,6 +37,7 @@ import math
 import re
 import statistics
 import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -388,6 +389,64 @@ def sound_runs(
 def unaccounted_sound(media: Path | str, spans: Sequence[tuple[float, float]]) -> dict[str, Any]:
     """Decode `media` and report the gaps in `spans` that hold sound anyway."""
     return loud_gaps(spans, envelope(decode(media)))
+
+
+#: What `speech_rms_db` counts as silence, as a fraction of full scale —
+#: `clip.py`'s `speech_level`, whose −18 dBFS the launch clip's film was
+#: levelled to.
+SPEECH_LIVE = 1e-3
+
+
+def speech_rms_db(media: Path | str, *, start: float = 0.0, end: float | None = None) -> float:
+    """RMS level (dBFS) of `media`'s audio from `start` to `end`, over its live
+    samples only — `clip.py`'s `speech_level`: at 48 kHz, a frame live when
+    any channel is above `SPEECH_LIVE`, and the mean square taken over every
+    channel of the live frames. **In the file's own channels**, where
+    `clip.py` forced stereo: ffmpeg upmixes mono at −3 dB, which would level a
+    mono film 3 dB hot. For a stereo file the two are the same number. Silence between
+    lines does not pull the level down, which is what makes it a speech level
+    rather than a file's average (docs/plans/RECUT.md step 6).
+    """
+    source = Path(media).expanduser()
+    if not source.exists():
+        raise EnergyError(f"no media to measure: {source}")
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=channels",
+         "-of", "csv=p=0", str(source)],
+        capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    try:
+        channels = max(1, int(probe.stdout.strip().splitlines()[0]))
+    except (ValueError, IndexError):
+        raise EnergyError(f"{source.name} has no audio stream to measure") from None
+    cmd = [FFMPEG, "-v", "error", "-nostdin"]
+    if start:
+        cmd += ["-ss", f"{start:.6f}"]
+    cmd += ["-i", str(source), "-vn"]
+    if end is not None:
+        cmd += ["-t", f"{end - start:.6f}"]
+    cmd += ["-ac", str(channels), "-ar", "48000", "-f", "s16le", "-"]
+    try:
+        completed = subprocess.run(cmd, capture_output=True, check=True)
+    except FileNotFoundError as exc:
+        raise EnergyError(f"{FFMPEG} not found on PATH") from exc
+    except subprocess.CalledProcessError as exc:
+        raise EnergyError(f"ffmpeg could not decode {source}: {exc.stderr.decode(errors='replace').strip()}") from exc
+    width = 2 * channels
+    samples = array.array("h")
+    samples.frombytes(completed.stdout[: len(completed.stdout) // width * width])
+    if sys.byteorder == "big":
+        samples.byteswap()
+    floor = SPEECH_LIVE * 32768
+    power, count = 0, 0
+    for i in range(0, len(samples), channels):
+        frame = samples[i : i + channels]
+        if any(abs(value) > floor for value in frame):
+            power += sum(value * value for value in frame)
+            count += channels
+    if not count:
+        raise EnergyError(f"{source.name} is silent from {start:g}s, so it has no speech level to measure")
+    return 20 * math.log10(math.sqrt(power / count) / 32768)
 
 
 def integrated_loudness(

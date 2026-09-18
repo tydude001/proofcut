@@ -14530,6 +14530,11 @@ INSET_FADE = ("fade", 0.4, "ease")
 #: than letterboxed — the bars would show the recording's own copy.
 INSET_ASPECT_TOLERANCE = 0.01
 
+#: The speech level `inset_add(level="speech")` brings an inset's audio to,
+#: in dBFS RMS over its live samples: `clip.py`'s `speech_level` target for
+#: the launch clip's film (RECUT.md step 6).
+INSET_SPEECH_DBFS = -18.0
+
 #: Off 1x by more than this and the recording under the inset drifts from
 #: the render drawn over it; B5's own mute threshold.
 INSET_SPEED_TOLERANCE = rt.MUTE_TOLERANCE
@@ -14571,6 +14576,10 @@ def _stored_insets(project: Project) -> list[dict[str, Any]]:
                 record[side] = str(item.get(side, motion))
                 record[f"{side}_seconds"] = float(item.get(f"{side}_seconds", length))
                 record[f"{side}_ease"] = str(item.get(f"{side}_ease", ease))
+            # Provenance for a measured `gain_db` (RECUT.md step 6), carried
+            # through every rewrite or the next inset_add would drop it.
+            if isinstance(item.get("level"), dict):
+                record["level"] = dict(item["level"])
         except (KeyError, TypeError, ValueError) as exc:
             raise ProjectError(
                 f"{project.manifest_path} has an inset that is not "
@@ -14810,12 +14819,20 @@ def inset_add(
     leave_seconds: float | None = None,
     leave_ease: str | None = None,
     dim: float = 0.0,
-    gain_db: float = 0.0,
+    gain_db: float | None = None,
     mute: bool = False,
     position: int | None = None,
+    level: str | None = None,
     plan: bool = False,
 ) -> dict[str, Any]:
     """Draw clip `asset` into `rect` of recording `clip_id`, following its camera.
+
+    `level="speech"` levels its audio: the span it plays is measured once,
+    here, as a speech level (RMS over the live samples, `clip.py`'s
+    `speech_level`), and the gain that brings it to `INSET_SPEECH_DBFS`
+    (−18, the launch clip's) is recorded as `gain_db` beside what was
+    measured. Never re-measured per build — `export --loudness`'s one-gain
+    rule — so re-add the inset to re-level it (RECUT.md step 6).
 
     `rect` is `[x0, y0, x1, y1]` in the recording's own pixels — where the
     recording shows the thing the inset replaces — and has to be the asset's
@@ -14879,8 +14896,12 @@ def inset_add(
             raise ProjectError(f"{side}_ease {record[f'{side}_ease']!r} is not one of {', '.join(mlt.EASINGS)}")
         if record[f"{side}_seconds"] < 0:
             raise ProjectError(f"{side}_seconds is a length, not {record[f'{side}_seconds']}")
+    if level is not None and level != "speech":
+        raise ProjectError(f"level is 'speech' or unset, not {level!r}")
+    if level is not None and gain_db is not None:
+        raise ProjectError("pass gain_db or level='speech', not both — the level is what sets the gain")
     record["dim"] = float(dim)
-    record["gain_db"] = float(gain_db)
+    record["gain_db"] = float(gain_db or 0.0)
     record["mute"] = bool(mute)
 
     stored = _stored_insets(project)
@@ -14898,6 +14919,24 @@ def inset_add(
         edit_frames=warp.frames if warp is not None else edit_frames,
         stored=updated, clock=_Clock(rate, warp),
     )  # fmt: skip
+    if level == "speech":
+        # Over exactly what plays: the span resolved above, from its in-point.
+        clip = media.get_clip(project, asset)
+        if not clip.get("has_audio"):
+            raise ProjectError(f"clip {asset!r} has no audio to level")
+        start = record["src_in"]
+        try:
+            measured = energy.speech_rms_db(
+                media.media_path(project, clip), start=start, end=start + plans[at]["frames"] / rate
+            )
+        except energy.EnergyError as exc:
+            raise ProjectError(str(exc)) from None
+        record["gain_db"] = round(INSET_SPEECH_DBFS - measured, 2)
+        record["level"] = {"kind": "speech", "measured_dbfs": round(measured, 2), "target_dbfs": INSET_SPEECH_DBFS}
+        updated[at] = record
+        plans[at]["gain_db"] = record["gain_db"]
+        plans[at]["level"] = record["level"]
+        plans[at]["inset"] = replace(plans[at]["inset"], gain_db=record["gain_db"])
     if not plan:
         manifest = project.read_manifest()
         manifest[INSETS_KEY] = updated
