@@ -182,6 +182,9 @@ class Overlay:
     out_motion: str = "fade"
     out_frames: int = 0
     out_ease: str = "ease-in"
+    #: How far a `rise` travels, in pixels at 1080 lines — a lower third's
+    #: footnote layer rises less than its headline (RECUT.md step 7).
+    rise: int = OVERLAY_RISE
 
     @property
     def end(self) -> int:
@@ -229,7 +232,7 @@ def overlay_rect(overlay: Overlay, resolution: tuple[int, int]) -> str | None:
     """
     width, height = resolution
     rest = (0, 0, width, height)
-    travel = round(OVERLAY_RISE * height / 1080)
+    travel = round(overlay.rise * height / 1080)
 
     def key(frame: int, operator: str, rect: tuple[int, int, int, int], opacity: int) -> str:
         return f"{frame}{operator}={rect[0]} {rect[1]} {rect[2]} {rect[3]} {opacity}"

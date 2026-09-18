@@ -1739,9 +1739,29 @@ TEMPLATES: dict[str, dict[str, Any]] = {
                 "font": "body_font",
                 "default": "",
                 "description": (
-                    "a smaller amber line under the headline. Optional; a "
-                    "stagger is two overlays, so a footnote that enters later "
-                    "is its own lowerthird passed an empty headline"
+                    "a smaller amber line under the headline. Optional; placed "
+                    "as an overlay it enters footnote_delay after the headline"
+                ),
+            },
+            # Not drawn: they say how the overlay animates the card's two
+            # lines (docs/plans/RECUT.md step 7), and a card with a footnote
+            # writes each line as its own layer so it can.
+            "footnote_delay": {
+                "kind": "number",
+                "placed": False,
+                "default": 0.25,
+                "description": (
+                    "seconds the footnote enters after the headline when the card is an "
+                    "overlay; the launch clip's 0.25, and 0 enters them together"
+                ),
+            },
+            "footnote_rise": {
+                "kind": "number",
+                "placed": False,
+                "default": 16,
+                "description": (
+                    "pixels, at 1080 lines, the footnote rises through on a rise "
+                    "entrance; the launch clip's 16, where the headline rises 24"
                 ),
             },
         },

@@ -160,6 +160,10 @@ Shipped — see HISTORY.md § An inset can be levelled.
   it, since at 0.9 density the difference is within what nobody has
   complained about.
 
+The stagger shipped — see HISTORY.md § The lower third staggers its
+footnote. The fonts wait on a call: the pack does not reach the B7 rerun,
+and swapping its slots restyles the essays' cards.
+
 **8. A second recording follows the first, with a dissolve (M–L). Moves:
 terminal.** `Edit.insert` already splices a second `clip_id` at a segment's
 end (timeline.py:524), and events, retime, reframe and sounds are all already

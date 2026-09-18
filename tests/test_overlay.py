@@ -338,3 +338,77 @@ def test_a_reel_drops_the_overlays_and_names_them(cards: Project, tmp_path: Path
     ops.overlay_add(cards.root, "head", "vo", 1, until_word_index=4)
     report = ops.reel(cards.root, tmp_path / "reel", start=0.0, end=3.0, plan=True)
     assert [o["card"] for o in report["overlays_dropped"]] == ["head"]
+
+
+# -- a lower third's footnote as its own layer (docs/plans/RECUT.md step 7) --
+
+
+def _alpha_rows(png: Path) -> tuple[int, int]:
+    """The first and last row with any ink in a transparent PNG."""
+    out = subprocess.run(
+        ["magick", str(png), "-alpha", "extract", "-format", "%@", "info:"],
+        capture_output=True, text=True, check=True,
+    ).stdout  # fmt: skip
+    size, _, offset = out.partition("+")
+    height = int(size.split("x")[1])
+    top = int(offset.split("+")[1])
+    return top, top + height - 1
+
+
+@needs_magick
+def test_a_footnote_is_drawn_as_its_own_layer_where_the_whole_card_draws_it(project: Project) -> None:
+    ops.card_new(project.root, "hears", "lowerthird", {"headline": "It hears the false start.", "footnote": "and cuts it"})
+    layers = project.cards_dir / "layers"
+    head, foot = layers / "hears.headline.png", layers / "hears.footnote.png"
+    assert head.is_file() and foot.is_file()
+    assert "hears.headline" not in ops._cards_on_disk(project), "a layer is never a card"
+
+    whole = _alpha_rows(project.cards_dir / "hears.png")
+    assert (_alpha_rows(head)[0], _alpha_rows(foot)[1]) == whole
+    assert _alpha_rows(head)[1] < _alpha_rows(foot)[0], "the headline sits above the footnote"
+
+
+@needs_magick
+def test_a_layered_card_staggers_its_footnote_on_the_render_and_in_the_preview(project: Project) -> None:
+    ops.card_new(project.root, "hears", "lowerthird", {"headline": "It hears the false start.", "footnote": "and cuts it"})
+    ops.overlay_add(project.root, "hears", "vo", 1, seconds=2.0, enter="rise", enter_seconds=0.45, enter_ease="ease-out")
+
+    [plan] = ops._overlay_plan(project, ops._load_edit(project), 30.0, edit_frames=180)
+
+    headline, footnote = plan["drawn"]
+    assert (headline.start, headline.frames, headline.rise) == (15, 60, 24)
+    assert (footnote.start, footnote.frames, footnote.rise) == (15 + round(0.25 * 30), 60 - 8, 16)
+    assert footnote.end == headline.end, "the two lines leave together"
+    assert plan["layers"] == {"delay": 0.25, "rise": 16, "footnote_start_frame": 23}
+    assert Path(footnote.resource).name == "hears.footnote.png"
+
+    view = ops.timeline_view(project.root)["overlays"]
+    assert [(v["asset"], v["rise_px"], v["timeline_start"]) for v in view] == [
+        ("card:hears#headline", 24, 0.5),
+        ("card:hears#footnote", 16, round(23 / 30, 3)),
+    ]
+    assert ops.preview_source(project.root, "card:hears#footnote")["path"].endswith("hears.footnote.png")
+    with pytest.raises(ProjectError, match="does not name a card layer"):
+        ops.preview_source(project.root, "card:hears#scrim")
+
+
+@needs_magick
+def test_a_card_without_a_footnote_or_made_before_layers_draws_whole(project: Project) -> None:
+    ops.card_new(project.root, "plain", "lowerthird", {"headline": "It picks the shots."})
+    assert not (project.cards_dir / "layers" / "plain.headline.png").exists()
+    ops.overlay_add(project.root, "plain", "vo", 1, seconds=2.0)
+    [plan] = ops._overlay_plan(project, ops._load_edit(project), 30.0, edit_frames=180)
+    assert len(plan["drawn"]) == 1 and plan["layers"] is None
+
+    ops.card_new(project.root, "old", "lowerthird", {"headline": "A", "footnote": "b"})
+    shutil.rmtree(project.cards_dir / "layers")
+    ops.overlay_add(project.root, "old", "vo", 5, seconds=0.9)
+    plans = ops._overlay_plan(project, ops._load_edit(project), 30.0, edit_frames=180)
+    assert len(plans[1]["drawn"]) == 1
+
+
+@needs_magick
+def test_an_overwrite_without_a_footnote_removes_its_layers(project: Project) -> None:
+    ops.card_new(project.root, "hears", "lowerthird", {"headline": "A", "footnote": "b"})
+    ops.card_new(project.root, "hears", "lowerthird", {"headline": "A"}, overwrite=True)
+    assert not list((project.cards_dir / "layers").glob("hears.*"))

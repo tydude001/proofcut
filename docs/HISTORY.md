@@ -17057,3 +17057,43 @@ Measured in melt on a copy of B7 with the bed and the sounds removed. The
 render measures −26.38 dBFS as a source, is levelled +8.34 dB, and reads
 −18.35 dBFS across the film span of the render (32.0–42.4 s). The inset's
 fades are unchanged.
+
+## The lower third staggers its footnote — 2026-09-18
+
+docs/plans/RECUT.md step 7, first half. A's footnote enters 0.25 s after
+its headline and rises 16px where the headline rises 24. A `lowerthird` was
+one PNG, so the whole card moved as one, and a stagger took two overlay
+cards, which the B7 agent built for one moment and not the others.
+
+- `lowerthird` gains two unplaced slots, `footnote_delay` (default 0.25)
+  and `footnote_rise` (default 16, at 1080 lines). The defaults are A's.
+- `card_new` (and so `card_reauthor`) draws a card that has a footnote a
+  second time as two layers, `assets/cards/layers/<name>.headline.png` and
+  `.footnote.png`. Each is the template filled with the other line blank, so
+  every line sits where the whole card draws it (a test compares the alpha
+  bounds). `_cards_on_disk` never lists `layers/`, so a layer is never a
+  card. An overwrite with no footnote removes the layers.
+- `_overlay_plan` draws such a card as two stills. The footnote's starts
+  `delay` later with `mlt.Overlay.rise` set to its own travel (a new field,
+  default `OVERLAY_RISE`, so every other document is byte-identical), and
+  both leave together. Stacking and lanes go by what is drawn.
+- The preview draws the same two stills. `timeline_view`'s `overlays` gives
+  one item per still, and `preview_source` serves `card:<name>#footnote`
+  from a fixed set of layer names.
+- A card without layers, whether made before this or with no footnote, draws
+  whole, as before. **The B7 project's cards need `card reauthor` to gain
+  them.**
+
+Measured in melt on a copy of B7 with `lt_picks` re-authored. At +0.12 s
+the headline is fading in and there is no footnote. The footnote starts to
+show at +0.30 s, is partway up at +0.45 s, and both are settled at +0.90 s.
+
+**The fonts half is open.** The plan said to swap `title_font` and
+`body_font` in goodsometimes' `proofcut-pack.json`. Two findings stand
+against doing it as written. First, B7's brief names no pack and its project
+applied none, so B7's serif-over-sans lower thirds came from the template's
+own defaults (Noto Serif, Lato), and a pack edit alone does not reach the
+rerun. Second, the pack is the channel's whole brand: `title_font` is Zilla
+Slab there on purpose (goodsometimes `branding.md`, the paragraph on the
+proofcut pack), and swapping it restyles the essays' receipt, reveal and
+rerate titles the next time `card_reauthor` sweeps. It waits on Tyler.

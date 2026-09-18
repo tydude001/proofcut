@@ -2215,6 +2215,7 @@ def card_new(
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text(svg, encoding="utf-8")
     rendered = card_render(path, name)
+    _write_card_layers(project, name, template, {**pack_style, **dict(slots)}, width=width, height=height)
     _write_card_record(
         project,
         {
@@ -2235,6 +2236,76 @@ def card_new(
         "pack_applied": bool(pack_hash_value),
         **rendered,
     }
+
+
+#: Overlay templates whose lines animate apart, and the slot each layer
+#: blanks out of the other: the headline layer is the card without its
+#: footnote, and the footnote layer the card without its headline.
+CARD_LAYERS: dict[str, tuple[str, str]] = {"lowerthird": ("headline", "footnote")}
+
+
+def _card_layer_path(project: Project, name: str, layer: str) -> Path:
+    """Where one line of a layered card is drawn: `assets/cards/layers/`, a
+    directory `_cards_on_disk` never lists, so a layer is never a card."""
+    return project.cards_dir / "layers" / f"{name}.{layer}.png"
+
+
+def _write_card_layers(
+    project: Project, name: str, template: str, values: dict[str, Any], *, width: int, height: int
+) -> list[str]:
+    """Draw a lower third's two lines as separate transparent PNGs.
+
+    RECUT.md step 7: A's footnote enters 0.25 s after its headline and rises
+    16px to the headline's 24, and one PNG can only move as one. Each layer
+    is the same template filled with the other line blank, so both sit
+    exactly where they sit on the whole card. Written only when there is a
+    footnote; any older layers for the name are removed first, so an
+    overwrite that drops the footnote leaves none behind.
+    """
+    for stale in (_card_layer_path(project, name, layer) for layer in ("headline", "footnote")):
+        stale.unlink(missing_ok=True)
+        stale.with_suffix(".svg").unlink(missing_ok=True)
+    if template not in CARD_LAYERS or not str(values.get("footnote", "")).strip():
+        return []
+    written = []
+    first, second = CARD_LAYERS[template]
+    for layer, blank in ((first, second), (second, first)):
+        png = _card_layer_path(project, name, layer)
+        png.parent.mkdir(parents=True, exist_ok=True)
+        svg = png.with_suffix(".svg")
+        svg.write_text(
+            graphics.fill_template(template, {**values, blank: ""}, width=width, height=height), encoding="utf-8"
+        )
+        graphics.render_svg(svg, png)
+        written.append(layer)
+    return written
+
+
+def _card_layers(project: Project, card: str) -> dict[str, Any] | None:
+    """A layered card's two PNGs and how its footnote moves, or None.
+
+    None for any card without both layer files — every card made before
+    layers existed, and one with no footnote — which then draws whole, as
+    it always did.
+    """
+    record = _card_record(project, card)
+    template = str((record or {}).get("template"))
+    if template not in CARD_LAYERS:
+        return None
+    first, second = CARD_LAYERS[template]
+    paths = {layer: _card_layer_path(project, card, layer) for layer in (first, second)}
+    if not all(path.is_file() for path in paths.values()):
+        return None
+    slots = graphics.template_slots(template)
+    values = dict((record or {}).get("slots") or {})
+    try:
+        delay = float(values.get("footnote_delay", slots["footnote_delay"]["default"]))
+        rise = round(float(values.get("footnote_rise", slots["footnote_rise"]["default"])))
+    except (TypeError, ValueError):
+        raise ProjectError(f"card {card!r}: footnote_delay and footnote_rise are numbers") from None
+    if delay < 0:
+        raise ProjectError(f"card {card!r}: footnote_delay {delay} is a length, not negative")
+    return {"paths": paths, "second": second, "delay": delay, "rise": rise}
 
 
 def _card_name(name: str) -> str:
@@ -4622,21 +4693,34 @@ def timeline_view(
             overlay_plans = _overlay_plan(
                 project, edit, shots_rate, edit_frames=_edit_frames(edit, shots_rate)
             )
-            overlays_view = [
-                {
-                    **{
-                        key: plan[key]
-                        for key in (
-                            "position", "card", "clip_id", "timeline_start", "timeline_end",
-                            "frames", "lane", "enter", "enter_seconds", "enter_ease",
-                            "leave", "leave_seconds", "leave_ease",
-                        )
-                    },
-                    "asset": f"card:{plan['card']}",
-                    "rise_px": mlt.OVERLAY_RISE,
+            # One item per still the render draws: a layered lower third is
+            # two, the footnote's starting later and rising less, so the
+            # preview staggers where the render does (RECUT.md step 7).
+            overlays_view = []
+            for plan in overlay_plans:
+                base = {
+                    key: plan[key]
+                    for key in (
+                        "position", "card", "clip_id", "timeline_start", "timeline_end",
+                        "frames", "lane", "enter", "enter_seconds", "enter_ease",
+                        "leave", "leave_seconds", "leave_ease",
+                    )
                 }
-                for plan in overlay_plans
-            ]
+                if plan["layers"] is None:
+                    overlays_view.append({**base, "asset": f"card:{plan['card']}", "rise_px": mlt.OVERLAY_RISE})
+                    continue
+                for piece, (layer, lane) in zip(plan["drawn"], zip(("headline", "footnote"), plan["lanes"])):
+                    overlays_view.append(
+                        {
+                            **base,
+                            "lane": lane,
+                            "layer": layer,
+                            "asset": f"card:{plan['card']}#{layer}",
+                            "rise_px": piece.rise,
+                            "timeline_start": round(base["timeline_start"] + (piece.start - plan["start_frame"]) / shots_rate, 3),
+                            "enter_seconds": piece.in_frames / shots_rate if piece.in_motion != "none" else base["enter_seconds"],
+                        }
+                    )
         except (ProjectError, tx.TranscriptError, media.MediaError) as exc:
             overlays_error = str(exc)
 
@@ -5890,7 +5974,15 @@ def preview_source(path: Path | str, asset: str) -> dict[str, Any]:
         # shared with the cue table.
         if not name or "/" in name or "\\" in name or name.startswith("."):
             raise ProjectError(f"asset {asset!r} does not name a card")
-        source = project.cards_dir / f"{name}.png"
+        card, _, layer = name.partition("#")
+        if layer:
+            # One line of a layered lower third (RECUT.md step 7), named
+            # from a fixed set so the key cannot reach past `layers/`.
+            if not card or layer not in {line for pair in CARD_LAYERS.values() for line in pair}:
+                raise ProjectError(f"asset {asset!r} does not name a card layer")
+            source = _card_layer_path(project, card, layer)
+        else:
+            source = project.cards_dir / f"{name}.png"
     else:
         # `preview_path`, not `media_path`: the proxy when a current one
         # exists (PLAN.md § The preview proxy transcode). This is one of the
@@ -14059,8 +14151,33 @@ def _overlay_plan(
             out_frames=round(record["leave_seconds"] * rate),
             out_ease=record["leave_ease"],
         )
+        # A lower third with a footnote draws as two layers: the headline on
+        # the overlay's own timing, the footnote `delay` later with its own
+        # rise, both leaving together (RECUT.md step 7).
+        drawn = [overlay]
+        layered = _card_layers(project, record["card"])
+        if layered is not None:
+            delay = round(layered["delay"] * rate)
+            if delay >= frames:
+                raise ProjectError(
+                    f"overlay {record['card']!r} lasts {frames} frames and its footnote waits "
+                    f"{delay} — shorten the card's footnote_delay or lengthen the overlay"
+                )
+            first = next(layer for layer in layered["paths"] if layer != layered["second"])
+            drawn = [
+                replace(overlay, resource=str(layered["paths"][first])),
+                replace(
+                    overlay,
+                    resource=str(layered["paths"][layered["second"]]),
+                    start=start_frame + delay,
+                    frames=frames - delay,
+                    in_frames=min(overlay.in_frames, frames - delay - overlay.out_frames),
+                    rise=layered["rise"],
+                ),
+            ]
         try:
-            mlt._check_overlay(overlay, edit_frames)
+            for piece in drawn:
+                mlt._check_overlay(piece, edit_frames)
         except mlt.MLTError as exc:
             raise ProjectError(str(exc)) from None
         plans.append(
@@ -14075,17 +14192,27 @@ def _overlay_plan(
                 "start_echo": start_echo,
                 "end_echo": end_echo,
                 "overlay": overlay,
+                # What the writer draws: the overlay, or its two layers.
+                "drawn": drawn,
+                "layers": None if layered is None else {
+                    "delay": layered["delay"], "rise": layered["rise"], "footnote_start_frame": drawn[1].start,
+                },
             }
         )
-    lanes = mlt.overlay_lanes([plan["overlay"] for plan in plans])
-    for plan, lane in zip(plans, lanes):
-        plan["lane"] = lane
+    # Stacking goes by what is drawn: a layered card's footnote is its own
+    # still over its headline, so each piece takes a lane.
+    lanes = mlt.overlay_lanes([piece for plan in plans for piece in plan["drawn"]])
+    cursor = 0
+    for plan in plans:
+        plan["lanes"] = lanes[cursor : cursor + len(plan["drawn"])]
+        plan["lane"] = plan["lanes"][0]
+        cursor += len(plan["drawn"])
     return plans
 
 
 def _overlay_view(plan: dict[str, Any]) -> dict[str, Any]:
-    """An overlay plan as JSON — everything but the writer's own object."""
-    return {key: value for key, value in plan.items() if key != "overlay"}
+    """An overlay plan as JSON — everything but the writer's own objects."""
+    return {key: value for key, value in plan.items() if key not in ("overlay", "drawn")}
 
 
 def _edit_frames(edit: tl.Edit, rate: float) -> int:
@@ -15921,13 +16048,17 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
     # bed is — a head is not part of the `Edit` an overlay addresses.
     overlay_plans = _overlay_plan(project, edit, rate, edit_frames=edit_frames, clock=clock)
     overlays = [
-        replace(plan["overlay"], start=plan["overlay"].start + head_frames)
+        replace(piece, start=piece.start + head_frames)
         for plan in overlay_plans
+        for piece in plan["drawn"]
     ]
     overlays_report = [
         {
             key: plan[key]
-            for key in ("position", "card", "clip_id", "timeline_start", "timeline_end", "frames", "lane", "enter", "leave")
+            for key in (
+                "position", "card", "clip_id", "timeline_start", "timeline_end", "frames", "lane", "enter",
+                "leave", "layers",
+            )
         }
         for plan in overlay_plans
     ]
