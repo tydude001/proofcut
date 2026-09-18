@@ -79,7 +79,8 @@ the timeline, so a retake left in is caught before anyone watches.
 uv run proofcut -C myproject verify final.mp4
 ```
 
-Each of these is walked in [§ Try it](#try-it).
+The first three are walked in [§ Try it](#try-it); the round-trip is in the
+[manual's core loop](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#the-core-loop).
 
 ## From recordings to a finished film
 
