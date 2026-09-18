@@ -544,9 +544,9 @@ the PolyForm text and move on. HISTORY.md § The licence, chosen has the full
 reasoning if anyone wants it, and it is public.
 
 **What else will come up, with the answer ready:**
-- *"Why not just use Descript / Opus Clip / CapCut?"* — the README's own
-  first section: those are desktop apps around a metered cloud; this is the
-  same primitives, local, with an agent surface. Don't name a competitor the
+- *"Why not just use Descript / Opus Clip / CapCut?"* — README.md § Why
+  proofcut's second bullet: those are desktop apps around a metered cloud;
+  this is the same primitives, local, with an agent surface. Don't name a competitor the
   README does not.
 - *"How is this different from kinocut / FableCut?"* — the question the
   Multimedia section guarantees. Answer with the mechanism, not a
