@@ -1201,7 +1201,8 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "back up in the pauses. It is keyed off the timeline's own audio at "
             "export rather than the transcript's word timings, which were measured "
             "against a bed recovered from a real render and beaten: 2.72 dB off for "
-            "the audio gate against a word-span duck's 3.39."
+            "the audio gate against a word-span duck's 3.39. It also hears audible "
+            "insets and sounds placed with `ducks`."
         ),
         "clear_duck": "Return the bed to one level, with no ducking.",
         "event": (
@@ -1722,7 +1723,10 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         "leave_seconds": "How long the fade out takes. Default 0.4.",
         "leave_ease": "The fade's curve: linear, ease, ease-in or ease-out. Default ease.",
         "dim": "Darken the recording around the inset, 0 (none, the default) to 1 (black); 0.55 reads well.",
-        "gain_db": "The asset's own audio level in dB. Default 0. The music bed goes out under it.",
+        "gain_db": (
+            "The asset's own audio level in dB. Default 0. The music bed goes out under it, or dips "
+            "under it when the bed has a duck."
+        ),
         "mute": "Play none of the asset's audio (and leave the bed alone).",
         "position": "Where in the stack it goes: 0 is the bottom, omitted is the top.",
     },
@@ -1752,6 +1756,15 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         "jitter_db": "Vary each hit's level by up to this many dB either way. Default 0.",
         "min_gap": (
             "With every: drop a hit closer than this many seconds to the last one kept. Default 0.045."
+        ),
+        "src_in": (
+            "Seconds into each asset where the sound starts. With src_out, plays one line of a long "
+            "take, and the 30 s cap is on the trimmed part."
+        ),
+        "src_out": "Seconds into each asset where the sound stops. Unset plays to the file's end.",
+        "ducks": (
+            "The music bed's duck hears this sound as it hears the voice: set it for a narrator take or "
+            "a line of dialogue placed as a sound, never for clicks. Only matters when the bed has a duck."
         ),
     },
     "sound_rm": {
@@ -3853,7 +3866,7 @@ def music(
     Beyond one asset from its head: `passages` (more pieces, each from its own
     word), `rotate` (assets in turn), `crossfade`, `src_in`; `under` levels the
     bed below the voice, `duck` dips it while the voice speaks, keyed off the
-    edit's own audio at export. `export`'s `music` field says what the render
+    edit's own audio, audible insets and `ducks` sounds at export. `export`'s `music` field says what the render
     carried. `clear_*` and `reset` undo each; `plan` validates without writing.
     """
     return ops.music(
@@ -4873,7 +4886,8 @@ def inset_add(
     stretch of the recording (no cut, no retimed span under it).
 
     It fades in and out by default, can dim the recording around it, and plays
-    its own audio with the music bed out underneath unless `mute`. The reply
+    its own audio with the music bed out underneath (dipped, with a duck)
+    unless `mute`. The reply
     echoes where it plays and `dest`, where its rect lands in the canvas;
     `plan=true` writes nothing. Any inset routes export through the MLT
     writer, and export's reply gives each inset's rect at its first and last
@@ -5008,6 +5022,9 @@ def sound_add(
     gain_db: float = 0.0,
     jitter_db: float = 0.0,
     min_gap: float | None = None,
+    src_in: float | None = None,
+    src_out: float | None = None,
+    ducks: bool = False,
     plan: bool = False,
 ) -> dict[str, Any]:
     """Play a one-shot sound at a word, an event, or every event of one name.
@@ -5019,8 +5036,8 @@ def sound_add(
     millisecond, between frames, and are resolved through the timeline on
     every build: a cut moves them, an `every` hit a cut removed is skipped,
     and a single hit whose word or event is cut makes export refuse until it
-    is moved. The picks and jitter repeat on every build. Sounds do not duck
-    the music. The reply counts the hits and echoes the first few; `plan=true`
+    is moved. The picks and jitter repeat on every build. `src_in`/`src_out`
+    trim what plays. The music's duck hears a sound only with `ducks`. The reply counts the hits and echoes the first few; `plan=true`
     writes nothing. Export's reply lists the sounds it placed.
     """
     return ops.sound_add(
@@ -5036,6 +5053,9 @@ def sound_add(
         gain_db=gain_db,
         jitter_db=jitter_db,
         min_gap=min_gap,
+        src_in=src_in,
+        src_out=src_out,
+        ducks=ducks,
         plan=plan,
     )
 

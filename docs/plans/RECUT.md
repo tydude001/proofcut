@@ -124,11 +124,18 @@ It is still computed in `_build_mlt` only (§ The duck). It is a real rewrite,
 because the lanes live in three coordinate spaces, all of which `head_frames`
 already resolves to frames.
 
+Shipped — see HISTORY.md § The duck hears every lane, and a sound can be
+trimmed. It hears sounds marked `ducks`, not every hit, and an inset dips a
+ducked bed rather than taking it out.
+
 **5. A sound can be trimmed (S–M). Moves: false start, sheets, timeline.** A
 sound record gains `src_in`/`src_out`, and the decoded PCM is sliced before
 `padded_copy`. `MAX_SECONDS` then caps the slice rather than the file. A span
 addressed by the sound's own transcript words is a later option, and this step
 does not build it.
+
+Shipped — see HISTORY.md § The duck hears every lane, and a sound can be
+trimmed.
 
 **6. An inset can be levelled (S). Moves: film.** `inset_add` gains
 `level="speech"`, which measures the asset once at add time and records the

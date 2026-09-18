@@ -11828,7 +11828,9 @@ def music(
     **`duck` pulls the bed that many dB down while the voice is speaking** and
     lets it back up in the pauses — gated on the Edit's own audio at build
     time, never on the transcript's word durations (`duck.py`), so a cut moves
-    it with nothing to refresh. It sits under whatever level `under` set: that
+    it with nothing to refresh. It hears audible insets too, and sounds placed
+    with `ducks`, each against its own level, so a screen recording with no
+    audio still dips the bed under its narrator and its film (RECUT.md step 4). It sits under whatever level `under` set: that
     is the bed's level in a pause. `clear_duck` returns the bed to one level.
 
     **A bed can be several passages, placed and levelled** (docs/plans/
@@ -12818,6 +12820,73 @@ def _duck_frames(
     del blocks[math.ceil(edit_frames / rate / dk.BLOCK) + 1 :]
     envelope = dk.gate(blocks, threshold_db=vo_lufs + dk.THRESHOLD_LU, depth_db=depth_db)
     return dk.per_frame(envelope, rate=rate, frames=edit_frames)
+
+
+def _duck_voice_frames(
+    project: Project,
+    rate: float,
+    *,
+    frames: int,
+    depth_db: float,
+    inset_plans: list[dict[str, Any]],
+    sound_plans: list[dict[str, Any]],
+) -> tuple[list[float] | None, list[str]]:
+    """The duck over what plays beside the Edit, on the render's frames.
+
+    RECUT.md step 4: `_duck_frames` hears the Edit's own audio, and a screen
+    recording has none, so B7's bed never dipped under the false start (a
+    sound) or the film (an inset). This is the same gate over those: every
+    audible inset, and every sound whose record says `ducks` — clicks never,
+    since a gate that heard them would pump the bed on every keystroke, and
+    A (`clip.py`'s `spans`) dips only under the voice and the film.
+
+    Each source is gated against **its own** integrated loudness plus
+    `dk.THRESHOLD_LU`, the level the Edit's is gated against the VO's: a
+    film levelled to −18 and a take at its own level open the gate on their
+    own speech, and a gain on either moves nothing. The loudest normalised
+    level per block wins, then one `dk.gate`. Frames here are render frames
+    without a head, where the bed's keys are counted. Export-only, the
+    Edit duck's rule.
+    """
+    spans: list[tuple[str, Path, float, float, float]] = []
+    for plan in inset_plans:
+        inset = plan["inset"]
+        if inset.has_audio:
+            src = inset.src_in / rate
+            spans.append((f"inset {plan['position']}", Path(inset.resource), inset.start / rate, src, src + inset.frames / rate))
+    for plan in sound_plans:
+        if not plan.get("ducks"):
+            continue
+        start, end = _sound_slice(plan)
+        for hit in plan["hits"]:
+            clip = media.get_clip(project, hit["asset"])
+            stop = end if end is not None else float(clip.get("duration") or 0.0)
+            spans.append((f"sound {plan['position']}", media.media_path(project, clip), hit["at"], start, stop))
+    if not spans:
+        return None, []
+    blocks = [dk.FLOOR_DB] * (math.ceil(frames / rate / dk.BLOCK) + 1)
+    decoded: dict[Path, Any] = {}
+    loudness: dict[tuple[Path, float, float], float] = {}
+    for _, source, at, src_start, src_end in spans:
+        if source not in decoded:
+            try:
+                decoded[source] = energy.decode(source)
+            except energy.EnergyError as exc:
+                raise ProjectError(f"the music bed's duck could not read {source.name}: {exc}") from exc
+        key = (source, src_start, src_end)
+        if key not in loudness:
+            loudness[key] = energy.integrated_loudness(source, start=src_start, end=src_end)
+        threshold = loudness[key] + dk.THRESHOLD_LU
+        levels = dk.block_levels(
+            decoded[source][round(src_start * energy.RATE) : round(src_end * energy.RATE)], energy.RATE
+        )
+        first = round(at / dk.BLOCK)
+        for offset, level in enumerate(levels):
+            index = first + offset
+            if 0 <= index < len(blocks):
+                blocks[index] = max(blocks[index], level - threshold)
+    envelope = dk.gate(blocks, threshold_db=0.0, depth_db=depth_db)
+    return dk.per_frame(envelope, rate=rate, frames=frames), sorted({label for label, *_ in spans})
 
 
 def _hold_gain_db(vo_lufs: float, hold_lufs: float, under: float) -> float:
@@ -14758,7 +14827,8 @@ def inset_add(
     `enter`/`leave` are `fade` or `none`, with seconds and an easing; `dim`
     darkens the recording around it (0 to 1). The asset's own audio plays at
     `gain_db` unless `mute`, and the music bed goes out under it as it does
-    under a hold. `plan=True` writes nothing.
+    under a hold — unless the bed has a `duck`, which dips under it instead
+    (RECUT.md step 4). `plan=True` writes nothing.
     """
     project = Project.open(path)
     if sum(x is not None for x in (word_index, phrase, event)) != 1:
@@ -14929,9 +14999,14 @@ def _stored_sounds(project: Project) -> list[dict[str, Any]]:
                 "gain_db": float(item.get("gain_db", 0.0)),
                 "jitter_db": float(item.get("jitter_db", 0.0)),
             }
-            for key, kind in (("word_index", int), ("event", str), ("every", str), ("min_gap", float)):
+            for key, kind in (
+                ("word_index", int), ("event", str), ("every", str), ("min_gap", float),
+                ("src_in", float), ("src_out", float),
+            ):  # fmt: skip
                 if item.get(key) is not None:
                     record[key] = kind(item[key])
+            if item.get("ducks"):
+                record["ducks"] = True
         except (KeyError, TypeError, ValueError) as exc:
             raise ProjectError(
                 f"{project.manifest_path} has a sound that is not "
@@ -14945,25 +15020,51 @@ def _stored_sounds(project: Project) -> list[dict[str, Any]]:
     return records
 
 
-def _sound_asset(project: Project, asset: str) -> dict[str, Any]:
-    """A sound's clip, refused unless it is a registered clip with sound."""
+def _sound_asset(project: Project, asset: str, record: dict[str, Any] | None = None) -> dict[str, Any]:
+    """A sound's clip, refused unless it is a registered clip with sound.
+
+    `MAX_SECONDS` caps what plays, so with a `record` trimming it
+    (`src_in`/`src_out`, RECUT.md step 5) the cap is on the slice, and a long
+    take cut to one line is a one-shot.
+    """
     if asset.startswith("card:"):
         raise ProjectError(f"{asset!r} is a card — a sound is an imported clip with audio")
     clip = media.get_clip(project, asset)
     if not clip.get("has_audio"):
         raise ProjectError(f"clip {asset!r} has no audio to play as a sound")
     duration = clip.get("duration")
-    if duration and float(duration) > snd.MAX_SECONDS:
-        raise ProjectError(
-            f"clip {asset!r} is {float(duration):.1f}s — a one-shot is at most "
-            f"{snd.MAX_SECONDS:g}s; place longer sound as a music cue"
-        )
+    start, end = _sound_slice(record)
+    if duration:
+        if start >= float(duration):
+            raise ProjectError(f"src_in {start:g}s is past the end of {asset!r} ({float(duration):.3f}s)")
+        if end is not None and end > float(duration) + 1e-6:
+            raise ProjectError(f"src_out {end:g}s is past the end of {asset!r} ({float(duration):.3f}s)")
+        length = (float(duration) if end is None else end) - start
+        if length > snd.MAX_SECONDS:
+            trimmed = start or end is not None
+            raise ProjectError(
+                f"clip {asset!r} is {length:.1f}s{' as trimmed' if trimmed else ''} — a one-shot is at most "
+                f"{snd.MAX_SECONDS:g}s; trim it with src_in/src_out, or place longer sound as a music cue"
+            )
     return clip
+
+
+def _sound_slice(record: dict[str, Any] | None) -> tuple[float, float | None]:
+    """The part of its asset a sound plays: `(src_in, src_out or None)`."""
+    if not record:
+        return 0.0, None
+    return float(record.get("src_in", 0.0)), (None if record.get("src_out") is None else float(record["src_out"]))
+
+
+#: A sound's fields that say how it plays rather than which hits it draws, so
+#: trimming a take or letting the duck hear it re-rolls no variant or jitter.
+_SOUND_UNROLLED = ("src_in", "src_out", "ducks")
 
 
 def _sound_rng(record: dict[str, Any]) -> random.Random:
     """The record's own dice: the same record draws the same picks every build."""
-    digest = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).digest()
+    dice = {key: value for key, value in record.items() if key not in _SOUND_UNROLLED}
+    digest = hashlib.sha256(json.dumps(dice, sort_keys=True).encode()).digest()
     return random.Random(digest)
 
 
@@ -14998,7 +15099,7 @@ def _sound_plan(
     plans: list[dict[str, Any]] = []
     for position, record in enumerate(records):
         for asset in record["assets"]:
-            _sound_asset(project, asset)
+            _sound_asset(project, asset, record)
         clip_id = record["clip_id"]
         rng = _sound_rng(record)
         hits: list[dict[str, Any]] = []
@@ -15087,21 +15188,28 @@ def _sound_hits(
     """
     fraction = mlt._frame_rate(rate)
     head_seconds = Fraction(head_frames * fraction[1], fraction[0])
-    decoded: dict[str, tuple[Path, bytes]] = {}
+    decoded: dict[tuple[str, float, float | None], tuple[Path, bytes]] = {}
     hits: list[mlt.Hit] = []
     for plan in plans:
+        start, end = _sound_slice(plan)
         for hit in plan["hits"]:
             asset = hit["asset"]
-            if asset not in decoded:
+            # The slice is decoded, never the file then cut: `padded_copy`
+            # writes exactly what plays (RECUT.md step 5).
+            slice_key = (asset, start, end)
+            if slice_key not in decoded:
                 source = media.media_path(project, media.get_clip(project, asset))
                 try:
-                    decoded[asset] = (source, snd.decode(source))
+                    decoded[slice_key] = (source, snd.decode(source, start, end))
                 except snd.SoundError as exc:
                     raise ProjectError(str(exc)) from None
-            source, pcm = decoded[asset]
+            source, pcm = decoded[slice_key]
             frame, lead = snd.place(float(head_seconds) + hit["at"], fraction)
             stat = source.stat()
             key = f"{source}|{stat.st_size}|{stat.st_mtime_ns}|{lead}|{fraction[0]}/{fraction[1]}"
+            if start or end is not None:
+                # Absent for an untrimmed sound, so its copies keep their names.
+                key += f"|{start}:{end}"
             dest = project.sounds_dir / f"{hashlib.sha256(key.encode()).hexdigest()[:16]}.wav"
             frames = snd.padded_copy(pcm, dest, lead, fraction, mlt.SOUND_MIN_FRAMES)
             hits.append(mlt.Hit(str(dest), frame, frames, hit["gain_db"]))
@@ -15134,9 +15242,18 @@ def sound_add(
     gain_db: float = 0.0,
     jitter_db: float = 0.0,
     min_gap: float | None = None,
+    src_in: float | None = None,
+    src_out: float | None = None,
+    ducks: bool = False,
     plan: bool = False,
 ) -> dict[str, Any]:
     """Place a one-shot sound at a word, an event, or every event of one name.
+
+    `src_in`/`src_out` trim it: seconds into each asset where it starts and
+    stops, so one line of a long take plays and the take runs on no further
+    (RECUT.md step 5). The 30 s cap is on what plays. `ducks` says the music
+    bed's duck hears this sound, the way it hears the voice — for a narrator
+    take or a line of dialogue placed as a sound, never a click (step 4).
 
     `assets` is one clip id or several: with several, each hit draws one, so a
     typed run does not repeat one sample. `gain_db` is the level (the file's
@@ -15168,6 +15285,17 @@ def sound_add(
         "gain_db": float(gain_db),
         "jitter_db": float(jitter_db),
     }
+    if src_in is not None:
+        if src_in < 0:
+            raise ProjectError(f"src_in is seconds into the asset, not {src_in}")
+        if src_in:
+            record["src_in"] = float(src_in)
+    if src_out is not None:
+        if src_out <= (src_in or 0.0):
+            raise ProjectError(f"src_out {src_out} is not after src_in {src_in or 0.0}")
+        record["src_out"] = float(src_out)
+    if ducks:
+        record["ducks"] = True
     if every is not None:
         record["every"] = _event_name(every)
         record["min_gap"] = SOUND_MIN_GAP if min_gap is None else float(min_gap)
@@ -15503,6 +15631,10 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
     music2_lane: list[mlt.Entry] = []
     music_resources: set[str] = set()
     music_plan = _music_plan(project, edit, rate, edit_frames=edit_frames, clock=clock)
+    # Planned here rather than at their lanes below: the bed's duck hears
+    # them (RECUT.md step 4). Both are pure, so the order changes nothing else.
+    inset_plans = _inset_plan(project, edit, rate, edit_frames=edit_frames, clock=clock)
+    sound_plans = _sound_plan(project, edit, clock=clock)
     if music_plan is not None:
         total_frames = sum(entry.frames for entry in audio)
         # A piece's `start_frame` is resolved against the Edit's own frames
@@ -15513,7 +15645,15 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         # on top of the cold open, at exit 0, invisible to `mlt.document`'s
         # own checks (which verify each lane's total, never its alignment).
         level_db = 0.0
-        vo_lufs = _vo_loudness(project, edit) if music_plan["under"] is not None or music_plan["duck"] else None
+        # A recording with no audio stream has no VO for the duck to hear;
+        # it hears the insets and the voice sounds instead (step 4). `under`
+        # still needs a VO, and `_vo_loudness` refuses by name without one.
+        edit_heard = any(media.get_clip(project, seg.clip_id).get("has_audio") is not False for seg in edit.segments)
+        vo_lufs = (
+            _vo_loudness(project, edit)
+            if music_plan["under"] is not None or (music_plan["duck"] and edit_heard)
+            else None
+        )
         if music_plan["under"] is not None:
             # One gain for the whole bed, `music_bed.py`'s own rule: the bed's
             # loudness is the duration-weighted power mean of what each piece
@@ -15532,7 +15672,7 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
             _duck_frames(
                 project, edit, rate, edit_frames=plain_frames, depth_db=music_plan["duck"], vo_lufs=vo_lufs
             )
-            if music_plan["duck"]
+            if music_plan["duck"] and edit_heard
             else None
         )
         if duck_frames is not None and warp is not None:
@@ -15543,6 +15683,17 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
                 0.0 if muted[k] else duck_frames[min(int(warp.edit_at_frame(k) * rate), len(duck_frames) - 1)]
                 for k in range(warp.frames)
             ]
+        duck_heard: list[str] = ["edit"] if duck_frames is not None else []
+        if music_plan["duck"]:
+            voices, heard = _duck_voice_frames(
+                project, rate, frames=edit_frames, depth_db=music_plan["duck"],
+                inset_plans=inset_plans, sound_plans=sound_plans,
+            )  # fmt: skip
+            if voices is not None:
+                # The deeper of the two, frame by frame: the same gate's answer
+                # wherever only one of them is speaking.
+                duck_frames = voices if duck_frames is None else [min(a, b) for a, b in zip(duck_frames, voices)]
+                duck_heard += heard
         ducked_frames = 0
         duck_keys = 0
         lanes: list[list[mlt.Entry]] = [music_lane, music2_lane]
@@ -15620,7 +15771,9 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         music_report["duck"] = (
             {
                 "depth_db": music_plan["duck"],
-                "threshold_lufs": round(vo_lufs + dk.THRESHOLD_LU, 2),
+                "threshold_lufs": round(vo_lufs + dk.THRESHOLD_LU, 2) if vo_lufs is not None else None,
+                # What the gate listened to: the Edit, insets and sounds by position.
+                "heard": duck_heard,
                 "ducked_seconds": round(ducked_frames / rate, 2),
                 "keys": duck_keys,
             }
@@ -15630,10 +15783,14 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         music_report["pieces"] = _music_pieces_view(music_plan["pieces"], rate)
 
     # The insets, resolved on the render clock and moved by the head. One with
-    # sound takes the bed out under it, as a hold does (NATIVE.md § B6, 6).
-    inset_plans = _inset_plan(project, edit, rate, edit_frames=edit_frames, clock=clock)
+    # sound takes the bed out under it, as a hold does (NATIVE.md § B6, 6),
+    # or under a duck dips it (RECUT.md step 4).
     insets = [replace(plan["inset"], start=plan["inset"].start + head_frames) for plan in inset_plans]
-    inset_gates = [(inset.start, inset.end) for inset in insets if inset.has_audio]
+    # An audible inset takes the bed out, as a hold does — unless the bed has
+    # a duck, which dips under it instead (RECUT.md step 4): A keeps the music
+    # 10 dB under the film rather than stopping it.
+    ducking = music_plan is not None and bool(music_plan["duck"])
+    inset_gates = [(inset.start, inset.end) for inset in insets if inset.has_audio and not ducking]
     insets_report = [
         {
             key: plan[key]
@@ -15739,7 +15896,6 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
     # The sounds: each hit a padded copy placed between frames, packed onto
     # as few lanes as overlaps need, every lane padded with one silent file
     # as long as the film — moved by the head the way the bed is.
-    sound_plans = _sound_plan(project, edit, clock=clock)
     sound_lanes: list[list[mlt.Entry]] = []
     if sound_plans:
         total_frames = sum(entry.frames for entry in audio)

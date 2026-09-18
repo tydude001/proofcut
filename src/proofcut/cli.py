@@ -1545,6 +1545,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--min-gap", type=float,
         help=f"with --every, drop a hit closer than this to the last (default {ops.SOUND_MIN_GAP}s)",
     )  # fmt: skip
+    p_sound_add.add_argument("--src-in", type=float, help="seconds into the asset where the sound starts")
+    p_sound_add.add_argument("--src-out", type=float, help="seconds into the asset where the sound stops")
+    p_sound_add.add_argument(
+        "--ducks", action="store_true", help="the music bed's duck hears this sound, as it hears the voice"
+    )
     p_sound_add.add_argument("--plan", action="store_true", help="resolve and report without writing")
     sound_sub.add_parser("ls", help="list sound records with how many hits each places")
     p_sound_rm = sound_sub.add_parser("rm", help="take a sound record off the film (the clip stays)")
@@ -2960,6 +2965,9 @@ def _cmd_sound(args: argparse.Namespace) -> int:
                 gain_db=args.gain_db,
                 jitter_db=args.jitter_db,
                 min_gap=args.min_gap,
+                src_in=args.src_in,
+                src_out=args.src_out,
+                ducks=args.ducks,
                 plan=args.plan,
             )
         )

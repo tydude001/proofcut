@@ -16,6 +16,7 @@ What melt draws is read back by `test_server_stdio.py`
 
 from __future__ import annotations
 
+import math
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
@@ -388,6 +389,61 @@ def test_a_muted_inset_leaves_the_bed_alone(project: Project) -> None:
         return [dict(entry.attrib) for entry in bed.iter("entry")]
 
     assert entries(after.find("playlist[@id='playlist8']")) == entries(bed_before)
+
+
+def _silence_the_recording(project: Project) -> None:
+    """The launch clip's shape: the recording has no audio stream, so the
+    only things the duck can hear are what plays beside it."""
+    manifest = project.read_manifest()
+    for clip in manifest["clips"]:
+        if clip["clip_id"] == "rec":
+            clip["has_audio"] = False
+    project.write_manifest(manifest)
+
+
+def test_a_ducked_bed_dips_under_an_audible_inset_instead_of_going_out(project: Project) -> None:
+    """RECUT.md step 4: A keeps the music 10 dB under the film, where B7's
+    bed either went out (no duck) or never dipped (a duck deaf to insets)."""
+    _silence_the_recording(project)
+    ops.music(project.root, asset="rec", clip_id="rec", word_index_start=0, duck=10.0)
+    ops.inset_add(project.root, "rec", "cut", RECT, event="playing", seconds=1.0)
+
+    built = ops._build_mlt(project, ops._load_edit(project), fps=RATE)
+
+    duck = built["music"]["duck"]
+    assert duck["heard"] == ["inset 0"]
+    assert duck["threshold_lufs"] is None
+    # 1.0 s of tone, plus the release climbing from -10 to the -3 dB that
+    # counts as ducked: RELEASE * ln(10/3) = 0.46 s.
+    assert duck["ducked_seconds"] == pytest.approx(1.0 + ops.dk.RELEASE * math.log(10 / 3), abs=0.05)
+    bed = built["document"].find("playlist[@id='playlist8']").findall("entry")
+    assert len(bed) == 2, "the bed is not split around the inset: lead silence and the bed"
+
+
+def test_the_duck_hears_a_sound_only_when_it_says_it_ducks(project: Project) -> None:
+    _silence_the_recording(project)
+    ops.music(project.root, asset="rec", clip_id="rec", word_index_start=0, duck=10.0)
+    ops.sound_add(project.root, "cut", "rec", event="playing", src_out=1.0)
+    built = ops._build_mlt(project, ops._load_edit(project), fps=RATE)
+    assert built["music"]["duck"] is None, "a click-like sound is not heard, so nothing ducks"
+
+    manifest = project.read_manifest()
+    manifest["sounds"][0]["ducks"] = True
+    project.write_manifest(manifest)
+    built = ops._build_mlt(project, ops._load_edit(project), fps=RATE)
+
+    assert built["music"]["duck"]["heard"] == ["sound 0"]
+    assert built["music"]["duck"]["ducked_seconds"] == pytest.approx(1.0 + ops.dk.RELEASE * math.log(10 / 3), abs=0.05)
+
+
+def test_the_voice_gate_is_relative_to_each_sources_own_level() -> None:
+    """A gain on a source moves nothing: each is gated against itself."""
+    levels = [-30.0] * 50 + [-80.0] * 50
+    quiet = ops.dk.gate([level - (-32.0 + ops.dk.THRESHOLD_LU) for level in levels], threshold_db=0.0, depth_db=10.0)
+    loud = ops.dk.gate(
+        [(level + 20) - (-12.0 + ops.dk.THRESHOLD_LU) for level in levels], threshold_db=0.0, depth_db=10.0
+    )
+    assert quiet == loud
 
 
 def test_a_reel_drops_the_insets(project: Project, tmp_path: Path) -> None:

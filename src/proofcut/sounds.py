@@ -72,11 +72,15 @@ def copy_frames(samples: int, lead: int, rate: tuple[int, int], minimum: int) ->
     return max(minimum, math.ceil((lead + samples) * num / (SAMPLE_RATE * den)))
 
 
-def decode(path: Path | str) -> bytes:
-    """A file's audio as 16-bit stereo PCM at `SAMPLE_RATE`."""
+def decode(path: Path | str, start: float = 0.0, end: float | None = None) -> bytes:
+    """A file's audio as 16-bit stereo PCM at `SAMPLE_RATE`, from `start` to
+    `end` seconds of it (docs/plans/RECUT.md step 5). `MAX_SECONDS` caps what
+    is decoded, so a long take trimmed to a line is a one-shot and the take
+    whole is not."""
+    length = MAX_SECONDS + 1 if end is None else min(end - start, MAX_SECONDS + 1)
     command = [
-        "ffmpeg", "-v", "error", "-i", str(path), "-t", str(MAX_SECONDS + 1),
-        "-f", "s16le", "-ac", "2", "-ar", str(SAMPLE_RATE), "-",
+        "ffmpeg", "-v", "error", *(("-ss", f"{start:.6f}") if start else ()), "-i", str(path),
+        "-t", f"{length:.6f}", "-f", "s16le", "-ac", "2", "-ar", str(SAMPLE_RATE), "-",
     ]
     try:
         result = subprocess.run(command, capture_output=True, stdin=subprocess.DEVNULL, check=False)
@@ -88,7 +92,9 @@ def decode(path: Path | str) -> bytes:
         raise SoundError(f"{path} decoded to no audio")
     if len(result.stdout) > MAX_SECONDS * SAMPLE_RATE * 4:
         raise SoundError(
-            f"{path} runs past {MAX_SECONDS:g}s — a one-shot is short; place longer "
+            f"{path} runs past {MAX_SECONDS:g}s"
+            + (f" from {start:g}s" if start or end is not None else "")
+            + " — a one-shot is short; trim it with src_in/src_out, or place longer "
             "sound as a music cue"
         )
     return result.stdout

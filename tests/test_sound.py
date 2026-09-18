@@ -317,3 +317,48 @@ def test_generate_writes_and_imports_the_set_once(project: Project) -> None:
     assert not any(c["imported"] for c in again["clips"])
     reply = ops.sound_add(project.root, [f"sfx-key_{i}" for i in range(8)], "vo", every="key")
     assert reply["sound"]["hit_count"] == 4
+
+
+# -- a trimmed sound (docs/plans/RECUT.md step 5) ---------------------------
+
+
+def test_a_long_take_trimmed_to_one_line_plays_only_that_line(project: Project, tmp_path: Path) -> None:
+    """B7's narrator take ran on under the sheets and the lane, because a
+    sound played its whole file. Trimmed, the copy holds the slice alone: a
+    marker 35 s into a 40 s take lands 0.1 s into a 0.3 s sound."""
+    take = _wav(tmp_path / "take.wav", 40 * 48000, at=35 * 48000)
+    ops.import_media(project.root, take, sheet=False)
+
+    with pytest.raises(ProjectError, match="40.0s — a one-shot is at most 30s; trim it"):
+        ops.sound_add(project.root, "take", "vo", event="sent", plan=True)
+    ops.sound_add(project.root, "take", "vo", event="sent", src_in=34.9, src_out=35.2)
+
+    plans = ops._sound_plan(project, ops._load_edit(project))
+    assert (plans[0]["src_in"], plans[0]["src_out"]) == (34.9, 35.2)
+    [hit] = ops._sound_hits(project, plans, 30.0, 0)
+    with wave.open(hit.resource) as read:
+        pcm = read.readframes(read.getnframes())
+    samples = [int.from_bytes(pcm[i : i + 2], "little", signed=True) for i in range(0, len(pcm), 4)]
+    lead = snd.place(2.5, (30, 1))[1]
+    peak = max(range(len(samples)), key=lambda i: abs(samples[i]))
+    assert abs((peak - lead) - round(0.1 * 48000)) <= 1
+    assert not any(samples[lead + round(0.3 * 48000) + 2 :])
+
+
+def test_a_trim_past_the_end_or_backwards_is_refused(project: Project) -> None:
+    with pytest.raises(ProjectError, match="src_out 1s is past the end of 'tock'"):
+        ops.sound_add(project.root, "tock", "vo", event="sent", src_out=1.0)
+    with pytest.raises(ProjectError, match="is not after src_in"):
+        ops.sound_add(project.root, "tock", "vo", event="sent", src_in=0.02, src_out=0.01)
+
+
+def test_a_trim_or_the_duck_flag_re_rolls_no_dice(project: Project) -> None:
+    ops.sound_add(project.root, ["click", "tock"], "vo", every="key", jitter_db=3.0)
+    before = ops._sound_plan(project, ops._load_edit(project))[0]["hits"]
+    manifest = project.read_manifest()
+    manifest["sounds"][0].update({"src_in": 0.001, "ducks": True})
+    project.write_manifest(manifest)
+
+    after = ops._sound_plan(project, ops._load_edit(project))[0]["hits"]
+
+    assert [(h["asset"], h["gain_db"]) for h in after] == [(h["asset"], h["gain_db"]) for h in before]

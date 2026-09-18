@@ -16977,3 +16977,58 @@ agent's call and not a defect.
 
 `_build_mlt` reports `on_edit_track`. Two tests are in
 `test_ops_export_mlt.py`.
+
+## The duck hears every lane, and a sound can be trimmed — 2026-09-18
+
+docs/plans/RECUT.md steps 4 and 5, shipped together because the duck reads
+the trimmed slice.
+
+**A sound can be trimmed (step 5).** A record takes `src_in`/`src_out`, and
+`sounds.decode` decodes just that slice, so `padded_copy` writes only what
+plays. `MAX_SECONDS` caps the slice rather than the file, and a 40 s take
+trimmed to one line is a one-shot. A copy's cache key gains the slice only
+when there is one, so an untrimmed sound keeps its file names. The slice and
+the new `ducks` flag are left out of the record's dice (`_SOUND_UNROLLED`),
+so trimming a take re-rolls no variant or jitter. Measured in a test: a
+marker 35 s into a 40 s take, trimmed to 34.9–35.2, lands within one sample
+of 0.1 s into the copy, and nothing follows the 0.3 s slice. This is what
+stops B7's narrator take running on under the sheets and the lane.
+
+**The duck hears the insets and the voice sounds (step 4).** `_duck_frames`
+still hears the Edit. `_duck_voice_frames` hears every audible inset, and
+every sound whose record says `ducks`, on the render's frames, and the
+deeper of the two envelopes wins frame by frame. Three calls went against
+the plan's letter:
+- **Not every sound hit.** A gate that heard the keystrokes would pump the
+  bed on every click. A (`clip.py`'s `spans`) dips under the voice and the
+  film only, so a sound is heard only with `ducks` (`sound_add --ducks`).
+- **Each source is gated against its own loudness**, plus
+  `dk.THRESHOLD_LU`, as the Edit is against the VO. A film levelled to −18
+  and a take at its own level each open the gate on their own speech, and a
+  gain on either moves nothing. A shared threshold would need a "VO", and a
+  screen recording has none.
+- **With a duck, an audible inset dips the bed instead of taking it out.**
+  NATIVE.md § B6 decision 6 took the bed out under an inset, "as a hold
+  does", and a bed with no duck still does that. A keeps the music 10 dB
+  under the film. Holds are unchanged: they take the bed out, for Content
+  ID's reason, and the duck does not listen to them, since there is nothing
+  under a hold to dip.
+
+A silent Edit no longer asks `_vo_loudness` for a duck (step 1's refusal
+still covers `under` and holds). The export reply's `duck` gains `heard`,
+which lists the Edit, the insets and the sounds, and `threshold_lufs` is
+None without an Edit to measure.
+
+**Measured in melt** on a copy of the B7 project
+(`~/proofcut-work/spikes/recut/b7-duck`). The bed there has `duck: 10`, the
+voice is trimmed to A's false-start span (8.58–12.64 s of the take) with
+`ducks`, and the film and the voice are turned down 60 dB. Since the gate is
+relative, it still fires, and the render is the bed alone. After the drop
+the bed sits at about −9.7 dB per 0.1 s and falls to −13 to −20 dB across the
+film (32.0–42.5 s). The intro dips from about −25 to −29…−36 under the voice.
+`heard` is `['inset 0', 'sound 4']`, with 13.5 s ducked. **A is a flat
+10 dB for the whole span, and this is a gate**: the bed comes partly back up
+in the film's own pauses. Whether that reads as A is for the moment taps
+(step 9) to say.
+
+Tests in `test_inset.py` and `test_sound.py`.
