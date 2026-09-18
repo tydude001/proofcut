@@ -1272,7 +1272,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_tail.add_argument(
         "--fade",
         type=float,
-        help="recorded and echoed but not yet drawn — spent inside `seconds`, never added to it",
+        help="seconds the card dissolves in over the film's end — overlapping the film, never added to `seconds`",
     )
     p_tail.add_argument("--reset", action="store_true", help="drop the tail entirely")
     p_tail.add_argument(
@@ -1350,6 +1350,16 @@ def _build_parser() -> argparse.ArgumentParser:
     p_music.add_argument("--clear-passages", action="store_true", help="drop every later passage")
     p_music.add_argument("--under", type=float, help="level the bed this many LU below the VO, measured")
     p_music.add_argument("--clear-under", action="store_true", help="play every asset at its own level again")
+    p_music.add_argument(
+        "--loudness", type=float, metavar="LUFS", help="level the bed to this loudness, measured — for a film with no VO"
+    )
+    p_music.add_argument("--clear-loudness", action="store_true", help="drop the loudness level")
+    p_music.add_argument(
+        "--over-tail",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="run a bed that goes to the end on under the tail's card, fading out with it",
+    )
     p_music.add_argument(
         "--duck", type=float, metavar="DB", help="pull the bed this many dB down while the voice is speaking"
     )
@@ -2899,8 +2909,11 @@ def _cmd_music(args: argparse.Namespace) -> int:
             passages=[] if args.clear_passages else _passages(args.passage),
             under=args.under,
             clear_under=args.clear_under,
+            loudness=args.loudness,
+            clear_loudness=args.clear_loudness,
             duck=args.duck,
             clear_duck=args.clear_duck,
+            over_tail=args.over_tail,
             event=args.event,
             until_event=args.until_event,
             reset=args.reset,

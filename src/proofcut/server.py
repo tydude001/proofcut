@@ -1130,8 +1130,9 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "added on top of it."
         ),
         "fade": (
-            "Recorded and echoed, not yet drawn: this build cuts to the card hard, at "
-            "`seconds`."
+            "Seconds the card dissolves in over the film's last frames, opaque on the "
+            "tail's first frame — overlapping the film, never added to `seconds`. 0 "
+            "cuts to the card hard."
         ),
         "reset": (
             "Drop the tail entirely. Note a derivation inherits none of it anyway and "
@@ -1160,7 +1161,7 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         ),
         "word_index_end": (
             "Where the bed goes out. Unset means *to the end of the edit*, so a tail "
-            "holds over silence."
+            "holds over silence unless `over_tail`."
         ),
         "phrase_start": (
             "Set the in-point by wording instead; it binds the phrase's first word. "
@@ -1201,6 +1202,18 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "fixed offset; `duck` is the moving one."
         ),
         "clear_under": "Return every asset to its own level.",
+        "loudness": (
+            "Level the whole bed to this many LUFS, measured — for a film with no "
+            "voice for `under` to sit below, such as a screen recording. Setting it "
+            "drops `under`, and `under` drops it. The launch clip's approved bed "
+            "reads -23.3."
+        ),
+        "clear_loudness": "Drop the `loudness` level.",
+        "over_tail": (
+            "True runs a bed with no end boundary on under the tail's card, so the "
+            "card is not silent and `fade_out` ends with it. False ends it with the "
+            "edit, the default."
+        ),
         "duck": (
             "Pull the bed this many dB down while the voice is speaking and let it "
             "back up in the pauses. It is keyed off the timeline's own audio at "
@@ -3837,8 +3850,9 @@ def tail(
     its own, which is exactly what a card behind it guarantees and a media
     clip would not. `seconds` is the tail's *whole* length, card included, not
     a hold with `fade` added on top of it (the known trap: `xfade` finishes
-    exactly at the length it is given). `fade` is recorded and echoed but not
-    yet drawn — this build cuts to the card hard, at `seconds`.
+    exactly at the length it is given). `fade` dissolves the card in over
+    the film's last frames; 0 cuts to it hard. A music bed's `over_tail`
+    keeps the music playing under the card.
 
     Setting `asset` or `seconds` for the first time needs both together;
     either alone after that updates just that field, the same partial-update
@@ -3872,8 +3886,11 @@ def music(
     passages: list[dict[str, Any]] | None = None,
     under: float | None = None,
     clear_under: bool = False,
+    loudness: float | None = None,
+    clear_loudness: bool = False,
     duck: float | None = None,
     clear_duck: bool = False,
+    over_tail: bool | None = None,
     event: str | None = None,
     until_event: str | None = None,
     reset: bool = False,
@@ -3898,8 +3915,10 @@ def music(
 
     Beyond one asset from its head: `passages` (more pieces, each from its own
     word), `rotate` (assets in turn), `crossfade`, `src_in`; `under` levels the
-    bed below the voice, `duck` dips it while the voice speaks, keyed off the
-    edit's own audio, audible insets and `ducks` sounds at export. `export`'s `music` field says what the render
+    bed below the voice, or `loudness` to a LUFS where there is no voice;
+    `duck` dips it while the voice speaks, keyed off the
+    edit's own audio, audible insets and `ducks` sounds at export;
+    `over_tail` plays it on under the end card. `export`'s `music` field says what the render
     carried. `clear_*` and `reset` undo each; `plan` validates without writing.
     """
     return ops.music(
@@ -3921,8 +3940,11 @@ def music(
         passages=passages,
         under=under,
         clear_under=clear_under,
+        loudness=loudness,
+        clear_loudness=clear_loudness,
         duck=duck,
         clear_duck=clear_duck,
+        over_tail=over_tail,
         event=event,
         until_event=until_event,
         reset=reset,

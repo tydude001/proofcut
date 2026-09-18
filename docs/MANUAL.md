@@ -497,8 +497,13 @@ any re-cut, silently:
 
 ```sh
 proofcut -C myproject tail --asset card:endcard --seconds 6  # what plays after the film
+proofcut -C myproject tail --fade 0.5                       # the card dissolves in over the film's end
 proofcut -C myproject tail --reset                          # back to ending on the edit
 ```
+
+`--fade` overlaps the film's last frames rather than adding to `--seconds`:
+the card is opaque on the tail's first frame, and the render is exactly as
+long as without it.
 
 It is project state, so a derivation knows it existed rather than dropping it
 without a word — `reel` reports `tail_dropped`. `Edit` does not grow to
@@ -525,6 +530,8 @@ proofcut -C myproject music --asset score-a --clip-id vo --start-word 0 \
 proofcut -C myproject music --asset score-a --clip-id vo --start-word 0 \
   --fade-in 2 --under 22
 proofcut -C myproject music --duck 8                     # 8 dB down under the voice, up in its pauses
+proofcut -C myproject music --loudness -23               # no VO to sit under: a fixed level instead
+proofcut -C myproject music --over-tail --fade-out 1.5   # play on under the end card, fading with it
 proofcut -C myproject music --passage score-b,412,0,2.5  # from word 412, score-b, crossfading 2.5 s
 proofcut -C myproject music --rotate score-c --crossfade 2.5  # when an asset runs out, the next
 proofcut -C myproject music                              # what is in force
@@ -535,7 +542,7 @@ proofcut -C myproject music --reset
 its word lands on the timeline, and with no `--end-word` it runs to the end of
 the edit, so a cut anywhere moves it for free. A stored length was measured
 drifting onto live material. An end card holds over silence, because a tail
-comes after the film. `--phrase-start` and `--phrase-end` resolve a boundary
+comes after the film, unless `--over-tail` carries the bed on under it. `--phrase-start` and `--phrase-end` resolve a boundary
 by what is said, the same way every word-addressed tool does.
 
 - **`--passage ASSET,START[,SRC_IN[,CROSSFADE]]`** places a later cue. START

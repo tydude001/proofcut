@@ -1445,3 +1445,15 @@ def test_brief_prints_the_prompt_the_server_ships(
 
     assert main(["brief", "film"]) == 1
     assert "material folder" in capsys.readouterr().err
+
+
+def test_music_level_and_tail_flags_reach_ops(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict = {}
+    monkeypatch.setattr(ops, "music", lambda path, **kwargs: seen.update(kwargs) or {})
+
+    assert main(["-C", str(tmp_path), "music", "--loudness", "-23", "--over-tail"]) == 0
+    assert seen["loudness"] == -23.0 and seen["over_tail"] is True and seen["clear_loudness"] is False
+    assert main(["-C", str(tmp_path), "music", "--no-over-tail", "--clear-loudness"]) == 0
+    assert seen["over_tail"] is False and seen["clear_loudness"] is True
+    assert main(["-C", str(tmp_path), "music"]) == 0
+    assert seen["over_tail"] is None and seen["loudness"] is None

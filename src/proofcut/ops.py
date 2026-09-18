@@ -4676,6 +4676,8 @@ def timeline_view(
                         "fade_in_frames",
                         "fade_out_frames",
                         "under",
+                        "loudness",
+                        "over_tail",
                     )
                 }
                 music_view["pieces"] = _music_pieces_view(plan["pieces"], shots_rate)
@@ -10977,10 +10979,12 @@ def tail(
     added on top of it. That is the known trap this key exists to not repeat
     (HISTORY.md § The bumper the teaser never had: `xfade` finishes exactly at
     the length it was given, so treating `seconds` as the hold-alone and
-    adding `fade` on top runs the render long by exactly the fade). `fade` is
-    recorded and echoed but **not yet drawn** — this build cuts to the card
-    hard, at `seconds`, and a later pass can spend the stored value on an
-    actual dissolve without a second manifest key.
+    adding `fade` on top runs the render long by exactly the fade). **`fade`
+    is the card dissolving in over the film's last `fade` seconds**, opaque on
+    the tail's first frame, so neither the film nor the tail grows by it; 0
+    cuts to the card hard. The card is drawn over everything the film draws,
+    overlays included. A fade longer than the film refuses at export. A
+    bed's `over_tail` is what keeps the music playing under the card.
 
     Setting `asset` or `seconds` the first time requires both together (there
     is no card with an unstated length, and no length with nothing to hold);
@@ -11040,9 +11044,8 @@ def tail(
         if float(merged_fade) > float(merged_seconds):
             raise ProjectError(
                 f"tail fade ({merged_fade}) cannot exceed seconds ({merged_seconds}) "
-                "— the fade is spent inside the tail's own length, never added to "
-                "it (HISTORY.md § The bumper the teaser never had, the four-frame "
-                "trap this key exists to not repeat)"
+                "— the card dissolves in over the film's end and then holds, and a "
+                "fade longer than the hold is a film that ends in a dissolve"
             )
         after = {
             "asset": str(merged_asset),
@@ -11856,6 +11859,7 @@ def _stored_music(project: Project) -> dict[str, Any] | None:
             f"'asset' and an integer 'word_index_start' or an 'event', and 'rotate' a list of clip ids — {exc}"
         ) from exc
     under = stored.get("under")
+    loudness = stored.get("loudness")
     duck_db = stored.get("duck")
     return {
         "asset": asset,
@@ -11875,7 +11879,9 @@ def _stored_music(project: Project) -> dict[str, Any] | None:
         "rotate": rotate,
         "passages": passages,
         "under": float(under) if under is not None else None,
+        "loudness": float(loudness) if loudness is not None else None,
         "duck": float(duck_db) if duck_db is not None else None,
+        "over_tail": bool(stored.get("over_tail", False)),
     }
 
 
@@ -11912,14 +11918,32 @@ def music(
     passages: list[dict[str, Any]] | None = None,
     under: float | None = None,
     clear_under: bool = False,
+    loudness: float | None = None,
+    clear_loudness: bool = False,
     duck: float | None = None,
     clear_duck: bool = False,
+    over_tail: bool | None = None,
     event: str | None = None,
     until_event: str | None = None,
     reset: bool = False,
     plan: bool = False,
 ) -> dict[str, Any]:
     """Read or change the A2 music bed this project mixes under its edit.
+
+    **`loudness` levels the bed to that many LUFS, measured** — the level for
+    a film with no voice for `under` to sit below, which is a screen recording
+    (B7's bed played at its asset's own level, 5–6 LU over A's, HISTORY.md
+    § B7, run again after the recut). It is `under`'s measurement with a fixed
+    target: one gain for the whole bed, the pieces' power mean, measured
+    before any duck. A's bed reads −23.3 LUFS on that measure. Setting either
+    level drops the other; `clear_loudness` drops it.
+
+    **`over_tail` runs a bed with no end boundary on under the tail**, so the
+    end card is not silent and the bed's `fade_out` ends where the card does
+    (A's music plays on under its card and fades out with it). Off, the bed
+    ends where the `Edit` does, which is what every bed before it meant. A bed
+    with an end word or event has already said where it stops, so the two are
+    refused together.
 
     **A boundary can be an event of `clip_id` instead of a word** (RECUT.md
     step 2): `event` starts the bed there, `until_event` ends it there, and a
@@ -11991,7 +12015,8 @@ def music(
 
     A tail is *after* the timeline, so an unbounded bed ends where the
     `Edit` does and the end card holds over silence — a cue addresses moments
-    inside the film, the same reason a tail is not a cue.
+    inside the film, the same reason a tail is not a cue — unless `over_tail`
+    carries it on under the card.
 
     `fade_in`/`fade_out` are seconds of fade drawn over the bed's *audible*
     span — entry-attached in the writer, so a fade-out ends where the music
@@ -12025,6 +12050,14 @@ def music(
     if until_event is not None and (word_index_end is not None or phrase_end is not None):
         raise ProjectError("the bed ends at a word (word_index_end/phrase_end) or at an event, not both")
 
+    if under is not None and loudness is not None:
+        raise ProjectError(
+            "the bed is levelled `under` the voice or to a `loudness`, not both — "
+            "`loudness` is for a film with no voice to measure against"
+        )
+    if loudness is not None and not (math.isfinite(loudness) and -70 < loudness < 0):
+        raise ProjectError(f"music loudness is LUFS, above -70 and below 0, not {loudness!r}")
+
     project = Project.open(path)
     stored = _stored_music(project)
     changing = clear_end or any(
@@ -12043,11 +12076,13 @@ def music(
             rotate,
             passages,
             under,
+            loudness,
             duck,
+            over_tail,
             event,
             until_event,
         )
-    ) or clear_under or clear_duck
+    ) or clear_under or clear_loudness or clear_duck
 
     if reset:
         state: dict[str, Any] | None = None
@@ -12148,7 +12183,18 @@ def music(
             float(crossfade) if crossfade is not None else float(base.get("crossfade", 0.0))
         )
         resolved_rotate = [str(a) for a in rotate] if rotate is not None else list(base.get("rotate", []))
-        resolved_under = None if clear_under else (float(under) if under is not None else base.get("under"))
+        # One level or the other: naming one drops the stored other.
+        resolved_under = (
+            None if clear_under or loudness is not None
+            else float(under) if under is not None
+            else base.get("under")
+        )  # fmt: skip
+        resolved_loudness = (
+            None if clear_loudness or under is not None
+            else float(loudness) if loudness is not None
+            else base.get("loudness")
+        )  # fmt: skip
+        resolved_over_tail = bool(over_tail) if over_tail is not None else bool(base.get("over_tail", False))
         if passages is not None:
             resolved_passages: list[dict[str, Any]] = []
             previous = int(merged["word_index_start"]) if merged["word_index_start"] is not None else -1
@@ -12203,6 +12249,15 @@ def music(
             merged["passages"] = resolved_passages
         if resolved_under is not None:
             merged["under"] = resolved_under
+        if resolved_loudness is not None:
+            merged["loudness"] = resolved_loudness
+        if resolved_over_tail:
+            if merged["word_index_end"] is not None or merged.get("until_event") is not None:
+                raise ProjectError(
+                    "over_tail runs a bed that goes to the end of the edit on under the tail, and "
+                    "this bed ends at a word or event — clear_end first, or leave over_tail off"
+                )
+            merged["over_tail"] = True
         resolved_duck = None if clear_duck else (float(duck) if duck is not None else base.get("duck"))
         if resolved_duck is not None:
             # The fade floor is -60 dB; a duck at or past it is the bed gone
@@ -12389,6 +12444,12 @@ def _music_plan(
     if to_end:
         end_seconds = edit.duration
         end_frame = edit_frames
+        if stored["over_tail"]:
+            # On under the card: the tail's frames follow the Edit's on the
+            # document's audio track, so the bed's end is theirs.
+            tail_frames = _tail_frames(project, rate)
+            end_seconds += tail_frames / rate
+            end_frame += tail_frames
     else:
         end_seconds, _ = _overlay_instant(
             project, edit, stored, word_key="word_index_end", event_key="until_event", edge=1, what="ends",
@@ -12839,7 +12900,8 @@ def _vo_loudness(project: Project, edit: tl.Edit) -> float:
     if silent:
         raise ProjectError(
             f"this timeline's video has no audio track ({', '.join(map(repr, silent))}), so there is "
-            "no VO to measure a bed's duck or under, or a hold's level, against"
+            "no VO to measure a bed's duck or under, or a hold's level, against — a bed "
+            "levels to a `loudness` instead"
         )
 
     resource_index: dict[str, int] = {}
@@ -15990,6 +16052,7 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         head_report = {**head_cfg, "frames": head_frames}
 
     tail_report: dict[str, Any] | None = None
+    tail_fade: mlt.Dissolve | None = None
     tail = _stored_tail(project)
     if tail is not None:
         if not lane and not on_edit_track:
@@ -16005,6 +16068,21 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         if not card["is_image"]:
             raise ProjectError(f"tail asset {tail['asset']!r} resolved to a clip, not a card")
         tail_frames = _tail_frames(project, rate)
+        # The fade is the card arriving over the film's last `fade` seconds,
+        # opaque on the tail's first frame — so the tail stays `seconds` long
+        # and the film its own length (HISTORY.md § The bumper the teaser
+        # never had: the dissolve overlaps the film, never follows it).
+        join = sum(entry.frames for entry in audio)
+        fade_frames = round(tail["fade"] * rate)
+        if fade_frames:
+            if fade_frames > join - head_frames:
+                raise ProjectError(
+                    f"the tail fades in over the film's last {tail['fade']:g}s and the film is "
+                    f"{(join - head_frames) / rate:.3f}s — shorten the fade (tail)"
+                )
+            tail_fade = mlt.Dissolve(
+                resource=card["asset_path"], src_in=0, start=join - fade_frames, frames=fade_frames, is_image=True
+            )
         if lane:
             silence = _tail_silence(project, tail["seconds"])
             audio.append(mlt.Entry(str(silence), 0, tail_frames, is_image=False, has_video=False))
@@ -16013,7 +16091,8 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
             # A still has no sound, so on the Edit's track the card is its own
             # silence: MLT mixes nothing from a `qimage`.
             audio.append(mlt.Entry(card["asset_path"], 0, tail_frames, is_image=True, has_video=True))
-        tail_report = {**tail, "frames": tail_frames}
+        # The fade the render draws, where there is one; a hard cut reports as ever.
+        tail_report = {**tail, "frames": tail_frames, **({"fade_frames": fade_frames} if fade_frames else {})}
 
     # The A2 music lane: the resolved bed plus real silent entries padding it
     # to the document's exact frame total — lead silence for a bed starting
@@ -16043,17 +16122,19 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         level_db = 0.0
         # A recording with no audio stream has no VO for the duck to hear;
         # it hears the insets and the voice sounds instead (step 4). `under`
-        # still needs a VO, and `_vo_loudness` refuses by name without one.
+        # still needs a VO, and `_vo_loudness` refuses by name without one;
+        # `loudness` is the level that needs none.
         edit_heard = any(media.get_clip(project, seg.clip_id).get("has_audio") is not False for seg in edit.segments)
         vo_lufs = (
             _vo_loudness(project, edit)
             if music_plan["under"] is not None or (music_plan["duck"] and edit_heard)
             else None
         )
-        if music_plan["under"] is not None:
+        if music_plan["under"] is not None or music_plan["loudness"] is not None:
             # One gain for the whole bed, `music_bed.py`'s own rule: the bed's
             # loudness is the duration-weighted power mean of what each piece
-            # plays, landed `under` LU below the VO the way a hold is levelled.
+            # plays, landed `under` LU below the VO the way a hold is levelled,
+            # or on `loudness` where there is no VO to sit under.
             powers, weights = 0.0, 0
             for piece in music_plan["pieces"]:
                 start = piece["src_in_frames"] / rate
@@ -16063,7 +16144,8 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
                 powers += piece["frames"] * 10 ** (lufs / 10)
                 weights += piece["frames"]
             bed_lufs = 10 * math.log10(powers / weights)
-            level_db = round(vo_lufs - music_plan["under"] - bed_lufs, 2)
+            target = vo_lufs - music_plan["under"] if music_plan["under"] is not None else music_plan["loudness"]
+            level_db = round(target - bed_lufs, 2)
         duck_frames = (
             _duck_frames(
                 project, edit, rate, edit_frames=plain_frames, depth_db=music_plan["duck"], vo_lufs=vo_lufs
@@ -16158,6 +16240,8 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
                 "fade_in_frames",
                 "fade_out_frames",
                 "under",
+                "loudness",
+                "over_tail",
             )
         }
         music_report["level_db"] = level_db
@@ -16321,6 +16405,7 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         sounds=sound_lanes,
         insets=insets,
         dissolves=dissolves,
+        tail_fade=tail_fade,
         rate=rate,
         resolution=resolution,
         reframe=reframes,

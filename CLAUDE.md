@@ -1106,7 +1106,10 @@ built; docs/plans/INSTALL.md):
     never cached: a stored length was measured drifting onto live material,
     and a cached one is two facts kept in step only by a hook nobody has
     forgotten yet. No end word means "to the end of the `Edit`" — a tail is
-    after the film, so the end card holds over silence. The bed's lane is
+    after the film, so the end card holds over silence unless the bed says
+    `over_tail`. **A tail's `fade` overlaps the film's last frames and never
+    follows them** (`tractorT`, over every picture track): the film and the
+    tail keep their lengths. HISTORY.md § The bed takes a level of its own. The bed's lane is
     padded/trimmed to the document's exact total by construction (real
     silent-WAV entries, never a `<blank>`), so `mlt.declared_frames` still
     takes no exceptions. **`MUSIC_KEY` is `_is_layered`'s fifth trigger and

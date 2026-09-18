@@ -779,3 +779,92 @@ def test_loudness_is_refused_on_an_nle_export(tmp_path: Path) -> None:
     project = Project.create(tmp_path / "proj")
     with pytest.raises(ProjectError, match="loudness masters rendered media"):
         ops.export(project.root, tmp_path / "out.kdenlive", export_format="kdenlive", loudness=-16.0)
+
+
+def _film_edit(project: Project, *, has_audio: bool = True) -> None:
+    """The film clip alone on the timeline, 5 s — a screen recording's shape."""
+    manifest = project.read_manifest()
+    for clip in manifest["clips"]:
+        if clip["clip_id"] == "film":
+            clip["has_audio"] = has_audio
+    project.write_manifest(manifest)
+    edit = tl.Edit([tl.Segment("film", 0.0, 2.0), tl.Segment("film", 4.0, 7.0)])
+    tl.write(
+        tl.to_otio(edit, {c["clip_id"]: c for c in manifest["clips"]}, rate=1000.0, name="proj"),
+        project.timeline_path,
+    )
+
+
+@needs_ffmpeg
+def test_a_tail_fade_is_the_card_arriving_over_the_films_last_frames(project: Project) -> None:
+    """HISTORY.md § B7, run again after the recut: the end card cut in hard.
+    The fade is the card on its own track over the film's last 15 frames, alpha
+    0 → 1 at the join, and the film and the tail keep their lengths."""
+    _film_edit(project)
+    ops.tail(project.root, asset="card:red", seconds=1.0, fade=0.5)
+
+    built = ops._build_mlt(project, ops._load_edit(project), fps=EXPORT_FPS)
+    document = built["document"]
+
+    assert built["frames"] == round(5.0 * EXPORT_FPS) + round(1.0 * EXPORT_FPS)
+    assert built["tail"]["fade_frames"] == 15
+    node = document.find("*[@id='tchain0']")
+    assert node is not None and node.find("property[@name='mlt_service']").text == "qimage"
+    assert node.find("property[@name='resource']").text.endswith("red.png")
+    alpha = node.find("filter/property[@name='alpha']").text
+    assert alpha == "0=0;15=1"
+    playlist = document.find("*[@id='tplaylist0a']")
+    blanks = [int(b.get("length")) for b in playlist.findall("blank")]
+    assert blanks == [round(5.0 * EXPORT_FPS) - 15, round(1.0 * EXPORT_FPS)]
+    sequence_tracks = [t.get("producer") for t in document.iter("track")]
+    assert "tractorT" in sequence_tracks
+
+
+@needs_ffmpeg
+def test_a_tail_with_no_fade_writes_no_fade_track(project: Project) -> None:
+    _film_edit(project)
+    ops.tail(project.root, asset="card:red", seconds=1.0)
+
+    built = ops._build_mlt(project, ops._load_edit(project), fps=EXPORT_FPS)
+
+    assert built["document"].find("*[@id='tchain0']") is None
+    assert "fade_frames" not in built["tail"]
+
+
+@needs_ffmpeg
+def test_a_tail_fade_longer_than_the_film_is_refused(project: Project) -> None:
+    _film_edit(project)
+    ops.tail(project.root, asset="card:red", seconds=6.0, fade=5.5)
+
+    with pytest.raises(ProjectError, match="shorten the fade"):
+        ops._build_mlt(project, ops._load_edit(project), fps=EXPORT_FPS)
+
+
+@needs_ffmpeg
+def test_a_bed_levels_to_a_loudness_on_a_film_with_no_voice(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B7's bed played at its asset's own level because `under` needs a VO and
+    a screen recording has none. `loudness` is the same measurement against a
+    fixed target, so it asks nothing of the Edit's audio."""
+    _film_edit(project, has_audio=False)
+    manifest = project.read_manifest()
+    manifest["clips"].append(
+        {"clip_id": "bed", "source": str(project.root / "bed.wav"), "duration": 20.0,
+         "has_video": False, "has_audio": True}
+    )  # fmt: skip
+    project.write_manifest(manifest)
+    tx.save(
+        tx.Transcript(clip_id="film", words=(tx.Word(index=0, text="one", start=0.2, end=0.5),)),
+        project.transcript_path("film"),
+    )
+    ops.music(project.root, asset="bed", clip_id="film", word_index_start=0, loudness=-30.0)
+    monkeypatch.setattr(ops.energy, "integrated_loudness", lambda *args, **kwargs: -12.0)
+    monkeypatch.setattr(
+        ops, "_vo_loudness", lambda *args, **kwargs: pytest.fail("a loudness level needs no VO")
+    )
+
+    built = ops._build_mlt(project, ops._load_edit(project), fps=EXPORT_FPS)
+
+    assert built["music"]["level_db"] == -18.0
+    assert built["music"]["loudness"] == -30.0

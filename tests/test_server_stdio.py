@@ -10591,3 +10591,82 @@ def test_a_second_recording_follows_the_first_through_a_dissolve(visible_tmp: Pa
             want = 60 + 2 * (k - 90)
         worst = max(worst, abs(centre(pixels) - want))
     assert worst <= 4, worst
+
+
+@needs_ffprobe
+@needs_ffmpeg
+@needs_melt
+def test_the_end_card_fades_in_over_the_film_with_the_music_playing_on_under_it(visible_tmp: Path) -> None:
+    """HISTORY.md § B7, run again after the recut: its end card cut in hard
+    and silent. A grey-250 recording with a silent track, 4 s, and a black
+    card as a 1 s tail with `fade=0.5`: frames 105..119 blend the film into the
+    card at alpha (k-105)/15, the card is opaque from the join at 120, and the
+    render is still 150 frames. The bed runs `over_tail` and is levelled to
+    `loudness=-30` with no VO to sit under, so it reads -30 LUFS in the film
+    and is still playing under the card."""
+    project = visible_tmp / "proj"
+    window = visible_tmp / "window.mp4"
+    bed = visible_tmp / "bed.wav"
+    subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-y",
+         "-f", "lavfi", "-i", "color=c=black:size=640x360:rate=30:duration=4",
+         "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "4",
+         "-vf", "format=gray,geq=lum='250',format=yuv420p", "-c:v", "libx264", "-qp", "0",
+         "-c:a", "aac", str(window)],
+        capture_output=True, check=True,
+    )  # fmt: skip
+    _tone_wav(bed, 440.0, 8.0)
+    transcript = visible_tmp / "window.json"
+    transcript.write_text(
+        json.dumps({"language": "en", "words": [
+            {"word": "one", "start": 0.0, "end": 0.3},
+            {"word": "two", "start": 2.0, "end": 2.3},
+        ]}),
+        encoding="utf-8",
+    )  # fmt: skip
+    output = visible_tmp / "out.mp4"
+    card = visible_tmp / "end.png"
+    subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:size=640x360",
+         "-frames:v", "1", str(card)],
+        capture_output=True, check=True,
+    )  # fmt: skip
+
+    async def body(session: ClientSession) -> dict[str, Any]:
+        client = Client(session)
+        await client.call("init", path=str(project))
+        film = (await client.call("import_media", path=str(project), source=str(window)))["clip_id"]
+        music = (await client.call("import_media", path=str(project), source=str(bed)))["clip_id"]
+        await client.call("attach_transcript", path=str(project), clip_id=film, transcript_path=str(transcript))
+        await client.call("seed_timeline", path=str(project), clip_id=film, remove_silences=False)
+        shutil.copyfile(card, Project.open(project).cards_dir / "end.png")
+        await client.call("tail", path=str(project), asset="card:end", seconds=1.0, fade=0.5)
+        await client.call(
+            "music", path=str(project), asset=music, clip_id=film, word_index_start=0,
+            loudness=-30.0, over_tail=True, fade_out=0.3,
+        )  # fmt: skip
+        return await client.call("export", path=str(project), output=str(output), export_format=None)
+
+    result = anyio.run(_with_server, body)
+
+    assert result["writer"] == "melt"
+    assert result["tail"]["fade_frames"] == 15
+    frames = _rgb_frames(output, 640, 360)
+    assert len(frames) == 150
+
+    def centre(pixels: bytes) -> float:
+        i = (180 * 640 + 320) * 3
+        return 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2]
+
+    worst = 0.0
+    for k, pixels in enumerate(frames):
+        want = 250.0 if k < 105 else (1 - (k - 105) / 15) * 250 if k < 120 else 0.0
+        worst = max(worst, abs(centre(pixels) - want))
+    assert worst <= 4, worst
+
+    assert result["music"]["loudness"] == -30.0 and result["music"]["over_tail"] is True
+    film_lufs = energy.integrated_loudness(output, start=0.5, end=3.5)
+    assert abs(film_lufs - -30.0) < 1.0, film_lufs
+    in_film = _tone_window(output, 440.0, 1.0, 0.4)
+    under_card = _tone_window(output, 440.0, 4.1, 0.4)
+    assert under_card > 0.7 * in_film, (under_card, in_film)

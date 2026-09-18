@@ -672,3 +672,67 @@ def test_a_planned_duck_writes_nothing(tmp_path: Path) -> None:
     result = ops.music(project.root, duck=6.0, plan=True)
     assert result["music"]["duck"] == 6.0 and not result["written"]
     assert ops._stored_music(project)["duck"] is None
+
+
+# -- the bed's fixed level, and the bed under the tail --------------------------
+
+
+def test_loudness_and_under_replace_each_other(tmp_path: Path) -> None:
+    project = _film_project(tmp_path)
+    ops.music(project.root, asset="calm-a", clip_id="vo", word_index_start=0, under=17.5)
+
+    loud = ops.music(project.root, loudness=-23.0)
+    assert loud["music"]["loudness"] == -23.0 and "under" not in loud["music"]
+    under = ops.music(project.root, under=12.0)
+    assert under["music"]["under"] == 12.0 and "loudness" not in under["music"]
+    ops.music(project.root, loudness=-23.0)
+    cleared = ops.music(project.root, clear_loudness=True)
+    assert "loudness" not in cleared["music"]
+    assert ops._stored_music(project)["loudness"] is None
+
+
+def test_loudness_and_under_together_are_refused(tmp_path: Path) -> None:
+    project = _film_project(tmp_path)
+    with pytest.raises(ProjectError, match="not both"):
+        ops.music(project.root, asset="calm-a", clip_id="vo", word_index_start=0, under=10.0, loudness=-23.0)
+
+
+@pytest.mark.parametrize("lufs", [0.0, 3.0, -80.0, float("nan")])
+def test_a_loudness_that_is_not_lufs_is_refused(tmp_path: Path, lufs: float) -> None:
+    project = _film_project(tmp_path)
+    with pytest.raises(ProjectError, match="LUFS"):
+        ops.music(project.root, asset="calm-a", clip_id="vo", word_index_start=0, loudness=lufs)
+
+
+def test_over_tail_runs_the_bed_on_under_the_tail(tmp_path: Path) -> None:
+    project = _film_project(tmp_path, vo_seconds=30.0)
+    project.cards_dir.joinpath("end.png").write_bytes(b"\x89PNG")
+    ops.tail(project.root, asset="card:end", seconds=4.0)
+    ops.music(project.root, asset="calm-a", clip_id="vo", word_index_start=0)
+    edit = ops._load_edit(project)
+    frames = _edit_frames(edit)
+
+    before = ops._music_plan(project, edit, RATE, edit_frames=frames)
+    result = ops.music(project.root, over_tail=True)
+    after = ops._music_plan(project, edit, RATE, edit_frames=frames)
+
+    assert result["music"]["over_tail"] is True
+    assert before["end_frame"] == frames
+    assert after["end_frame"] == frames + round(4.0 * RATE)
+    assert after["timeline_end"] == pytest.approx(34.0)
+    off = ops.music(project.root, over_tail=False)
+    assert "over_tail" not in off["music"]
+
+
+def test_a_bed_stored_before_over_tail_ends_with_the_edit(project: Project) -> None:
+    ops.music(project.root, asset="bed", clip_id="vo", word_index_start=1)
+    assert ops._stored_music(project)["over_tail"] is False
+    assert ops._stored_music(project)["loudness"] is None
+
+
+def test_over_tail_on_a_bed_with_an_end_is_refused(tmp_path: Path) -> None:
+    project = _film_project(tmp_path)
+    ops.music(project.root, asset="calm-a", clip_id="vo", word_index_start=0, word_index_end=5)
+
+    with pytest.raises(ProjectError, match="clear_end"):
+        ops.music(project.root, over_tail=True)

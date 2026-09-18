@@ -509,6 +509,10 @@ class Dissolve:
     pre-roll's first source frame. Its node carries the resource's reframe, so
     it is framed by its own camera, and never a retime: the pre-roll plays at
     1x whatever the join's stretch.
+
+    `is_image` is the tail's card fading in over the film's last frames
+    (`document`'s `tail_fade`): a still, so its `src_in` is 0 and it takes no
+    reframe, the tail's own card entry taking over at the join.
     """
 
     resource: str
@@ -516,6 +520,7 @@ class Dissolve:
     start: int
     frames: int
     ease: str = "linear"
+    is_image: bool = False
 
     @property
     def end(self) -> int:
@@ -1780,6 +1785,7 @@ def document(
     sounds: list[list[Entry]] | None = None,
     insets: list[Inset] | None = None,
     dissolves: list[Dissolve] | None = None,
+    tail_fade: Dissolve | None = None,
     rate: float,
     resolution: tuple[int, int] = DEFAULT_RESOLUTION,
     reframe: dict[str, Reframe] | None = None,
@@ -1954,6 +1960,8 @@ def document(
     dissolves = dissolves or []
     for dissolve in dissolves:
         _check_dissolve(dissolve, total_frames)
+    if tail_fade is not None:
+        _check_dissolve(tail_fade, total_frames)
     for entry in [*music, *music2, *holds, *sound_entries]:
         if entry.time_map:
             raise MLTError(
@@ -2002,7 +2010,15 @@ def document(
     sources: dict[str, Entry] = {}
     inset_entries = [Entry(inset.resource, inset.src_in, inset.frames, has_video=True) for inset in insets]
     dissolve_entries = [Entry(d.resource, d.src_in, d.frames, has_video=True) for d in dissolves]
-    for entry in [*audio, *picture, *music, *music2, *holds, *sound_entries, *inset_entries, *dissolve_entries]:
+    tail_fade_entries = (
+        [Entry(tail_fade.resource, tail_fade.src_in, tail_fade.frames, is_image=tail_fade.is_image, has_video=True)]
+        if tail_fade is not None
+        else []
+    )
+    for entry in [
+        *audio, *picture, *music, *music2, *holds, *sound_entries, *inset_entries, *dissolve_entries,
+        *tail_fade_entries,
+    ]:  # fmt: skip
         # A bin entry is the raw media, so it never carries an entry's retime.
         sources.setdefault(entry.resource, replace(entry, time_map=(), gain_keys=()))
     bin_ids = {resource: index + 2 for index, resource in enumerate(sources)}
@@ -2244,15 +2260,15 @@ def document(
     # The dissolves, each on its own silent track over the join it covers —
     # see `Dissolve`. Ids in their own namespace (xchain/xplaylist/tractorX),
     # so a document with none is byte-identical to one built before them.
-    dissolve_tracks: list[str] = []
-    for index, (dissolve, entry) in enumerate(zip(dissolves, dissolve_entries)):
-        node = _source_node(f"xchain{index}", entry, bin_ids[dissolve.resource], rate)
-        _property(node, "audio_index", "-1")
-        _property(node, "video_index", "0")
-        _property(node, "set.test_audio", "1")
-        if dissolve.resource in reframe:
-            _reframe_filter(node, reframe[dissolve.resource], resolution, rate, None)
-        fade = ET.SubElement(node, "filter", {"id": f"fade_xchain{index}"})
+    def dissolve_track(dissolve: Dissolve, entry: Entry, chain: str, playlist: str, tractor: str, name: str) -> str:
+        node = _source_node(chain, entry, bin_ids[dissolve.resource], rate)
+        if not dissolve.is_image:
+            _property(node, "audio_index", "-1")
+            _property(node, "video_index", "0")
+            _property(node, "set.test_audio", "1")
+            if dissolve.resource in reframe:
+                _reframe_filter(node, reframe[dissolve.resource], resolution, rate, None)
+        fade = ET.SubElement(node, "filter", {"id": f"fade_{chain}"})
         _property(fade, "mlt_service", "brightness")
         _property(fade, "level", "1")
         # Keyed in the producer's frames, the inset fade's rule, and 1 on the
@@ -2261,23 +2277,33 @@ def document(
             fade, "alpha", f"{dissolve.src_in}{EASINGS[dissolve.ease]}=0;{dissolve.src_in + dissolve.frames}=1"
         )
         root.append(node)
-        playlist = ET.SubElement(root, "playlist", {"id": f"xplaylist{index}a"})
+        lane = ET.SubElement(root, "playlist", {"id": f"{playlist}a"})
         if dissolve.start:
-            ET.SubElement(playlist, "blank", {"length": str(dissolve.start)})
-        ET.SubElement(
-            playlist, "entry", {"producer": f"xchain{index}", "in": str(entry.src_in), "out": str(entry.src_out)}
-        )
+            ET.SubElement(lane, "blank", {"length": str(dissolve.start)})
+        ET.SubElement(lane, "entry", {"producer": chain, "in": str(entry.src_in), "out": str(entry.src_out)})
         if dissolve.end < total_frames:
-            ET.SubElement(playlist, "blank", {"length": str(total_frames - dissolve.end)})
-        ET.SubElement(root, "playlist", {"id": f"xplaylist{index}b"})
-        track = ET.SubElement(
-            root, "tractor", {"id": f"tractorX{index}", "in": "0", "out": str(total_frames - 1)}
-        )
+            ET.SubElement(lane, "blank", {"length": str(total_frames - dissolve.end)})
+        ET.SubElement(root, "playlist", {"id": f"{playlist}b"})
+        track = ET.SubElement(root, "tractor", {"id": tractor, "in": "0", "out": str(total_frames - 1)})
         _property(track, "kdenlive:timeline_active", "1")
-        _property(track, "kdenlive:track_name", f"Dissolve {index + 1}")
-        for playlist_id in (f"xplaylist{index}a", f"xplaylist{index}b"):
+        _property(track, "kdenlive:track_name", name)
+        for playlist_id in (f"{playlist}a", f"{playlist}b"):
             ET.SubElement(track, "track", {"producer": playlist_id, "hide": "audio"})
-        dissolve_tracks.append(f"tractorX{index}")
+        return tractor
+
+    dissolve_tracks = [
+        dissolve_track(dissolve, entry, f"xchain{index}", f"xplaylist{index}", f"tractorX{index}", f"Dissolve {index + 1}")
+        for index, (dissolve, entry) in enumerate(zip(dissolves, dissolve_entries))
+    ]
+    # The tail's card fading in over the film's end: over everything the film
+    # draws, overlays included, as the card after the join is (A crossfades
+    # into its end card, RECUT.md § What A is). Its own ids, so a document
+    # without one is byte-identical.
+    tail_fade_tracks = [
+        dissolve_track(tail_fade, entry, "tchain0", "tplaylist0", "tractorT", "Tail fade")
+        for entry in tail_fade_entries
+        if tail_fade is not None
+    ]
 
     picture_fills = _fill_lane(
         picture, "fvchain", ("playlist16", "playlist17"), "tractorE", "Picture fill"
@@ -2499,6 +2525,7 @@ def document(
         stack.append("tractor4")
     # Above every picture track: an overlay is drawn over the film.
     stack.extend(overlay_tracks)
+    stack.extend(tail_fade_tracks)
     if music:
         stack.append("tractorA")
     if music2:

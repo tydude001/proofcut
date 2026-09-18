@@ -17197,3 +17197,68 @@ maps between the two clocks. Test in `test_retime.py`.
 The moment page (the claude.ai artifact "Launch Clip Beat by Beat", source
 `.b7-beats/`) is republished as round two. Its taps go to a new `round2`
 collection, so round one's nine answers are kept, and the verdict is Tyler's.
+
+## The bed takes a level of its own, and plays on under the end card — 2026-09-18
+
+The two gaps B7's re-run left (§ B7, run again after the recut): the bed ran
+5–6 LU hot, and the end card was silent and cut in hard.
+
+**`music --loudness LUFS`** levels the bed to a fixed loudness. It uses the
+same measurement as `under` (one gain for the whole bed, the pieces'
+duration-weighted power mean, measured before any duck), but it needs no VO,
+and a screen recording has none. Setting either level drops the other.
+`_vo_loudness`'s refusal now names `loudness` as the way out. A's bed
+measures **−23.3 LUFS** on that measure, the same in all three `launch-v4`
+runs: `clip.py` puts cand2's 90th-percentile 100 ms RMS at −21 dBFS, and
+the LUFS figure comes from decoding its bed at that gain.
+
+**`music --over-tail`** runs a bed with no end boundary on under the tail.
+`_music_plan`'s end frame grows by the tail's frames, so `fade_out` ends
+where the card ends. It is off by default, so every bed stored before it
+still stops where the Edit stops. A bed with an end word or event is
+refused, because it has already said where it stops.
+
+**`tail --fade` is drawn now.** It had been stored since § Tail time, built,
+and never rendered. It is the card dissolving in over the film's last `fade`
+seconds, reaching opaque on the tail's first frame, which is the shape the
+hand-cut bumper had (§ The bumper the teaser never had: the dissolve
+overlaps the film and never follows it). The film and the tail keep their
+lengths. The writer is `mlt.Dissolve` with `is_image`, on its own track
+(`tchain0`/`tplaylist0`/`tractorT`), stacked over every picture track,
+overlays included, since the card after the join covers them too. A
+document with no fade has none of those ids and is byte-identical. A fade
+longer than the film refuses at export. `export`'s `tail` reports
+`fade_frames` only when there is a fade, so a hard cut reports what it
+always did.
+
+**Measured on a copy of B7's re-run** (`~/proofcut-work/spikes/recut/b7-endcard`,
+with `--loudness -23.3 --over-tail` and `tail --fade 0.5`, rendered with
+`--loudness -21.7` like round two's matched copy). The bed's gain came out
+at −11.87 dB. `clip.py` gave the same track −11.86. Per moment, in LUFS:
+
+| Moment | A | B round two | B now |
+|---|---|---|---|
+| Typing the brief | −29.2 | −28.9 | −26.2 |
+| Send, and the wait | −25.0 | −28.9 | −33.2 |
+| The false start | −21.4 | −22.0 | −24.9 |
+| Sheets | −26.0 | −20.1 | −25.7 |
+| Timeline, checks | −26.0 | −20.5 | −26.0 |
+| The film | −17.6 | −21.8 | −17.4 |
+| Report | −25.3 | −19.7 | −23.4 |
+| Terminal | −24.5 | −19.2 | −23.7 |
+| End card | −26.4 | **−70.0** | −26.9 |
+
+From the sheets to the end card every moment is within 2 LU of A, and most
+within 1. The two that are not are where A lifts the track's quiet intro
+8 dB before the drop (`MUSIC_INTRO_GAIN`). One level for the whole bed
+cannot do that, and a per-passage gain would. A frame read back at the join
+shows the card crossfading in over the terminal.
+
+Tests: `test_the_end_card_fades_in_over_the_film_with_the_music_playing_on_under_it`
+renders through real melt (luma within 4 across the fade, the bed at −30 ± 1
+LUFS with no VO, and still playing under the card), plus document and op
+tests in `test_ops_export_mlt.py` and `test_ops_music.py`.
+
+The three `test_install.py` Windows tests fail on this box with
+`NameError: enum_certificates`, on the unchanged HEAD as well, so they are
+not this change.

@@ -201,6 +201,12 @@ with the new clips.
 serve the page, and let Tyler tap. Any moment still "A better" goes back to
 the step that owns it.
 
+Run once (HISTORY.md § B7, run again after the recut). Its two gaps, the hot
+bed and the silent end card, are closed by `music --loudness`/`--over-tail`
+and a drawn `tail --fade` (HISTORY.md § The bed takes a level of its own,
+and plays on under the end card). The next run's brief is unchanged, so
+whether an agent reaches for them is what that run measures.
+
 ## Decisions for Tyler
 
 **Taken 2026-09-18.** Tyler approved the plan as written ("I like the
