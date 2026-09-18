@@ -17322,10 +17322,11 @@ registered), and the essay-rebuild sentence cited HISTORY.md section titles
 a stranger cannot read.
 
 **Restructured, not rewritten.** The order is now: tagline, clip, the three
-scored trials, then a new **§ How people use it** with four short
+scored trials, then a new **§ How people use it** with five short
 paragraphs each ending in one command — an agent told what film to make,
-the shell cutting by word index, the workspace by hand, and finishing in an
-NLE while `verify` still proves the delivered file. Then the stages table,
+the shell cutting by word index, the workspace by hand, finishing in an
+NLE while `verify` still proves the delivered file, and a vertical teaser
+derived with `reel`. Then the stages table,
 the "one line each" list (which gains a screen-recording line for `events`,
 `inset` and `retime`), § Why proofcut with the local-versus-cloud contrast
 moved to second, and only then § Try it. The stages table sits one section

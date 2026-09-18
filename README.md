@@ -77,8 +77,20 @@ delivered file, and a retake left in is caught before anyone watches.
 uv run proofcut -C myproject verify final.mp4
 ```
 
-The first three are walked in [§ Try it](#try-it); the round-trip is in the
-[manual's core loop](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#the-core-loop).
+**Cut a vertical teaser from the film.** `reel` copies a span of the finished
+film into a second project at another canvas, so the film itself is never
+reshaped to take one render. It names every picture the teaser will not
+have and pins the ones it keeps to the frames the film showed, so the
+teaser shows what the film showed. Frame mode then reviews each crop on
+the source's own frames.
+
+```sh
+uv run proofcut -C myproject reel ../teaser 1:32+44 --canvas 1080x1920
+```
+
+The first three are walked in [§ Try it](#try-it); the reel and the
+round-trip are in the
+[manual](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#the-reel--a-derived-vertical-cut).
 
 ## From recordings to a finished film
 
@@ -122,9 +134,6 @@ Beyond those stages, one line each:
 - **Reframing for another aspect.** Per-shot crop windows, face-aware
   proposals (`reframe-detect`), a review sheet, and stacked splits for two
   speakers. Cards are redrawn at the new frame size, never stretched.
-- **Derived reels.** `reel` cuts part of the film into a new project, such as
-  a vertical teaser. It reports every picture it dropped and pins the ones it
-  kept.
 - **Screen recordings.** Named instants (`events`) that a crop, a sound or a
   speed change can hang off, a clip inset into the recording, and a retime
   for the slow parts.
