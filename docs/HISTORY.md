@@ -17338,7 +17338,7 @@ its heading, which the two issue templates name. Nothing in `tests/` or
 `scripts/` pins README text beyond `pyproject.toml`'s `readme`, and the
 `mcp-name` marker and the absolute links PyPI needs are untouched.
 
-The file is 410 lines against 370: the pitch grew by about 55 and the
-duplicated status lines went. The old text is kept beside the tree at
-`~/proofcut-work/README.pre-restructure.md` until this is judged on the
-project page.
+The file is 409 lines against 370: the pitch grew by about 55 and the
+duplicated status lines went. The same day the GitHub and Gitea repo
+descriptions were set to the tagline; GitHub's had stopped at "an agent
+edits your recordings", before the finishing half existed.

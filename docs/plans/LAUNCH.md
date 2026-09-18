@@ -318,9 +318,13 @@ it does not, the README's first screen is a dead link on launch day.
    release creates it on GitHub alone and the sync after that prunes it.
 3. Enable private vulnerability reporting — SECURITY.md already points at it
    and is wrong until this is on.
-4. Repo description: `Source-available, local-first AI video editor — an MCP
-   server over ffmpeg, whisper and OpenTimelineIO` (pyproject.toml's own
-   line). Topics: `mcp`, `mcp-server`, `video-editing`, `whisper`, `ffmpeg`,
+4. Repo description, on GitHub and Gitea alike: `An AI video editor that
+   proves its cuts. Your recordings to a finished, mastered film, cut by
+   transcript, on your own machine, by you or an agent. Every render is
+   checked against the edit.` — the README's tagline; pyproject.toml,
+   server.json and the plugin manifests carry the shorter `Local-first AI
+   video editor: recordings to a finished film, cut by transcript, then
+   verified`. Topics: `mcp`, `mcp-server`, `video-editing`, `whisper`, `ffmpeg`,
    `local-first`, `claude-code`, `opentimelineio`. **The old name was not
    searchable** — "lucid" is a car, a diagramming suite and a thousand dream
    apps — so the description and the tagline are what get found, and they say

@@ -290,9 +290,10 @@ Grouped by what is actionable today; each carries a recommendation.
 1. **Keep the name** — taken 2026-09-15. Tyler rejected `answerprint`
    ("answerprint sucks"), the only candidate more exact than `proofcut`, so
    the name stays and the tagline carries the film.
-2. **The tagline and the description.** Step 1's and step 2's wording
-   (recommended), or a variant. The one constraint is that neither says
-   "generate" or "from scratch".
+2. **The tagline and the description** — taken: step 1's tagline shipped
+   2026-09-15, and on 2026-09-18 the GitHub and Gitea repo descriptions
+   were set to it (LAUNCH.md § Step 3, item 4). Neither says "generate"
+   or "from scratch".
 3. **Steps 1–2 before the awesome-list PR** (recommended) — met: both shipped
    2026-09-15 and the drafted line was reworded off them, so the list will not
    carry the front-half wording for as long as it exists.
