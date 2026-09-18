@@ -16622,6 +16622,12 @@ The r/SideProject thread's first question asked whether a `cut` without
 `plan` commits with no confirmation. It does, and nothing had said so; the
 answer is now MANUAL.md § The MCP server — destructive hints for the client
 to gate on, and recovery (snapshots, untouched source) rather than a gate.
+The same commenter, who works on HOL Guard (a local approval layer for
+agent tool calls), then offered a Guard-side profile gating `cut`,
+`card_new`, `hold_add`/`hold_under` and `export`. That split is what the
+annotations already say, so the manual paragraph now names the four hint
+classes and the sheet caveat, and the reply asked for a policy keyed on the
+hints rather than a tool list, which goes stale with the next tool.
 
 ## `proofcut setup` on Windows and an Intel Mac — 2026-09-17
 
