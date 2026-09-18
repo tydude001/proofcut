@@ -16618,6 +16618,11 @@ text alone. So both posts were edited the same day to add one line linking
 the README, where GitHub plays the clip. The remaining posts carry the line
 too, and attach the file wherever a room takes uploads.
 
+The r/SideProject thread's first question asked whether a `cut` without
+`plan` commits with no confirmation. It does, and nothing had said so; the
+answer is now MANUAL.md § The MCP server — destructive hints for the client
+to gate on, and recovery (snapshots, untouched source) rather than a gate.
+
 ## `proofcut setup` on Windows and an Intel Mac — 2026-09-17
 
 INSTALL.md § Step 5 was gated on a person's report from each OS. Windows had
