@@ -16627,7 +16627,12 @@ agent tool calls), then offered a Guard-side profile gating `cut`,
 `card_new`, `hold_add`/`hold_under` and `export`. That split is what the
 annotations already say, so the manual paragraph now names the four hint
 classes and the sheet caveat, and the reply asked for a policy keyed on the
-hints rather than a tool list, which goes stale with the next tool.
+hints rather than a tool list, which goes stale with the next tool. Guard
+cannot key on hints, and the offer became a request for a PR to their
+catalog: a static 22-name list, tests and a trust-map entry. Declined, with
+the edit class pasted for them to add themselves — the catalog held two
+entries, the list drifts with proofcut's name on it, and a profile that
+prompts on every cut is the opposite of an unattended run.
 
 ## `proofcut setup` on Windows and an Intel Mac — 2026-09-17
 
