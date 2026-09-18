@@ -16874,10 +16874,13 @@ moment. His one written note was on the opener: "The bottom third looks
 better (font and overall style). I also like that the prompting section is
 faster in A."
 
-Two defects came out of the cutting that the whole-clip A/B had hidden:
-- **B's film is 13.8 LU quieter than A's**: −31.5 against −17.7 LUFS over
-  the same 11.2 s. The inset's audio is faint under a bed that elsewhere
-  plays at −19.
+Two things came out of the cutting that the whole-clip A/B had hidden:
+- **B's film is 13.8 LU quieter than A's** in the loudness-matched copy:
+  −31.5 against −17.7 LUFS over the same 11.2 s. It was called a defect that
+  day and it is not one. The inset plays its file exactly: −23.8 LUFS in the
+  render against −23.7 in the file itself. clip.py had levelled the film to
+  −18 dBFS RMS, and B's undipped bed then pulled the whole matched copy down
+  7.8 dB. What is missing is levelling (docs/plans/RECUT.md § 6).
 - **B's narrator take runs on under the sheets and the lane.** Whisper hears
   "three men leave the earth, four days later… two of them walked on the moon"
   there, and then the film says it again.
