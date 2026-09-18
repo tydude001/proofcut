@@ -16947,3 +16947,33 @@ the edit", now with `'rec' event 'cut' (3.0s)` as the address.
   for them.
 
 `tests/test_event_addressing.py`.
+
+## A tail with no cue lane — 2026-09-18
+
+docs/plans/RECUT.md step 3. B7's bumper never rendered: `tail` joins the
+picture lane, a screen recording with no cues has none, and `_build_mlt`
+refused. **The plan's fix was wrong, and a render showed it.** It said to lay
+one identity shot, the Edit's own picture copied onto the picture lane, and
+that was built first. The lane sits *over* the insets (§ Insets, built: "a
+cue that covers the recording covers its inset"), so B7's film played as the
+screen recording's own low-resolution copy of it. That was found by a real
+render of a copy of the B7 project (`~/proofcut-work/spikes/recut/b7-copy`),
+where the film frames came out with the recording's caption layout.
+
+**What shipped instead: with no cues, a head or tail goes on the Edit's own
+track.** The card is a `qimage` entry after the Edit's last frame. A still
+has no sound, so it is its own silence and needs no silent WAV. A head is an
+ordinary clip entry before the Edit's first frame. No picture lane is made,
+and a document with cues is unchanged. Only a film with no picture on its
+track and no cues is still refused (`test_a_tail_with_no_picture_lane_is_refused`
+still passes).
+
+Measured on the same copy of B7 with its bumper set as a 3.82 s tail: the
+render is 57.32 s against B7's 53.50 s. Sampled at 4 fps over the first
+53.4 s, 0 of 214 frames are under 30 dB PSNR against B7's own `clip.mp4`, so
+the inset is untouched. The card is on screen at 55.5 s, and the tail
+measures −91.0 dB. The bumper's ink and paper are swapped, which is the
+agent's call and not a defect.
+
+`_build_mlt` reports `on_edit_track`. Two tests are in
+`test_ops_export_mlt.py`.

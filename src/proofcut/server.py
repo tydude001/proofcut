@@ -3749,9 +3749,9 @@ def head(
     `gain_db` defaults to 0.0, a flat non-fading level shift distinct from
     the fades.
 
-    **Needs an existing picture cue lane covering the whole film**, `tail`'s
-    own requirement — add cues first (`cue_add`) if the project does not
-    have one. `reset` drops the head entirely. `plan` resolves and validates
+    Joins the cues' picture lane, or with none the timeline's own track; a
+    sound-only film with no cues is refused. `reset` drops the
+    head entirely. `plan` resolves and validates
     without writing.
     """
     return ops.head(
@@ -3798,9 +3798,9 @@ def tail(
     either alone after that updates just that field, the same partial-update
     shape `caption_style` has. `reset` drops the tail entirely.
 
-    **Needs an existing picture cue lane covering the whole film** — add cues
-    first (`cue_add`) if the project does not have one; `export` names why
-    otherwise. `plan` resolves and validates without writing.
+    The card follows the cues' picture lane, or with none the timeline's own
+    track, so a screen recording takes a tail as it is. A
+    sound-only film with no cues is refused by `export`, by name. `plan` resolves and validates without writing.
     """
     return ops.tail(path, asset=asset, seconds=seconds, fade=fade, reset=reset, plan=plan)
 

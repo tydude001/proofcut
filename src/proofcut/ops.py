@@ -10885,16 +10885,16 @@ def tail(
     `tail` key means exactly what it meant before this existed, nothing plays
     past the `Edit`'s own end.
 
-    **This mechanism needs an existing picture cue lane covering the whole
-    film.** A tail is two ordinary MLT entries — the card on the picture lane,
-    a silent WAV on the audio track — and that only writes a document
-    `mlt.document` will accept when the picture lane already covers every
-    frame the audio track has (PLAN.md § Tail time — the design note, "What
-    the writer already accepts"). A project whose picture comes straight off
-    its own clip, with no cue table, has no second lane for a card to join;
-    `export` refuses rather than duplicating the whole film onto one just to
-    make room for six seconds at the end. Add cues first (`cue_add`), or this
-    is the call that names why.
+    **The card follows the film's picture.** With cues, a tail is
+    two ordinary MLT entries — the card on the picture lane, a silent WAV on
+    the audio track — and that only writes a document `mlt.document` will
+    accept when the picture lane already covers every frame the audio track
+    has (PLAN.md § Tail time — the design note, "What the writer already
+    accepts"). With no cues there is no lane, and the card goes on the
+    Edit's own track after its last frame instead (RECUT.md step 3), so a
+    screen recording or a talking head takes a tail as it is. Only a film
+    that is sound only, with no cues, has no picture for a card to follow,
+    and `export` refuses it by name.
 
     `plan` resolves and validates without writing.
     """
@@ -11100,11 +11100,9 @@ def head(
     asset's own duration (`plan_picture`'s "a shot longer than its asset"
     refusal, restated for a head).
 
-    **This mechanism needs an existing picture cue lane covering the whole
-    film**, `tail`'s own requirement: `mlt.document` only accepts a picture
-    lane that covers the audio track exactly whenever one exists, and a
-    project whose picture comes straight off its own clip has no second lane
-    a head could join. Add cues first (`cue_add`), or `export` names why.
+    **The head joins a picture lane covering the whole film**, `tail`'s own
+    requirement: with no cues it goes on the Edit's own track instead, and
+    only a sound-only film with no cues is refused.
 
     `reset` drops the head entirely — a project with no `head` key means
     exactly what it meant before this existed, nothing plays before the
@@ -15359,6 +15357,14 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
     for shot in shots:
         if not shot["is_image"]:
             clip_of[shot["asset_path"]] = shot["asset"]
+    # With no cues, a head or tail goes on the Edit's own track (RECUT.md
+    # step 3): its picture is the film's, so a card appended there follows
+    # it. The plan's identity lane — the Edit's picture copied onto a picture
+    # lane — was built first and drew over the insets, which sit under the
+    # picture lane: B7's film played as the recording's own low-resolution
+    # copy of it. Only a film with some picture on its track takes one; a
+    # sound-only film with no cues still refuses.
+    on_edit_track = not lane and any(entry.has_video for entry in audio)
 
     # A retime lays the edit and the picture lane out on the warp, before a
     # head or tail is added — neither is part of the Edit a stretch addresses.
@@ -15419,16 +15425,14 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
     head_frames = 0
     head_cfg = _stored_head(project)
     if head_cfg is not None:
-        if not lane:
+        if not lane and not on_edit_track:
             raise ProjectError(
                 "this project has a head but no picture cue lane to hang the "
-                "clip on — a head needs an existing cue table (cue_add) "
+                "clip on, and its timeline is sound only, so the Edit has no "
+                "picture to stand in for one — a head needs cues (cue_add) "
                 "covering the whole film, because `mlt.document` requires the "
                 "picture lane to cover the audio track exactly whenever one "
-                "exists, and a project whose picture comes straight off its "
-                "own clip has no second lane a head could join without "
-                "duplicating the entire film onto one just to make room for "
-                "the first few seconds"
+                "exists"
             )
         head_resolved = _resolve_asset(project, head_cfg["asset"])
         if head_resolved["is_image"]:
@@ -15453,34 +15457,38 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
             ),
             *audio,
         ]
-        lane = [
-            mlt.Entry(head_resolved["asset_path"], head_src_in, head_frames, has_video=True),
-            *lane,
-        ]
+        if lane:
+            lane = [
+                mlt.Entry(head_resolved["asset_path"], head_src_in, head_frames, has_video=True),
+                *lane,
+            ]
         clip_of[head_resolved["asset_path"]] = head_cfg["asset"]
         head_report = {**head_cfg, "frames": head_frames}
 
     tail_report: dict[str, Any] | None = None
     tail = _stored_tail(project)
     if tail is not None:
-        if not lane:
+        if not lane and not on_edit_track:
             raise ProjectError(
                 "this project has a tail but no picture cue lane to hang the "
-                "card on — a tail needs an existing cue table (cue_add) "
+                "card on, and its timeline is sound only, so the Edit has no "
+                "picture to stand in for one — a tail needs cues (cue_add) "
                 "covering the whole film, because `mlt.document` requires the "
                 "picture lane to cover the audio track exactly whenever one "
-                "exists, and a project whose picture comes straight off its "
-                "own clip has no second lane a card could join without "
-                "duplicating the entire film onto one just to make room for "
-                "the last few seconds"
+                "exists"
             )
         card = _resolve_asset(project, tail["asset"])
         if not card["is_image"]:
             raise ProjectError(f"tail asset {tail['asset']!r} resolved to a clip, not a card")
         tail_frames = _tail_frames(project, rate)
-        silence = _tail_silence(project, tail["seconds"])
-        audio.append(mlt.Entry(str(silence), 0, tail_frames, is_image=False, has_video=False))
-        lane.append(mlt.Entry(card["asset_path"], 0, tail_frames, is_image=True, has_video=True))
+        if lane:
+            silence = _tail_silence(project, tail["seconds"])
+            audio.append(mlt.Entry(str(silence), 0, tail_frames, is_image=False, has_video=False))
+            lane.append(mlt.Entry(card["asset_path"], 0, tail_frames, is_image=True, has_video=True))
+        else:
+            # A still has no sound, so on the Edit's track the card is its own
+            # silence: MLT mixes nothing from a `qimage`.
+            audio.append(mlt.Entry(card["asset_path"], 0, tail_frames, is_image=True, has_video=True))
         tail_report = {**tail, "frames": tail_frames}
 
     # The A2 music lane: the resolved bed plus real silent entries padding it
@@ -15770,6 +15778,9 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         "rate": rate,
         "resolution": resolution,
         "shots": shots,
+        # True when a head or tail went on the Edit's own track, for want of
+        # a picture lane to join.
+        "on_edit_track": on_edit_track and (head_report is not None or tail_report is not None),
         "frames": sum(entry.frames for entry in audio),
         "sources": len(
             {entry.resource for entry in [*audio, *lane, *music_lane, *music2_lane, *holds_lane]}

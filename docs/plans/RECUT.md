@@ -113,6 +113,9 @@ cues. Separately, the agent's bumper swapped its `ink` and `paper` slots,
 which the card was right to accept. That was a choice, so nothing here fixes
 it.
 
+Shipped differently — see HISTORY.md § A tail with no cue lane. The identity
+shot drew over the insets; the card goes on the Edit's own track instead.
+
 **4. The duck hears every lane (M–L). Moves: false start, film, report.**
 `_duck_frames` takes the loudest level per block across Edit segments, sound
 hits (`_sound_hits`), audible insets and hold spans. That makes it the same

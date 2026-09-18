@@ -376,6 +376,50 @@ def test_a_tail_with_no_picture_lane_is_refused(project: Project, tmp_path: Path
         ops.export(project.root, tmp_path / "out.kdenlive")
 
 
+@needs_ffmpeg
+def test_a_tail_on_a_picture_timeline_with_no_cues_goes_on_the_edits_own_track(
+    project: Project, tmp_path: Path
+) -> None:
+    """RECUT.md step 3: B7's bumper never rendered, because its film was a
+    screen recording with no cues. The card now follows the Edit on its own
+    track, and no picture lane is made: one would draw over the insets."""
+    manifest = project.read_manifest()
+    edit = tl.Edit([tl.Segment("film", 0.0, 2.0), tl.Segment("film", 4.0, 7.0)])
+    tl.write(
+        tl.to_otio(edit, {c["clip_id"]: c for c in manifest["clips"]}, rate=1000.0, name="proj"),
+        project.timeline_path,
+    )
+    ops.tail(project.root, asset="card:red", seconds=1.0)
+
+    built = ops._build_mlt(project, ops._load_edit(project), fps=EXPORT_FPS)
+    result = ops.export(project.root, tmp_path / "out.kdenlive")
+
+    assert built["on_edit_track"] is True
+    assert result["frames"] == round(5.0 * EXPORT_FPS) + round(1.0 * EXPORT_FPS)
+    assert _declared(Path(result["output"])) == result["frames"]
+    document = _document(Path(result["output"]))
+    assert document.find("*[@id='playlist2']") is None
+    edit_entries = document.find("*[@id='playlist0']").findall("entry")
+    card = document.find(f"*[@id='{edit_entries[-1].get('producer')}']")
+    assert card.find("property[@name='mlt_service']").text == "qimage"
+    assert card.find("property[@name='resource']").text.endswith("red.png")
+    assert int(edit_entries[-1].get("out")) - int(edit_entries[-1].get("in")) + 1 == round(1.0 * EXPORT_FPS)
+
+
+def test_a_cue_less_project_with_no_tail_is_not_on_the_edit_track(project: Project) -> None:
+    """Nothing moves for a project without a head or tail."""
+    manifest = project.read_manifest()
+    edit = tl.Edit([tl.Segment("film", 0.0, 2.0)])
+    tl.write(
+        tl.to_otio(edit, {c["clip_id"]: c for c in manifest["clips"]}, rate=1000.0, name="proj"),
+        project.timeline_path,
+    )
+
+    built = ops._build_mlt(project, ops._load_edit(project), fps=EXPORT_FPS)
+
+    assert built["on_edit_track"] is False
+
+
 def test_a_tail_asset_that_resolves_to_a_clip_is_refused_at_build_time(
     project: Project, tmp_path: Path
 ) -> None:
