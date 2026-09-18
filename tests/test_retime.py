@@ -435,3 +435,13 @@ def test_the_view_says_nothing_without_a_retime_and_the_stretches_with_one(proje
         pytest.approx((3.3, 14.0))
     ]
     assert ops.caption_view(project.root)["retime"]["render_seconds"] == retime["render_seconds"]
+
+
+def test_a_span_past_the_retimed_render_is_refused_by_name(project: Project) -> None:
+    """The B7 rerun's agent passed Edit seconds, past the render's end: both
+    edges clamped to the Edit's end and the refusal named an empty interval
+    it had never asked for (RECUT.md step 9)."""
+    warp = _stretched(project)
+    length = warp.frames / warp.rate
+    with pytest.raises(tl.TimelineError, match=rf"runs past the render's {length:.3f}s — with a retime"):
+        ops.cut_by_time(project.root, spans=[[length + 1.0, length + 2.0]], plan=True)

@@ -6403,6 +6403,18 @@ def cut_by_time(
     # A retime makes the seconds an export plays at a different clock from the
     # Edit's: a note taken off the render is mapped back through the warp.
     warp = _project_warp(project, edit)
+    if warp is not None:
+        # Past the render's end, both edges clamp to the Edit's end, and the
+        # refusal read "interval 308.500-308.500 is empty" — which is how an
+        # agent passing Edit seconds learned nothing (RECUT.md step 9).
+        length = warp.frames / warp.rate
+        past = [(start, end) for start, end in requests if end > length + 1e-6]
+        if past:
+            raise tl.TimelineError(
+                f"span {past[0][0]:g}-{past[0][1]:g} runs past the render's {length:.3f}s — with a "
+                f"retime, cut_by_time takes seconds of the render (a watch of the export), and "
+                f"the Edit's {edit.duration:.3f}s play in {length:.3f}s; locate maps between them"
+            )
     edit_requests = (
         [(warp.edit_at(start), warp.edit_at(end)) for start, end in requests] if warp else requests
     )

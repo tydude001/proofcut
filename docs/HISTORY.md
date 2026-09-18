@@ -17143,3 +17143,52 @@ same check runs over MCP against real melt in
 **Not in the window yet:** the preview hard-cuts at a join the render
 dissolves, for 0.5 s. `timeline_view` does not carry dissolves, and the
 render is the witness for now.
+
+## B7, run again after the recut — 2026-09-18
+
+docs/plans/RECUT.md step 9. Same brief, same material, same harness
+(`agent_trial.py --source … --brief-file brief.txt --keep-project`), launched
+with `QT_QPA_PLATFORM=offscreen` this time. The one change to the starting
+state was Tyler's call on step 7's fonts. The fresh project had
+goodsometimes' `proofcut-pack.json` applied with its new `launch` variant
+(Outfit titles over a Zilla Slab body) before the agent started, since the
+brief names no pack. B7's first run was moved aside into its own run
+directory, project and renders included
+(`trial/runs/20260918-143553/`), and `beats/cut.py` points there.
+
+**The agent built it and rendered it.** 191 turns, $8.65, 15 min, run
+`trial/runs/20260918-172926`. The clip is 49.62 s at 1080p60: 2977 of 2977
+frames agree, −13.4 LUFS. The agent used everything the recut added:
+- `follow` put the Claude Code recording after the window's, with a 0.6 s
+  eased dissolve, and retimed its 163 s of calls into 2 s;
+- the music is two passages on events, with the drop's passage on `words`;
+- the narrator's take is trimmed to the false start (8.55–12.5 s);
+- the film is levelled (+8.3 dB);
+- the duck dips the bed 9 dB under the voice and the film;
+- the bumper renders as a tail on the Edit's own track;
+- the lower thirds are Outfit over Zilla Slab.
+
+**Round two against A, measured** (`beats/round2/`, the loudness-matched
+copy at −21.7):
+- **Pacing is close.** The opening takes 7.8 s against A's 4.4 (round one
+  11.6), the send takes 1.9 against 1.5 (4.4), and the false start takes
+  8.45 s at −22.0 LUFS against A's 8.5 s at −21.5.
+- **The bed runs hot:** 5–6 LU over A under the sheets, the lane, the report
+  and the terminal. A levelled its music; `under` needs a VO on the
+  timeline, and this one is a silent recording, so the agent had no level
+  to set. That pulls the whole matched clip down, and the film reads −21.8
+  against A's −17.7 (round one −31.5).
+- **The end card is silent and cuts in hard.** The bed ends where the Edit
+  ends, and a tail's `fade` is recorded but not drawn on either route. A's
+  music plays on under its card.
+
+**One defect found and fixed.** With a retime, `cut_by_time` takes seconds
+of the render. The agent passed Edit seconds, past the render's 46.1 s. Both
+edges clamped to the Edit's end, and it was refused four times with
+"interval 308.500-308.500 is empty or backwards", which told it nothing. It
+now refuses by name: the span runs past the render's length, and `locate`
+maps between the two clocks. Test in `test_retime.py`.
+
+The moment page (the claude.ai artifact "Launch Clip Beat by Beat", source
+`.b7-beats/`) is republished as round two. Its taps go to a new `round2`
+collection, so round one's nine answers are kept, and the verdict is Tyler's.
