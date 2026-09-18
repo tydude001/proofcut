@@ -16742,3 +16742,66 @@ later tag moves Latest off its permalink. § The release nobody had cut is why
 the body was pasted from a file (`gh release create --notes-file`) and then
 diffed against that file: it matched but for a trailing newline GitHub adds,
 and no link had been rewritten.
+
+## B7: an agent re-cut the launch clip — 2026-09-18
+
+NATIVE.md § B7. The material is `clip-v6.mp4`'s own, staged by
+`~/proofcut-work/spikes/native-b7/prep.py`: both runs' timed 2560x1440 JPEG
+frames were encoded at full size and a constant 60 fps (v0.23.0's frames are
+gone, so v6's run is the only one still at full resolution), and the
+recorder's marks and keys were rezeroed to each video's first frame, which
+sits 0.11 s ahead of the recorder's `start`. `measure.py`'s three moments
+ride along as events (`sheets`, `lane`, `film`, `film_end`). The agent's
+render, the narrator's take, the music and the sound effects are copied as
+they were. The brief (`brief.txt`) describes clip-v6 beat by beat, the way a
+viewer sees it, and names no tool. It hands over the two facts clip.py had
+measured by hand: the preview's rect, and the run's 35/35 and 335/335.
+
+**The agent built the whole clip.** `agent_trial.py --source`, 208 turns,
+$9.55, 15 min. It used one timeline over the workspace recording, eight
+retime stretches on events, eased reframe windows, the agent's render as an
+inset locked to `film`, overlays for every headline, and sounds on
+`key`/`sent`/`words`/`struck`. Frame by frame, every beat of the brief is on
+screen. Its report named each gap it could not close, together with what it
+did instead, and that report is the queue below.
+
+**It could not render, and that was the harness launch, not proofcut.** The
+session had no desktop, and the trial was started without
+`QT_QPA_PLATFORM=offscreen`, so every export refused "no display", correctly.
+The rule was already written (§ A stranger's install, on a clean Ubuntu).
+Nothing in `agent_trial.py` checks for a display before it spends the budget.
+The render is therefore `proofcut export --render --fps 60`, run by hand on
+the agent's untouched project with the variable set: **53.50 s, 1080p60,
+`frames` 3210 of 3210, delta 0**, −13.9 LUFS. The A/B copy is the same
+export with `--loudness -21.7`, matched to clip-v6's −21.7 (measured −21.6).
+Both clips are served by `review serve` from
+`~/proofcut-work/spikes/native-b7/review`, and the verdict is Tyler's, on his
+phone.
+
+**What it found, one root first.** A silent screen recording has no
+transcript, and three features need one on the timeline's own clip:
+- `cue_add` refuses, so there is no picture cue lane;
+- `music` refuses, so there is no bed;
+- `tail` needs that cue lane, so there is no end card.
+
+The agent then tried a one-shot sound (refused over 30 s), a still imported
+as a clip (ffprobe: no duration), and anchoring the music bed on the narrator
+clip, which is not on the timeline (refused at export: word 0 is "cut").
+It shipped with the music anchored on **a false transcript it attached to the
+recording**: the film's 35 words. It said so, and said that `verify`
+would be meaningless on the result. The end card is the camera easing into a
+black strip of the preview, with lower-third type.
+
+The rest, each named by the agent and read back here:
+- **A second recording cannot follow the first.** The terminal beat is three
+  inset slices cross-dissolving in the last 1x stretch, not a retimed
+  recording. The inset's 1x rule refused its first three placements.
+- **A sound cannot be trimmed.** The whole narrator take plays, so its second
+  try runs on under the sheets and is heard again inside the film.
+- **The music never ducks** under a sound. The duck keys off the Edit's own
+  audio, which is silent here.
+- **Export crashed on a silent Edit** while measuring a level: ffmpeg `[0:a]`
+  on a clip with no audio stream. This is a defect, not a gap.
+- **`finish_report` calls inset and sound assets "unused".** Also a defect.
+- 117 of 279 keystrokes click, because 162 are thinned at 45 ms. That is the
+  thinning rule working as written.
