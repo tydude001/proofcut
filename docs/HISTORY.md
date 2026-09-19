@@ -17352,3 +17352,26 @@ The file is 409 lines against 370: the pitch grew by about 55 and the
 duplicated status lines went. The same day the GitHub and Gitea repo
 descriptions were set to the tagline; GitHub's had stopped at "an agent
 edits your recordings", before the finishing half existed.
+
+## A local model directed the demo cut — 2026-09-19
+
+docs/plans/LOCAL.md § The run that would settle it, run: a shim
+(`~/proofcut-work/spikes/local-director/`, outside the repo) speaks
+`claude -p`'s argv and stream-json over llama-swap's Qwen3.6-35B-A3B seat, so
+`scripts/agent_trial.py` scored it with its own `score()` and nothing in
+`src/` changed. Run `trial-demo/runs/20260919-153534`, one run, the `cut`
+brief over the generated demo, thinking off.
+
+**9/9, 30 turns, 333 s, 5 refusals** — the ordering slips the Claude runs
+make. The first turn's prompt was **1,163 tokens through a shim-side
+`ToolSearch` against 64,324 with all 109 definitions**, the latter costing
+131 s of prompt processing uncached. The cost that was not predicted: Qwen's
+template renders `tools` into the system prompt, so each `ToolSearch` that
+loads a definition re-reads the whole context — 117 of the run's 158 s of
+prompt reading was three such turns. The model has no vision, so two sheets'
+pictures were dropped for it; whisper ran on the CPU because the 35B seat
+leaves the card no room for it.
+
+What it does not show: the other two briefs, a second sample, or whether a
+blind director matters on footage that depicts something. LOCAL.md § The run,
+2026-09-19 has the numbers and the limits.
