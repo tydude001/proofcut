@@ -18,6 +18,7 @@ import io
 import os
 import re
 import shutil
+import ssl
 import sys
 import tarfile
 import zipfile
@@ -464,6 +465,11 @@ def windows(home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict
     the real one reaches for `_winapi`.
     """
     monkeypatch.setattr(sys, "platform", "win32")
+    # `urlopen` builds its default HTTPS opener even for a `file://` pin, and
+    # Python 3.13.14 builds that context eagerly: under a faked win32 it reaches
+    # ssl's Windows-only certificate store and dies on `enum_certificates`, which
+    # exists only on a real Windows. There is no store to read here.
+    monkeypatch.setattr(ssl, "enum_certificates", lambda store: [], raising=False)
     monkeypatch.setattr(install.platform, "machine", lambda: "AMD64")
     monkeypatch.setenv("LOCALAPPDATA", str(home / "AppData" / "Local"))
 

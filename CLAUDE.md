@@ -87,8 +87,9 @@ Whether proofcut runs on local models alone — the four roles that already
 do (whisper, the VLM, faces, TTS), the director that is still Claude, what
 a local one would need from `PROOFCUT_AGENT_BIN` and the tool surface, and
 the hardware — is [docs/plans/LOCAL.md](docs/plans/LOCAL.md), written
-2026-09-18; the director half is **measured once**, on the demo brief, where
-Qwen3.6-35B-A3B passed 9/9 — and the other two briefs are not.
+2026-09-18; the director half is **measured on two briefs**, where
+Qwen3.6-35B-A3B passed all four runs' checks — and left a stutter the checks
+cannot see in two of the four films; the real-footage brief is not run.
 Open-item status lives in the wiki, not here. **This repo is public: a
 goodsometimes video's production record (versions, renders, creative calls,
 release state) goes in `goodsometimes/ideas/<video>.md`**, and HISTORY.md

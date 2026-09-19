@@ -876,6 +876,13 @@ def burn(video: Path | str, subtitles: Path | str, output: Path | str) -> Path:
         raise CaptionError(f"no video to burn captions onto: {source}")
 
     destination = Path(output).expanduser()
+    if destination.resolve() == source:
+        # ffmpeg refuses to write the file it is reading, and says so in a dozen
+        # lines of library banner that hid the reason from every agent that hit it.
+        raise CaptionError(
+            f"the captioned video cannot be {source.name} itself, the render being "
+            "burned onto — pass a different `burn_output` (or leave it unset)."
+        )
     destination.parent.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="proofcut-ass-") as tmp:

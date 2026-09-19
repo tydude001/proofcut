@@ -207,6 +207,19 @@ def test_a_media_path_for_output_is_refused_and_the_render_survives(
     assert not (project.render_dir / "elsewhere.mp4").exists()
 
 
+def test_burning_onto_the_render_itself_is_refused_by_name(project: Project, stub_render: None) -> None:
+    """ffmpeg cannot write the file it reads, and its refusal is a dozen lines of
+    library banner with the reason nowhere in them."""
+    render = project.render_dir / "cut.wav"
+    ops.export(project.root, render, export_format=None)
+    before = render.read_bytes()
+
+    with pytest.raises(captions.CaptionError, match="itself"):
+        ops.add_captions(project.root, project.render_dir / "cut.ass", burn=render, burn_output=render)
+
+    assert render.read_bytes() == before
+
+
 def test_the_tool_text_says_the_sidecar_is_always_output_and_the_video_burn_output() -> None:
     docs = server._PARAM_DOCS["add_captions"]
     assert "burn_output" in docs["output"]

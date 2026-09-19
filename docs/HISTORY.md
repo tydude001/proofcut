@@ -17375,3 +17375,41 @@ leaves the card no room for it.
 What it does not show: the other two briefs, a second sample, or whether a
 blind director matters on footage that depicts something. LOCAL.md § The run,
 2026-09-19 has the numbers and the limits.
+
+## The local director's next three runs, and what `add_captions`' `output` meant — 2026-09-19
+
+Three more runs of § A local model directed the demo cut, same shim and
+seat: the `film` brief (`trial-film/runs/20260919-154710`, **12/12**, 31 turns,
+361 s), the demo again (`trial-demo-2/runs/20260919-155342`, 9/9 but **63 turns
+and 746 s**, 13 refusals), and the demo once more after the fix below
+(`trial-demo-3/runs/20260919-161200`, 9/9, 34 turns, 330 s). docs/plans/LOCAL.md
+§ The run, 2026-09-19 holds the table.
+
+**The slow run was a proofcut defect, and Claude had met it.** The tool text
+said `add_captions`' `output` could be "the burned video under `burn`"; the op
+writes the `.ass` sidecar to `output` first. Passing the video's path there
+overwrote the render with caption text, so the burn read `Input #0, ass, from
+'cut.mp4'` and `verify` said whisper wrote nothing. The agent spent 18 calls on
+it. All four of Claude's deferred-loading runs made the same call (4 of 8
+`add_captions` calls) and passed only because each also gave `burn_output` the
+same path. **Fixed:** `output`'s text says sidecar, always; `burn`'s no longer
+says "instead"; and `ops.add_captions` refuses a media suffix on `output`
+before writing anything. `captions.burn` now says so by name when the captioned
+video would be the render it reads, where ffmpeg's refusal was a dozen lines of
+banner. The run after the fix made 4 calls, every `output` a `.ass`. One run, so
+no cause is claimed.
+
+**The score passed two stuttered films.** The first demo run's captions read
+"Every cut you make names | Every cut you make names | a word in the
+transcript" and the film run's kept "names a…" ahead of the good take. Both
+scored in full, because the fluffed and good takes open with the same six words
+and no check asks for them; `verify` compares the render with a timeline that
+has the stutter in it. Claude's two surviving films are clean, which is two
+films. `score()` is untouched — tests pin its checks — and the gap is a wiki
+Open items row, `proofcut-trial-stutter-blind`.
+
+**Also in this pass:** three `test_install.py` tests (the Windows `setup`
+ones) had failed on this box's Python 3.13.14 since before the day began.
+Faking win32 there makes `urlopen`'s default HTTPS opener reach ssl's
+Windows-only certificate store, even for a `file://` pin. The `windows`
+fixture now gives that store an empty answer; no assertion changed.

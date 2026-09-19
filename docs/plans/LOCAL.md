@@ -6,9 +6,10 @@ what hardware would that take?
 The short answer is that four of its five model roles already run locally,
 and they have always been measured on this box's RTX 5070. The fifth is the
 agent that reads a brief and drives the tools — the *director* — and every
-scored run of it but one has been Claude. Whether a local model can direct is
-**measured once, on the cheapest brief, and it passed** (§ The run,
-2026-09-19); the other two briefs are unmeasured. This note says what the job
+scored run of it but four has been Claude. Whether a local model can direct is
+**measured on two of the three briefs, and it passed their checks** (§ The run,
+2026-09-19) — though two of its four films kept a stutter the checks cannot
+see; the third brief is unmeasured. This note says what the job
 asks for, what would make it hard, what hardware it would take, and what the
 run found.
 
@@ -23,7 +24,7 @@ Everything else is an estimate, and it says so.
 | Footage description (`describe`) | Qwen2.5-VL-7B-Instruct, 4-bit NF4 (`describe.MODEL`) | an interpreter: `PROOFCUT_VLM` runs `_vlm_worker.py` | 139 windows over the Scream project in 498.6 s, **11.5 of 12.2 GiB** with `llama-server` resident — HISTORY.md § `describe`, step 1 of b-roll by description |
 | Faces (`reframe_detect`, `--extremes`) | insightface `buffalo_l` (`faces.MODEL`) | an interpreter: `PROOFCUT_FACE` runs `_face_worker.py` | ~0.5 s a probe |
 | Voice (`vo_synth`) | Qwen3-TTS, zero-shot from a reference clip | an interpreter: `PROOFCUT_TTS` + `PROOFCUT_TTS_MODEL` | 0.989 on the model's own speaker encoder — HISTORY.md § `vo_synth`, built |
-| **Director** | **Claude, through `claude -p`** | the agent panel and `scripts/agent_trial.py` | three scored trials, below — all Claude; one local run, § The run, 2026-09-19 |
+| **Director** | **Claude, through `claude -p`** | the agent panel and `scripts/agent_trial.py` | three scored trials, below — all Claude; four local runs, § The run, 2026-09-19 |
 
 The first four are local by design, not by accident: proofcut's own venv
 holds no torch, and each model is a subprocess behind an environment
@@ -61,8 +62,8 @@ There are two routes, and they are not the same size.
      `agent_trial.py`'s report reads.
 
    So route 2 is a shim: a small program that speaks that argv and that
-   event stream over a local model's OpenAI-compatible endpoint. Nobody
-   has written one.
+   event stream over a local model's OpenAI-compatible endpoint. One
+   exists as a spike, outside the repo (§ The run, 2026-09-19).
 
 ### What the job asks of a model
 
@@ -133,10 +134,10 @@ RTX 5070, 12 GiB, 32 GB system RAM.
   with its experts offloaded to system RAM (`--n-cpu-moe`). 32 GB of RAM
   is the binding limit for that recipe: a Q4 of a 48B MoE does not fit.
 
-**Measured for the `cut` brief on the demo, unmeasured for the other two:**
-333 s against Claude's 134–184 s (§ The run, 2026-09-19). An earlier estimate
-here — an hour or more for the `film` brief — assumed no deferred tool
-loading, and that brief has not been run.
+**Measured for the demo and `film` briefs, unmeasured for the real-footage
+one:** 330–746 s on the demo and 361 s on the film against Claude's 134–191 s
+(§ The run, 2026-09-19). An earlier estimate here — an hour or more for the
+`film` brief — assumed no deferred tool loading, and was wrong by a factor of ten.
 
 ### What would make it comfortable (estimates, none measured)
 
@@ -178,12 +179,22 @@ runs used, so a local run is directly comparable to docs/TRIAL.md.
 
 ## The run, 2026-09-19
 
-Steps 1–4 ran on the `cut` brief over the generated demo. Step 5 had no
-shortfall to explain. The shim is `~/proofcut-work/spikes/local-director/`
-(`shim.py`, run through `claude-local`), a spike and not part of the repo; the
-run is `trial-demo/runs/20260919-153534` beside it. **One run**, Qwen3.6-35B-A3B
-Q4_K_XL through llama-swap's `qwen3.6-35b-a3b` seat (128K, `--n-cpu-moe 28`),
-thinking off, temperature 0.7.
+Steps 1–4 ran on the generated demo, then the `film` brief, then the demo twice
+more. Step 5 had no shortfall to explain: every run passed its checks. The shim
+is `~/proofcut-work/spikes/local-director/` (`shim.py`, run through
+`claude-local`), a spike and not part of the repo; each run's directory is
+beside it. Qwen3.6-35B-A3B Q4_K_XL through llama-swap's `qwen3.6-35b-a3b` seat
+(128K, `--n-cpu-moe 28`), thinking off, temperature 0.7.
+
+| run | brief | checks | turns | calls | refusals | wall | what the film says |
+|---|---|---|---|---|---|---|---|
+| `20260919-153534` | demo | 9/9 | 30 | 38 | 5 | 333 s | "Every cut you make names" **twice** |
+| `20260919-154710` | film | 12/12 | 31 | 38 | 4 | 361 s | "names a…" left in before the good take |
+| `20260919-155342` | demo | 9/9 | 63 | 71 | 13 | 746 s | clean; 18 `add_captions` calls |
+| `20260919-161200` | demo, after the fix below | 9/9 | 34 | 33 | 3 | 330 s | clean; 4 `add_captions` calls |
+
+Claude on the same briefs: 134–184 s and 31–38 turns (demo), 149–191 s and
+43–45 turns (film).
 
 **Step 3 — the first turn's prompt.** With every one of the 109 definitions
 sent: **64,324 tokens, and 131 s of prompt processing with nothing cached.**
@@ -194,43 +205,66 @@ none of Claude Code's own system prompt in it, so it is not comparable to TRIAL.
 8,113. What it settles: a local client needs deferred loading before the
 model is judged at all.
 
-**Step 4 — the score.** 9/9, none unsettled. 30 turns, 38 tool calls (4 of them
-`ToolSearch`), 5 refusals, **333 s** against 184 s (the first Claude run) and 134 s
-(the deferred one). The delivered `cut.mp4` was looked at rather than trusted:
-1920×1080, 15.6 s, 375 frames, the caption burned in at 5 s. The refusals are
-the ordering slips TRIAL.md's fourth runs already show (`finish_report` before
-`seed_timeline`, `get_transcript` before `transcribe`, a cut before the seed),
-plus a burn aimed at the wrong path and a `select:` with no name.
-
-**Where the 333 s went.** 158 s reading prompts, 81 s generating (3,513
-tokens, 62 tok/s falling to 40 as the context grew from 1.5K to 33.6K), and
-about 90 s in tools — which includes whisper **on the CPU**, since the 35B seat
-holds ~10.7 GiB and turbo peaks at 6.47 GiB (`transcribe` 26 s, two `verify`
-20 s each, `finish_check` 16 s). Claude's runs had a GPU whisper, so the wall
-times are not a like-for-like comparison.
+**Where the time went** (first demo run, 333 s): 158 s reading prompts, 81 s
+generating (3,513 tokens, 62 tok/s falling to 40 as the context grew from 1.5K
+to 33.6K), and about 90 s in tools — which includes whisper **on the CPU**, since
+the 35B seat holds ~10.7 GiB and turbo peaks at 6.47 GiB (`transcribe` 26 s, two
+`verify` 20 s each, `finish_check` 16 s). Claude's runs had a GPU whisper, so the
+wall times are not a like-for-like comparison.
 
 **A tool loaded mid-session costs a full re-read.** Qwen's chat template puts
 `tools` in the system prompt, so a `ToolSearch` that adds a definition
-invalidates the KV cache from the top. Turns 2, 4 and 18 each read their whole
-context again — 15.5K, 16.9K and 27.2K tokens, **31 s, 33 s and 53 s: 117 of
-the 158 s.** Every other turn was 90–99% cached and read its new tokens in
-under 5 s. Claude's API appends the definitions as blocks and has no such
+invalidates the KV cache from the top. In that run turns 2, 4 and 18 each read
+their whole context again — 15.5K, 16.9K and 27.2K tokens, **31 s, 33 s and 53 s:
+117 of the 158 s.** Every other turn was 90–99% cached and read its new tokens
+in under 5 s. Claude's API appends the definitions as blocks and has no such
 cost, so TRIAL.md's finding that always-loading a working set did not pay was
 measured where a miss costs nothing, and does not carry over to a local
 client unchanged.
 
+**The refusals** are the ordering slips TRIAL.md's fourth runs already show
+(`finish_report` before `seed_timeline`, `get_transcript` before `transcribe`, a
+cut before the seed), plus the `add_captions` trap below.
+
+**`add_captions` told every agent the wrong thing, and Claude was caught by it
+too.** The second demo run spent 18 of its 71 calls on it and 746 s where the
+first took 333. The tool text called `output` "the burned video under `burn`";
+the code writes the `.ass` sidecar to `output` *first*, so an agent that took
+it at its word and passed `output=cut.mp4` replaced its own rendered `cut.mp4`
+with caption text, and a burn onto that path then read caption text back as its
+picture (`Input #0, ass, from 'cut.mp4'`). Claude's four deferred-loading runs
+made that call in 4 of their 8 `add_captions` calls and got through only
+because each also passed `burn_output=cut.mp4`, which makes the burn overwrite
+the caption text with the video. The text is corrected and a media suffix on
+`output` is refused before anything is written (`ops.add_captions`, HISTORY.md
+§ The local director's next three runs). The run after it made 4 calls, every
+`output` a `.ass` path. That is one run and proves no cause; the mechanism is
+the same one the earlier two showed.
+
+**The score cannot see a stutter.** Two of the four local films kept the fluffed
+take's opening: the first demo run's says "Every cut you make names | Every cut
+you make names | a word in the transcript", and the film run's leaves "names
+a…" before the good take. Both scored full marks. `retake_removed` asks that the
+bad take's own words be gone and `good_take_kept` that the good take's tail is
+there, and the two takes open with the same six words, so a cut that stops short
+of them passes both; `verify` compares the render with the *timeline*, which has
+the stutter in it. The two Claude projects still on disk — the last run of the
+demo and of the film brief — are clean, which is two films and no comparison.
+`score()` is unchanged, because tests pin its check list; the gap is a wiki
+Open items row (`proofcut-trial-stutter-blind`).
+
 **What this does not settle.**
-- **One run**, sampled, on the brief with the fewest turns. Nothing here says
-  how it does on the 77-turn real-footage brief, where the context gets deeper
-  and item 2 above bites; and the demo's variation between two runs of the same
-  client is unmeasured for Claude too.
-- **Pictures.** The model has no vision projector. Two `footage_sheet` images
-  came back and were dropped for it, and it hung b-roll off `broll_brief`'s
+- **Four runs, sampled.** The same brief took 30 to 63 turns and 330 to 746 s
+  before the fix, so a single run's wall time is not a number to quote. The
+  real-footage brief, the 77-turn one where context gets deeper and item 2
+  above bites, has not been run.
+- **Pictures.** The model has no vision projector. Every `footage_sheet` image
+  came back and was dropped for it, and it hung b-roll off `broll_brief`'s
   synopses. The demo footage depicts nothing, so it cannot say whether a blind
   director matters; the real-footage brief can.
 - **Not Claude Code's system prompt**, whisper on the CPU, thinking off.
-- **Fabrication (item 4) is unchecked.** `score()` read the render and passed
-  it; nobody compared the agent's own summary against its calls.
+- **Fabrication (item 4) is unchecked.** `score()` read each render; nobody
+  compared an agent's own summary against its calls.
 
 The launch posts' line — *every scored run used Claude* — is no longer true as
 written. `~/proofcut-work/spikes/launch-listings/POSTS.md` is Tyler's draft and
