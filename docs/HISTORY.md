@@ -16618,6 +16618,11 @@ text alone. So both posts were edited the same day to add one line linking
 the README, where GitHub plays the clip. The remaining posts carry the line
 too, and attach the file wherever a room takes uploads.
 
+Indie Hackers was skipped on 2026-09-19. A new account there cannot post
+until it holds 10 points, earned from comments other members upvote; the
+founder has said the gate is the anti-spam filter and that it lifts at 10.
+It is not a launch room, so nothing was spent, and it is not rescheduled.
+
 The r/SideProject thread's first question asked whether a `cut` without
 `plan` commits with no confirmation. It does, and nothing had said so; the
 answer is now MANUAL.md § The MCP server — destructive hints for the client
