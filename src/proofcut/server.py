@@ -1003,7 +1003,10 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         "true_peak": "The dBTP ceiling the loudness pass limits under. -1.0 by default.",
     },
     "add_captions": {
-        "output": "Where to write the `.ass` sidecar, or the burned video under `burn`.",
+        "output": (
+            "Where to write the `.ass` sidecar — always, burning or not. Never a video "
+            "path: a media suffix is refused. The burned video goes to `burn_output`."
+        ),
         "clip_id": "Caption one transcript's words rather than every clip's.",
         "preset": (
             "Override the project's base look for this one file — `clean`, `karaoke` "
@@ -1014,12 +1017,15 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         "max_duration": "Longest a single cue stays on screen, in seconds.",
         "hold": "How long a cue lingers after its last word, in seconds.",
         "burn": (
-            "Burn the captions into this video with ffmpeg instead of writing a "
-            "sidecar. It must be a render of **this** timeline — against any other "
+            "Also burn the captions into this video with ffmpeg; the sidecar is still "
+            "written to `output`. It must be a render of **this** timeline — against any other "
             "video the timings will not line up. `export --render` does not burn "
             "captions, and nothing else reports a render that was made without them."
         ),
-        "burn_output": "Where the burned video goes. Unset, it is derived from `burn`'s own name.",
+        "burn_output": (
+            "Where the burned video goes, when `burn` is set. Unset, it is derived from "
+            "`burn`'s own name in the project's renders folder."
+        ),
     },
     "caption_view": {
         "clip_id": "Show one transcript's captions rather than every clip's.",
@@ -3631,9 +3637,10 @@ def add_captions(
     written back, so regenerating after a cut is styled the project's way
     again. Leave them unset unless you specifically want a one-off.
 
-    The sidecar .ass is the default exit — Kdenlive loads it and it stays
-    restylable. Pass `burn` (a render of THIS timeline) to burn the captions in
-    with ffmpeg instead; against any other video the timings will not line up.
+    The sidecar .ass is always written to `output` — Kdenlive loads it and it
+    stays restylable. Pass `burn` (a render of THIS timeline) to burn the
+    captions into a video as well, written to `burn_output`; against any other
+    video the timings will not line up.
     """
     return ops.add_captions(
         path,

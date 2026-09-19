@@ -17718,7 +17718,23 @@ def add_captions(
     of *this* timeline — burning onto the untrimmed source lines the captions up
     against audio that has since moved. The default exit is the sidecar `.ass`,
     which Kdenlive loads and can restyle.
+
+    **`output` is the sidecar, with or without `burn`; the burned video goes to
+    `burn_output`.** A media suffix on `output` is refused before anything is
+    written: the sidecar is written first, so `output` naming the render being
+    burned replaced it with caption text and the burn then read that text back as
+    its picture — measured on a local director (docs/plans/LOCAL.md § The run,
+    2026-09-19), and the tool's own text had said `output` could be the burned
+    video, which all four of Claude's deferred-loading runs took at its word.
     """
+    if Path(output).suffix.lower() in media.SOURCE_MEDIA_EXTENSIONS:
+        raise captions.CaptionError(
+            f"`output` is where the .ass sidecar goes, and {Path(output).name} is a "
+            "media file — writing caption text there would overwrite it. To burn "
+            "captions into a video, pass `burn` (a render of this timeline) and "
+            "`burn_output` (where the captioned video goes); `output` stays a "
+            "`.ass` path either way."
+        )
     project = Project.open(path)
     edit = _load_edit(project)
 

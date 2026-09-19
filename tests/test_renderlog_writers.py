@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 
-from proofcut import autoeditor, captions, ops, renderlog
+from proofcut import autoeditor, captions, ops, renderlog, server
 from proofcut import timeline as tl
 from proofcut import transcript as tx
 from proofcut.project import Project
@@ -185,6 +185,33 @@ def test_a_burn_onto_an_unlogged_file_starts_its_own_run(
     ops.add_captions(project.root, project.render_dir / "cut.ass", burn=stray)
 
     assert renderlog.last(project)["stages"] == {"burn": {"outcome": "done", "detail": None}}
+
+
+def test_a_media_path_for_output_is_refused_and_the_render_survives(
+    project: Project, stub_render: None, stub_burn: None
+) -> None:
+    """`output` is the sidecar. The sidecar is written first, so an `output` that
+    names the render being burned replaced it with caption text and the burn then
+    read that text back as its picture ("Input #0, ass, from cut.mp4"). The tool's
+    own text had called `output` "the burned video", and every agent that trusted
+    it made this call. Refused before anything is written, the render as it was."""
+    render = project.render_dir / "cut.wav"
+    ops.export(project.root, render, export_format=None)
+    before = render.read_bytes()
+
+    for target in (render, project.render_dir / "elsewhere.mp4"):
+        with pytest.raises(captions.CaptionError, match="burn_output"):
+            ops.add_captions(project.root, target, burn=render)
+
+    assert render.read_bytes() == before
+    assert not (project.render_dir / "elsewhere.mp4").exists()
+
+
+def test_the_tool_text_says_the_sidecar_is_always_output_and_the_video_burn_output() -> None:
+    docs = server._PARAM_DOCS["add_captions"]
+    assert "burn_output" in docs["output"]
+    assert "or the burned video" not in docs["output"]
+    assert "instead of writing a sidecar" not in docs["burn"]
 
 
 # -- what the whole thing is for ----------------------------------------------
