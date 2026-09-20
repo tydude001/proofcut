@@ -245,17 +245,29 @@ says `uvx proofcut setup`. Claim the name sooner only if a squatter shows up.
 ## Step 5 — macOS and Windows (after a person's Mac report)
 
 Windows and Intel Mac built — see HISTORY.md § `proofcut setup` on Windows
-and an Intel Mac. Two halves are left: the Apple silicon route, which waits
-on a person's report from the tester post, and rewiring the kits to call
-setup, which waits until the tester posts are answered.
+and an Intel Mac. **Apple silicon built 2026-09-20** — HISTORY.md
+§ `proofcut setup` on Apple silicon. One half is left: rewiring the kits to
+call setup, so there is one install code path.
 
 `proofcut setup` grows the other two OSes out of the kits' install halves.
-On Windows that is the portable folder under `%LOCALAPPDATA%`. On an Apple
-silicon Mac it is Homebrew's `ffmpeg-full` and Shotcut.app, and on an Intel
-Mac the pinned-download folder the kit builds. Each kit then calls `proofcut setup`
-and keeps only its demo and its report, so there is one install code path.
-LAUNCH.md's gate holds here: build it when a report says where a person
-stopped.
+On Windows that is the portable folder under `%LOCALAPPDATA%`, and on an
+Intel Mac the pinned-download folder the kit builds.
+
+**This step's own premise about Apple silicon was wrong, and that is the
+thing to carry forward.** It said the route there "is Homebrew's
+`ffmpeg-full` and Shotcut.app", which is what the *kit* does, and a Homebrew
+install is not something setup can drive — so the route looked to need a
+person and the work sat behind LAUNCH.md's gate for a week. It needed no
+person: the arm64 route is the Intel one with each download's arm64 build in
+its place, and Shotcut's dmg turned out to be a universal binary already
+pinned here. **A route was inherited from the instrument that measured it**,
+which is the wiki `practice.md` mistake in its own shape — the blocker was
+never measured, only assumed from the kit beside it.
+
+The kits are still the half that waits, and now for a different reason:
+there is no tester post to hand one to (LAUNCH.md § Step 2, closed unmet).
+Judge that change by `setup-demo.yml`, never by the unit tests, which fake
+the OS.
 
 ## Decisions for Tyler
 

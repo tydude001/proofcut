@@ -73,7 +73,7 @@ def _by_setup(fix: str) -> str:
     """`fix`, led on Linux by the command that applies it.
 
     `proofcut setup` installs a missing ffmpeg, whisper, auto-editor or melt
-    for this user without sudo or admin, on Linux, Windows and Intel Macs
+    for this user without sudo or admin, on Linux, Windows and both Macs
     (`deps.setup_installs_here`, docs/plans/INSTALL.md), so only there is it
     the first thing to say. The by-hand route stays, since setup installs
     nothing a working system tool already covers.

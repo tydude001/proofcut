@@ -276,6 +276,21 @@ first contact with macOS. HISTORY.md § The Mac test in CI.
 queue is closed or recorded, and README.md's "no person has run it on a
 Mac yet" is replaced by what was measured.
 
+**Closed unmet on 2026-09-20, four days inside its own time-box.** Fourteen
+days public returned 3 stars, 47 unique viewers and **one referred view from
+reddit.com across all three tester posts**; the only engaged reply was an M1
+owner who refused the *installer*, not the project. The three posts came
+down the same day and the daily routine was disabled (HISTORY.md § The
+tester nobody sent, and what replaced the gate). What the gate existed to
+prevent — a launch thread turning into a first-run bug tracker for Apple
+silicon — is answered by CI instead: `mac-demo.yml`'s `demo (macos-latest)`
+takes the kit to a checked render on an arm64 runner, and `setup-demo.yml`
+now does the same for `proofcut setup`, which no longer refuses that Mac
+(HISTORY.md § `proofcut setup` on Apple silicon). That is the Windows
+precedent — CI is the evidence and the post says so — not a claim that a
+person ran it. **README.md § Help wanted keeps asking**, because a passive
+ask costs nothing; what stopped is spending posts on it.
+
 **Met for Intel 2026-09-17** by a friend's Intel Mac (issue #6); the run's
 queue and its numbers are in HISTORY.md § An Intel Mac route, without
 Homebrew. **That same day this line called the whole step met and the
@@ -526,9 +541,11 @@ trial — a whole film). Draft:
 > OSI definition, and I'd rather say so here than have it found.
 >
 > *Platforms.* Developed on Linux. On macOS and Windows the suite passes in
-> CI and GitHub's runners take the demo to a checked render; one Windows PC
-> has too, mine, and so has a friend's Intel Mac; nobody's Apple silicon Mac
-> yet. This tells you
+> CI and GitHub's runners take the demo to a checked render — on Apple
+> silicon too, both from a clone and through `proofcut setup`; one Windows PC
+> has as well, mine, and so has a friend's Intel Mac. No person has run an
+> Apple silicon Mac, so that one is the runner's word and not a person's.
+> This tells you
 > what's missing and how to fix it, without cloning anything:
 >
 >     uvx proofcut doctor
@@ -688,8 +705,11 @@ the decision moves to wiki `decisions.md`, not here.
   stopped.** Measure the blocker, then beat it. *Except Linux, decided
   2026-09-16:* two clean-container runs had already measured where a
   stranger stops there, so `proofcut setup` was built for Linux alone.
-  docs/plans/INSTALL.md § The gate this plan works under. No container
-  is built, and the Mac and Windows installers still wait on this step.
+  docs/plans/INSTALL.md § The gate this plan works under. No container is
+  built. **Windows and Intel Mac shipped on their reports (2026-09-17), and
+  Apple silicon on 2026-09-20 with no report at all** — this step closed
+  unmet, and the one reply it drew said the install *was* the blocker, which
+  is a measurement of the same kind the rule asks for.
 - **No Product Hunt, no paid promotion, no launch-day mass posting.** Wrong
   audience, wrong signal, and a launch that lands everywhere at once cannot
   say which channel worked.

@@ -1,4 +1,4 @@
-# `proofcut setup` on Windows and an Intel Mac, judged by a checked render —
+# `proofcut setup` on Windows and both Macs, judged by a checked render —
 # docs/plans/INSTALL.md § Step 5.
 #
 # windows-demo.yml and mac-demo.yml run the test kits, which install with
@@ -13,8 +13,13 @@
 # the `proofcut setup --plan` step in report.txt for which pieces this run
 # actually installed.
 #
-# Apple silicon is not here: setup refuses it until a person's report from the
-# tester post says where the Homebrew route stops (LAUNCH.md § Step 2).
+# Apple silicon (macos-latest) joined on 2026-09-20, when the tester post it
+# was waiting on was given up as unanswered. It is the only route with no
+# person's run behind it, so this job is its whole evidence — and it is not
+# the Homebrew route INSTALL.md § Step 5 assumed, but the Intel route with
+# each download's arm64 build: Shotcut's dmg is universal, and osxexperts.net
+# releases an arm64 ffmpeg with libass. HISTORY.md § `proofcut setup` on
+# Apple silicon.
 
 name: setup-demo
 
@@ -42,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-15-intel]
+        os: [windows-latest, macos-15-intel, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:

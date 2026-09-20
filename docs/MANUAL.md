@@ -34,11 +34,13 @@ lose what it configured at exit 0.
 
 ### `setup` — filling in what doctor crossed
 
-On Linux, Windows and an Intel Mac, `setup` installs whatever doctor marked ✗,
-into your own user account, with no sudo or administrator rights. It installs
-nothing doctor passed: a working ffmpeg or `melt` of your own is never touched
-and never upgraded behind your back. On Apple silicon it refuses and points at
-doctor's own advice, until somebody reports a run.
+On Linux, Windows and a Mac of either kind, `setup` installs whatever doctor
+marked ✗, into your own user account, with no sudo or administrator rights. It
+installs nothing doctor passed: a working ffmpeg or `melt` of your own is never
+touched and never upgraded behind your back. Every route but Apple silicon's has
+a person's run behind it; that one has CI's own arm64 runner, which is what the
+Mac route spent a week waiting on a stranger for (HISTORY.md § `proofcut setup`
+on Apple silicon).
 
 Read the plan first. `--plan` prints every piece, its version, its size and the
 doctor row that asked for it, then stops:

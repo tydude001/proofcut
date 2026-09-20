@@ -17770,3 +17770,111 @@ edge and the hatching read over every bar, weakest over yellow and cyan, where
 the amber is nearest in hue. **That is a test pattern and not footage**, so how
 it reads over a dim or busy real shot is still unjudged; the geometry, the
 hit-testing and the layout do not depend on it.
+
+## The tester nobody sent, and what replaced the gate — 2026-09-20
+
+LAUNCH.md § Step 2 had waited since 2026-09-17 for one stranger to run
+proofcut on an Apple silicon Mac. It ended today, unmet, on Tyler's call, and
+what the week measured is the reason to record it rather than a
+disappointment to file.
+
+**What the three tester posts returned.** r/alphaandbetausers on 09-17,
+r/SideProject on 09-18, r/sideprojects on 09-20 (Indie Hackers was skipped —
+§ The Apple silicon tester post). Over the fourteen days the repo has been
+public: 3 stars, 47 unique viewers, and **one referred view from reddit.com
+across all three posts**. Two replies, both on the first post: a flat
+refusal, and an M1 owner who asked whether a fresh user account would do,
+because a half-hour install on a daily driver was too much.
+
+**That second reply is the finding, and it is not "nobody wants this."** The
+ask was the problem: `mac_trial.sh` on Apple silicon installs Homebrew (with
+an admin password), four formulae, the Shotcut app and whisper's 1.9 GB. The
+smaller ask — `proofcut setup`, pinned downloads into one folder, no sudo,
+exact uninstall — is precisely what that Mac was refused. So the gate was
+asking strangers to run the heavier route in order to earn the lighter one.
+Tyler took the three posts down the same day; the launch rooms of
+LAUNCH.md § Step 6 were never spent on them, so nothing was lost by it. The
+two links in § The Apple silicon tester post no longer resolve, and are kept
+as the record of what was posted where.
+
+**The daily 7 AM routine was disabled**, not left to run out its window: its
+remaining job was chasing testers, and on all three mornings it could not
+reach GitHub's API from its sandbox, once recommending a subreddit flair that
+does not exist.
+
+## `proofcut setup` on Apple silicon — 2026-09-20
+
+The gate above held one thing hostage: `deps.setup_installs_here` refused
+Apple silicon, so the Mac most of the Show HN audience owns met a refusal
+where every other machine gets an installer. INSTALL.md § Step 5 had assumed
+that route would be Homebrew, which is why it wanted a person — nothing here
+can drive a Homebrew install. **That assumption was wrong**, and one evening
+of reading the artifacts settled it: Apple silicon is the *Intel* route with
+each download's arm64 build in its place, and every piece exists.
+
+**What was measured, all of it off the files themselves rather than a
+download page:**
+- **Shotcut's macOS dmg is already universal.** `shotcut-macos-26.8.1.dmg` —
+  the pin the Intel route already carries — holds `melt`, `ffmpeg` and
+  `ffprobe` as x86_64 + arm64 Mach-O binaries, each with an
+  `LC_CODE_SIGNATURE` (arm64 refuses to execute a binary with none). So melt
+  needs **no new pin at all**: `PINS["melt"]` names one `_SHOTCUT_MACOS`
+  object under both Mac keys, and a test asserts they are the same object
+  rather than two pins that could drift.
+- **Shotcut's bundled ffmpeg cannot be the ffmpeg.** Its configuration reads
+  `--enable-gpl --enable-libx264 … ` with **no freetype and no libass**, and
+  `--enable-shared` against the app bundle's own dylibs. It renders and
+  cannot burn a caption, which is the one thing that would have passed every
+  render check and failed `captions --burn`.
+- **osxexperts.net's arm64 ffmpeg 9.0 is the one that qualifies**:
+  `--enable-gpl --enable-libx264 --enable-libass --enable-libfreetype`,
+  arm64, code-signed, and linking nothing outside `/usr/lib` — read off the
+  binary here. It is the second pin not on GitHub, for the same reason as
+  evermeet.cx's on Intel: nobody releases a macOS ffmpeg with libass there.
+- **auto-editor publishes `auto-editor-macos-arm64`** at the same 31.6.0 the
+  other three targets pin; its hash and size match GitHub's own asset digest.
+
+**A pin can now name the hash of the binary *inside* it (`Pin.member_sha256`),
+and this is where that earns its keep.** osxexperts.net publishes the
+checksum of the extracted binary, not of the zip around it — measured: their
+published `591260c9…a95e` is the `ffmpeg` file, while the zip is
+`d0c06c5c…7af9`, a number stated nowhere but here. Pinning only the zip means
+a bump has nothing public to check against, and a re-zip of an identical
+binary would refuse the install with no way to tell that from a substitution.
+So both are pinned: the zip on the way down, the binary after unpacking, and
+the refusal names the published number to go and read. The Intel pins carry
+no member hash, because evermeet publishes the zip's.
+
+**Two things the arm64 route is not the Intel one in.** `INTEL_MAC_WHISPER`
+(`numpy<2`, wheels-only numba and llvmlite) exists because torch's last Intel
+Mac build is 2.2.2; Apple silicon still gets current torch wheels, so passing
+it there would install an old stack to route around a constraint that Mac has
+not got. And the zips carry the Finder's `__MACOSX` copies, which are deleted
+rather than installed.
+
+**Its evidence is CI's own arm64 runner, and that is stated wherever the
+route is.** `setup-demo.yml` gained `macos-latest` beside `macos-15-intel`
+and `windows-latest` — the same job that runs `setup --yes`, requires
+`doctor` to pass, takes DEMO.md to a render, judges it with
+`trial_check.py`, then uninstalls and compares the home folder against its
+listing from before. `mac-demo.yml`'s `demo (macos-latest)` already passes
+the *kit* on Apple silicon, so what this adds is the install path.
+README.md, DEMO.md and MANUAL.md now say a Mac of either kind, and
+README.md § Help wanted still says no person has run Apple silicon, because
+none has.
+
+**The arm64 `setup-demo` job had not run when this was written.** It fires
+on a push to main touching `install.py` and its neighbours, and nothing here
+can push. So every sentence above about what CI measures is a claim about
+the *design* until that job is green — read
+`gh run list --workflow setup-demo.yml` before repeating it, and if
+`demo (macos-latest)` fails, this section is the thing to correct rather
+than the runner. What is measured without it is the artifacts: the dmg's
+Mach-O headers, the two ffmpeg configurations, and the four hashes, all read
+on this machine (`~/proofcut-work/spikes/arm64-pins`, kept until the job
+passes).
+
+**What was deliberately not done.** The kits were not rewired to call setup
+(INSTALL.md § Step 5's other half): they are the instrument a tester post
+hands out, and there is no tester post now. Judge that change, if it comes,
+by `setup-demo.yml`, never by the unit tests, which fake the OS.

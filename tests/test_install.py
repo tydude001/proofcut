@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import platform
 import re
 import shutil
 import ssl
@@ -73,9 +74,9 @@ def _report(*, failing: tuple[str, ...] = (), display: dict[str, Any] | None = N
     }
 
 
-def _pin(path: Path, version: str = "test") -> install.Pin:
+def _pin(path: Path, version: str = "test", member: str | None = None) -> install.Pin:
     data = path.read_bytes()
-    return install.Pin(version, path.as_uri(), hashlib.sha256(data).hexdigest(), len(data))
+    return install.Pin(version, path.as_uri(), hashlib.sha256(data).hexdigest(), len(data), member)
 
 
 def _tarball(path: Path, files: dict[str, str]) -> Path:
@@ -114,13 +115,15 @@ def pins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, install.P
 # -- the plan --------------------------------------------------------------
 
 
-@pytest.mark.parametrize("system", ["darwin", "freebsd14"])
-def test_setup_refuses_where_it_does_not_install(home: Path, monkeypatch: pytest.MonkeyPatch, system: str) -> None:
-    """INSTALL.md § Step 5: Apple silicon waits on a person's report from the
-    tester post, so setup says where to go there rather than installing."""
+@pytest.mark.parametrize(("system", "cpu"), [("freebsd14", "x86_64"), ("darwin", "ppc")])
+def test_setup_refuses_where_it_does_not_install(
+    home: Path, monkeypatch: pytest.MonkeyPatch, system: str, cpu: str
+) -> None:
+    """An OS with no route, and a Mac CPU no pin covers. Apple silicon was
+    the second of these until 2026-09-20 and is now installed on."""
     monkeypatch.setattr(sys, "platform", system)
-    monkeypatch.setattr(install.platform, "machine", lambda: "arm64")
-    with pytest.raises(install.InstallError, match="installs on Linux, Windows and Intel Macs"):
+    monkeypatch.setattr(platform, "machine", lambda: cpu)
+    with pytest.raises(install.InstallError, match="Macs on Intel or Apple silicon"):
         install.plan(_report(failing=("ffmpeg",)))
 
 
@@ -377,15 +380,22 @@ def test_the_resolvers_prefer_what_setup_installed_over_path(home: Path, tmp_pat
 # -- the pins, and the command ---------------------------------------------
 
 
-#: The one pin not on GitHub: no Intel Mac ffmpeg with libass is released
-#: there. evermeet.cx names each build by version, so it is still a pin.
-OFF_GITHUB = {("ffmpeg", "macos-x86_64"): re.compile(r"https://evermeet\.cx/ffmpeg/ff(mpeg|probe)-\d+(\.\d+)+\.zip")}
+#: The two pins not on GitHub, and it is one reason: no macOS ffmpeg with
+#: libass is released there for either CPU. evermeet.cx names each build by
+#: version and osxexperts.net by major version, so both are still pins.
+OFF_GITHUB = {
+    ("ffmpeg", "macos-x86_64"): re.compile(r"https://evermeet\.cx/ffmpeg/ff(mpeg|probe)-\d+(\.\d+)+\.zip"),
+    ("ffmpeg", "macos-aarch64"): re.compile(r"https://www\.osxexperts\.net/ff(mpeg|probe)\d+arm\.zip"),
+}
+
+#: Where a pin carries the publisher's own hash of the binary inside it.
+PINS_ITS_MEMBER = {("ffmpeg", "macos-aarch64")}
 
 
 def test_every_pin_is_a_github_release_with_a_sha256() -> None:
     for name, by_target in install.PINS.items():
         for target, pins in by_target.items():
-            assert target in ("x86_64", "aarch64", "windows-x86_64", "macos-x86_64"), name
+            assert target in ("x86_64", "aarch64", "windows-x86_64", "macos-x86_64", "macos-aarch64"), name
             for pin in pins if isinstance(pins, tuple) else (pins,):
                 if (name, target) in OFF_GITHUB:
                     assert OFF_GITHUB[name, target].fullmatch(pin.url), (name, target)
@@ -394,9 +404,15 @@ def test_every_pin_is_a_github_release_with_a_sha256() -> None:
                 assert "latest" not in pin.url, f"{name}: a moving tag is not a pin"
                 assert re.fullmatch(r"[0-9a-f]{64}", pin.sha256), name
                 assert pin.size > 1_000_000, name
+                if (name, target) in PINS_ITS_MEMBER:
+                    assert re.fullmatch(r"[0-9a-f]{64}", pin.member_sha256 or ""), (name, target)
+                else:
+                    assert pin.member_sha256 is None, (name, target)
     assert set(install.PINS) == {"ffmpeg", "auto-editor", "melt"}
-    for target in ("x86_64", "windows-x86_64", "macos-x86_64"):
+    for target in ("x86_64", "windows-x86_64", "macos-x86_64", "macos-aarch64"):
         assert all(target in install.PINS[name] for name in install.PINS), target
+    # One universal dmg, not two pins that could drift apart.
+    assert install.PINS["melt"]["macos-aarch64"] is install.PINS["melt"]["macos-x86_64"]
 
 
 def test_setup_with_no_terminal_asks_for_yes_rather_than_installing(
@@ -433,12 +449,20 @@ def test_setup_yes_installs_and_exits_by_what_doctor_says_after(
 
 @pytest.mark.parametrize(
     ("system", "cpu", "leads"),
-    [("linux", "x86_64", True), ("win32", "AMD64", True), ("darwin", "x86_64", True), ("darwin", "arm64", False)],
+    [
+        ("linux", "x86_64", True),
+        ("win32", "AMD64", True),
+        ("darwin", "x86_64", True),
+        ("darwin", "arm64", True),
+        ("freebsd14", "x86_64", False),
+    ],
 )
 def test_doctor_leads_with_setup_only_where_setup_installs(
     monkeypatch: pytest.MonkeyPatch, system: str, cpu: str, leads: bool
 ) -> None:
-    """An Apple silicon Mac is never told to run a command that refuses it."""
+    """Nobody is told to run a command that refuses them. An Apple silicon
+    Mac was the case this guarded until 2026-09-20; a platform with no route
+    at all is the one that keeps it honest now."""
     monkeypatch.setattr(doctor.shutil, "which", lambda name, path=None: None)
     monkeypatch.setattr(sys, "platform", system)
     monkeypatch.setattr(deps.platform, "machine", lambda: cpu)
@@ -553,23 +577,25 @@ def test_windows_never_moves_over_an_ffmpeg_the_user_has(
     assert (local_bin / "ffmpeg.exe").read_text() == "theirs\n"
 
 
-@pytest.mark.parametrize("system", ["win32", "darwin"])
+@pytest.mark.parametrize(("system", "cpu"), [("win32", "AMD64"), ("darwin", "x86_64"), ("darwin", "arm64")])
 def test_whisper_off_linux_installs_the_way_its_kit_did(
-    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, system: str
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, system: str, cpu: str
 ) -> None:
-    """No `--torch-backend` on either, GPU or not: PyPI's torch there is the
-    CPU build a person ran. The Intel Mac adds numpy 1.x and wheels-only
-    numba/llvmlite, mac_trial.sh's arguments."""
+    """No `--torch-backend` on any of them, GPU or not: PyPI's torch there is
+    the CPU build a person ran. The Intel Mac adds numpy 1.x and wheels-only
+    numba/llvmlite, mac_trial.sh's arguments — and Apple silicon takes none
+    of that, since torch still ships arm64 wheels."""
     monkeypatch.setattr(sys, "platform", system)
+    monkeypatch.setattr(platform, "machine", lambda: cpu)
     monkeypatch.setattr(install, "_gpu", lambda: True)
     argv = install.whisper_argv("uv")
     assert "--torch-backend" not in argv
     assert argv[:5] == ["uv", "tool", "install", "--python", "3.12"] and argv[-1] == "openai-whisper"
     intel = ["--with", "numpy<2", "--no-build-package", "numba", "--no-build-package", "llvmlite"]
-    assert argv[5:-1] == (intel if system == "darwin" else [])
+    assert argv[5:-1] == (intel if (system, cpu) == ("darwin", "x86_64") else [])
     # The plan's size follows the same rule. Asked on the Mac only: under a
     # faked win32 the real `shutil.which` reaches for `_winapi`.
-    if system == "darwin" and os.name != "nt":
+    if system == "darwin" and cpu == "x86_64" and os.name != "nt":
         _fake_uv(tmp_path)
         steps = install.plan(_report(failing=("whisper",)))
         assert steps["bytes"] == install.WHISPER_BYTES["cpu"]
@@ -622,6 +648,72 @@ def test_an_intel_mac_takes_two_ffmpeg_zips_and_shotcut_off_its_dmg(
     calls = log.read_text().splitlines()
     assert calls[0].startswith("attach -nobrowse -readonly") and calls[1].startswith("detach")
     assert sorted(p.name for p in (deps.root() / "melt").iterdir()) == ["Shotcut.app"]
+
+    install.uninstall()
+    assert _listing(home) == before
+
+
+@links
+def test_an_apple_silicon_mac_takes_the_arm64_zips_and_the_same_universal_dmg(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Intel route with arm64 downloads in its place. Two things are its
+    own: the zips carry the Finder's `__MACOSX` copies, which are not
+    installed, and each pin names the hash osxexperts.net publishes for the
+    binary inside — checked after unpacking, since the zip is what was
+    hashed on the way down."""
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(platform, "machine", lambda: "arm64")
+    assert install.target() == "macos-aarch64"
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    ffmpeg = _zip(downloads / "ffmpeg9arm.zip", {"ffmpeg": "ffmpeg\n", "__MACOSX/._ffmpeg": "junk\n"}, mode=0o755)
+    ffprobe = _zip(downloads / "ffprobe9arm.zip", {"ffprobe": "ffprobe\n"}, mode=0o755)
+    member = {name: hashlib.sha256(f"{name}\n".encode()).hexdigest() for name in ("ffmpeg", "ffprobe")}
+    monkeypatch.setattr(install, "PINS", {
+        "ffmpeg": {"macos-aarch64": (_pin(ffmpeg, member=member["ffmpeg"]), _pin(ffprobe, member=member["ffprobe"]))},
+        "melt": {},
+        "auto-editor": {},
+    })
+    before = _listing(home)
+    monkeypatch.setattr(install.doctor, "report", _report)
+    result = install.install(install.plan(_report(failing=("ffmpeg",))), say=lambda line: None)
+    assert result["installed"] == ["ffmpeg"], result["failed"]
+    for name in ("ffmpeg", "ffprobe"):
+        link = home / ".local" / "bin" / name
+        assert link.is_symlink() and os.access(link.resolve(), os.X_OK)
+    assert not (deps.root() / "ffmpeg" / "bin" / "__MACOSX").exists()
+
+    install.uninstall()
+    assert _listing(home) == before
+
+
+@links
+def test_a_rezipped_ffmpeg_is_refused_by_the_hash_its_publisher_states(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The zip hashes as pinned and holds a different binary — what a
+    publisher who rebuilds without renaming the file would ship. Nothing of
+    that piece is kept, and the refusal names the published number."""
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(platform, "machine", lambda: "arm64")
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    ffmpeg = _zip(downloads / "ffmpeg9arm.zip", {"ffmpeg": "a newer build\n"}, mode=0o755)
+    ffprobe = _zip(downloads / "ffprobe9arm.zip", {"ffprobe": "ffprobe\n"}, mode=0o755)
+    stale = hashlib.sha256(b"ffmpeg\n").hexdigest()
+    monkeypatch.setattr(install, "PINS", {
+        "ffmpeg": {"macos-aarch64": (_pin(ffmpeg, member=stale), _pin(ffprobe))},
+        "melt": {},
+        "auto-editor": {},
+    })
+    before = _listing(home)
+    monkeypatch.setattr(install.doctor, "report", _report)
+    result = install.install(install.plan(_report(failing=("ffmpeg",))), say=lambda line: None)
+    assert result["installed"] == []
+    (failure,) = result["failed"]
+    assert failure["name"] == "ffmpeg" and stale in failure["why"]
+    assert not (home / ".local" / "bin" / "ffmpeg").exists()
 
     install.uninstall()
     assert _listing(home) == before

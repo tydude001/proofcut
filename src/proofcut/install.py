@@ -20,10 +20,12 @@ docs/plans/INSTALL.md is the design. This module holds to its rules:
 - **No sudo, no distribution packages.** A server image missing the desktop
   libraries Shotcut's melt links against is told which ones, and nothing of
   that piece is left installed.
-- **Linux, Windows and Intel Macs** (`deps.setup_installs_here`). Each
+- **Linux, Windows and both Macs** (`deps.setup_installs_here`). Each
   non-Linux route is its test kit's install half, pins included, because a
-  person ran each kit to a checked render (INSTALL.md § Step 5). Apple
-  silicon waits on its own report.
+  person ran each kit to a checked render (INSTALL.md § Step 5) — except
+  Apple silicon, whose evidence is CI's own arm64 runner rather than a
+  person, and whose pieces are the Intel route's with arm64 downloads
+  swapped in. HISTORY.md § `proofcut setup` on Apple silicon.
 - **CLI only, never an MCP tool.** An agent must not start a 2 GB download
   and change what is on PATH on its own.
 
@@ -57,13 +59,33 @@ class InstallError(Exception):
 
 @dataclass(frozen=True)
 class Pin:
-    """One download: where it is, what it must hash to, and how big it is."""
+    """One download: where it is, what it must hash to, and how big it is.
+
+    `member_sha256` is the hash of the one binary inside an archive, for a
+    source that publishes that number rather than the archive's — which
+    osxexperts.net does, and evermeet.cx does not. It is checked after
+    unpacking, and it is what a bump is verified against: the zip's own hash
+    is measured here and stated nowhere upstream, so a re-zip of the same
+    binary would refuse the install with no public number to check it by.
+    """
 
     version: str
     url: str
     sha256: str
     size: int
+    member_sha256: str | None = None
 
+
+#: Shotcut's macOS dmg, under both Mac keys: its melt, ffmpeg and ffprobe are
+#: each a universal binary (x86_64 + arm64, both code-signed, read off the
+#: dmg's own Mach-O headers 2026-09-20), so Apple silicon downloads the same
+#: file an Intel Mac does. macOS 12 or later.
+_SHOTCUT_MACOS = Pin(
+    "Shotcut 26.8.1",
+    "https://github.com/mltframework/shotcut/releases/download/v26.8.1/shotcut-macos-26.8.1.dmg",
+    "7bab10bd96fe3590bb3ba0461d21d3022681574b324bb1c21366d5432cac5657",
+    208795955,
+)
 
 #: Piece → target (`target()`) → download, or several downloads for one
 #: piece. Linux's were read off each release's own asset list and checksums
@@ -73,8 +95,10 @@ class Pin:
 #: Windows and the Intel Mac are their test kits' pins
 #: (`scripts/windows_trial.ps1`, `scripts/mac_trial.sh`), each run by a
 #: person to a checked render — except that Windows takes auto-editor 31.6.0,
-#: the version the other two pin, where its kit still pins 31.4.2. The Mac's
-#: ffmpeg is evermeet.cx's, the one pin not on GitHub: no Intel Mac ffmpeg
+#: the version the other two pin, where its kit still pins 31.4.2. Apple
+#: silicon is the Intel route with each download's arm64 build in its place,
+#: measured rather than run by a person (`macos-aarch64`, 2026-09-20). The
+#: Macs' ffmpeg is the one piece not on GitHub: no Intel Mac ffmpeg
 #: with libass is released there, and evermeet names each build by version.
 PINS: dict[str, dict[str, Pin | tuple[Pin, ...]]] = {
     "ffmpeg": {
@@ -112,6 +136,29 @@ PINS: dict[str, dict[str, Pin | tuple[Pin, ...]]] = {
                 26075757,
             ),
         ),
+        # osxexperts.net, the second pin not on GitHub and for the same
+        # reason: nobody releases an arm64 macOS ffmpeg with libass there.
+        # This one is `--enable-gpl --enable-libx264 --enable-libass
+        # --enable-libfreetype`, arm64, code-signed, and links nothing
+        # outside /usr/lib — all read off the binary 2026-09-20. Shotcut's
+        # own bundled ffmpeg is universal and has neither libass nor
+        # freetype, so it renders and cannot burn a caption.
+        "macos-aarch64": (
+            Pin(
+                "9.0 (osxexperts.net)",
+                "https://www.osxexperts.net/ffmpeg9arm.zip",
+                "d0c06c5c68ce48af3143b262f7a9118a7c9f67de1e237fcc24ffb14df9c67af9",
+                22608364,
+                member_sha256="591260c945d0eef150e3bf82b0ef988bd36a9cecc18ff05d6679617159f0a95e",
+            ),
+            Pin(
+                "9.0 (osxexperts.net)",
+                "https://www.osxexperts.net/ffprobe9arm.zip",
+                "0c94fbdd8917022f28115eca512196cf4648732bc9e5db9ec8896c7e519d02aa",
+                22530006,
+                member_sha256="e11c17e8200b3ee4c4c186d245e2b4053f01d56957336c1817fca0b997469106",
+            ),
+        ),
     },
     "auto-editor": {
         "x86_64": Pin(
@@ -131,6 +178,12 @@ PINS: dict[str, dict[str, Pin | tuple[Pin, ...]]] = {
             "https://github.com/WyattBlue/auto-editor/releases/download/31.6.0/auto-editor-windows-x86_64.exe",
             "6e037bc629db4f8b63b6ec6ebc265def3ad82ac63d74bb49d6b22963dc07b348",
             44560896,
+        ),
+        "macos-aarch64": Pin(
+            "31.6.0",
+            "https://github.com/WyattBlue/auto-editor/releases/download/31.6.0/auto-editor-macos-arm64",
+            "4312ae06d1e764a809a011c24a630f9cbe2be0cca803c5610433ff1d4dd05711",
+            26257096,
         ),
         "macos-x86_64": Pin(
             "31.6.0",
@@ -153,13 +206,8 @@ PINS: dict[str, dict[str, Pin | tuple[Pin, ...]]] = {
             "b0148856de01b39add4bf4d6a813bfbc554b4663b65e3ca25cb2589f47555a6a",
             225002077,
         ),
-        # A universal build, macOS 12 or later.
-        "macos-x86_64": Pin(
-            "Shotcut 26.8.1",
-            "https://github.com/mltframework/shotcut/releases/download/v26.8.1/shotcut-macos-26.8.1.dmg",
-            "7bab10bd96fe3590bb3ba0461d21d3022681574b324bb1c21366d5432cac5657",
-            208795955,
-        ),
+        "macos-x86_64": _SHOTCUT_MACOS,
+        "macos-aarch64": _SHOTCUT_MACOS,
     },
 }
 
@@ -172,6 +220,9 @@ WHISPER_PYTHON = "3.12"
 #: What an Intel Mac's whisper needs besides: torch's last Intel build, 2.2.2,
 #: cannot read a numpy 2 array, and the newest numba has no Intel wheel and
 #: would compile. mac_trial.sh's arguments, and doctor's whisper fix.
+#: **Apple silicon takes none of it**: torch still ships arm64 wheels, so
+#: pinning numpy back there would install an old stack to route around a
+#: constraint that Mac has not got.
 INTEL_MAC_WHISPER = ("--with", "numpy<2", "--no-build-package", "numba", "--no-build-package", "llvmlite")
 
 #: What the whisper install costs on disk, measured on a clean Ubuntu
@@ -191,18 +242,15 @@ MELT_LINKED = (
 RECORD_NAME = "installed.json"
 RECORD_VERSION = 1
 
-_ARCH = {"x86_64": "x86_64", "amd64": "x86_64", "aarch64": "aarch64", "arm64": "aarch64"}
-
-
-def machine() -> str | None:
-    """This CPU in `PINS`' spelling, or None for one no pin covers."""
-    return _ARCH.get(platform.machine().lower())
-
-
 def target() -> str | None:
     """This OS and CPU as a `PINS` key: the bare CPU on Linux, whose keys
-    came first, and `windows-x86_64` / `macos-x86_64` elsewhere."""
-    arch = machine()
+    came first, and `windows-x86_64` / `macos-aarch64` elsewhere.
+
+    The CPU names are `deps.machine`'s, because the refusal that reads them
+    (`deps.setup_installs_here`) is doctor's too and doctor cannot import
+    this module.
+    """
+    arch = deps.machine()
     if arch is None or sys.platform.startswith("linux"):
         return arch
     system = {"win32": "windows", "darwin": "macos"}.get(sys.platform)
@@ -299,9 +347,9 @@ def _gpu() -> bool:
 def _cuda_torch() -> bool:
     """Whether setup's whisper gets CUDA torch.
 
-    Linux only, and only with a driver. Windows and the Intel Mac install as
-    their kits did, with no `--torch-backend`: PyPI's torch for both is the
-    CPU build, and that is the route a person ran.
+    Linux only, and only with a driver. Windows and both Macs install as the
+    kits did, with no `--torch-backend`: PyPI's torch for each is the CPU
+    build, and that is the route a person ran on Windows and Intel.
     """
     return sys.platform.startswith("linux") and _gpu()
 
@@ -309,7 +357,7 @@ def _cuda_torch() -> bool:
 def whisper_argv(uv: str) -> list[str]:
     """The `uv tool install` that installs whisper on this OS."""
     argv = [uv, "tool", "install", "--python", WHISPER_PYTHON]
-    if sys.platform == "darwin":
+    if sys.platform == "darwin" and deps.machine() == "x86_64":
         argv += INTEL_MAC_WHISPER
     argv.append(WHISPER_TOOL)
     if sys.platform.startswith("linux") and not _gpu():
@@ -348,12 +396,12 @@ def plan(report: dict[str, Any] | None = None) -> dict[str, Any]:
     to read (usually PATH order), and reinstalling it would only loop.
     """
     if not deps.setup_installs_here():
-        where = "an Apple silicon Mac" if sys.platform == "darwin" else sys.platform
+        where = f"a {platform.machine()} Mac" if sys.platform == "darwin" else sys.platform
         raise InstallError(
-            f"`proofcut setup` does not install on {where} yet: it installs on Linux, "
-            "Windows and Intel Macs. `proofcut doctor` prints the fix under each ✗, "
-            "and on a Mac scripts/mac_trial.sh installs everything for a test run "
-            "(README.md § Help wanted)."
+            f"`proofcut setup` does not install on {where}: it installs on Linux, "
+            "Windows, and Macs on Intel or Apple silicon. `proofcut doctor` prints the "
+            "fix under each ✗, and on a Mac scripts/mac_trial.sh installs everything "
+            "for a test run (README.md § Help wanted)."
         )
     report = report if report is not None else doctor.report()
     rows = _rows(report)
@@ -472,6 +520,25 @@ def _fetch(pin: Pin, dest: Path, say: Say) -> None:
     os.replace(part, dest)
 
 
+def _check_member(pin: Pin, binary: Path) -> None:
+    """Refuse a binary that is not the one `pin` names, where it names one.
+
+    The archive's own hash has already passed, so this fires only where the
+    publisher re-zipped, and the message says which number to read: theirs is
+    of the binary, and the pin's `sha256` is of the zip around it.
+    """
+    if pin.member_sha256 is None:
+        return
+    got = hashlib.sha256(binary.read_bytes()).hexdigest()
+    if got != pin.member_sha256:
+        binary.unlink(missing_ok=True)
+        raise InstallError(
+            f"{binary.name} out of {pin.url} hashed to {got}, not the pinned "
+            f"{pin.member_sha256}; nothing was kept. That is the hash the download page "
+            "publishes, so check it there and bump the pin."
+        )
+
+
 def _unpack(archive: Path, into: Path) -> None:
     """Unpack a tarball or a zip into `into`, then delete the archive.
 
@@ -551,15 +618,20 @@ def _install_ffmpeg(pins: tuple[Pin, ...], entry: dict[str, Any], record: dict[s
     _makedirs(home, record)
     entry["dir"] = str(home)
     if sys.platform == "darwin":
-        # evermeet.cx: one zip per binary, each holding the bare static binary.
+        # evermeet.cx on Intel, osxexperts.net on Apple silicon: one zip per
+        # binary either way, each holding the bare static binary. Only the
+        # second publishes that binary's own hash, so only its pins carry one.
         binaries = home / "bin"
         for pin in pins:
             archive = home / Path(pin.url).name
             _fetch(pin, archive, say)
             _unpack(archive, binaries)
-        for name in ("ffmpeg", "ffprobe"):
+        # A zip made on a Mac carries the Finder's own copy of each file.
+        shutil.rmtree(binaries / "__MACOSX", ignore_errors=True)
+        for pin, name in zip(pins, ("ffmpeg", "ffprobe"), strict=True):
             if not (binaries / name).is_file():
-                raise InstallError(f"{pins[0].url} unpacked with no {name} in it")
+                raise InstallError(f"{pin.url} unpacked with no {name} in it")
+            _check_member(pin, binaries / name)
             (binaries / name).chmod(0o755)
             _link(binaries / name, name, entry, record, notes)
         return

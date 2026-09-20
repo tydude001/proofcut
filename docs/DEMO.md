@@ -32,7 +32,7 @@ uv run proofcut doctor
 It probes all of them and, for anything missing, prints the fix rather than
 just a ✗. It only looks; it installs nothing.
 
-On Linux, Windows and an Intel Mac, `uv run proofcut setup` installs whichever
+On Linux, Windows and a Mac of either kind, `uv run proofcut setup` installs whichever
 of whisper, auto-editor, melt and ffmpeg doctor marked, for you alone and with
 no sudo. Read it before it runs — `uv run proofcut setup --plan` prints every
 piece, its size and why doctor asked for it, and stops without touching

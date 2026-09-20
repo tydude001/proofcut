@@ -25,14 +25,31 @@ from pathlib import Path
 def setup_installs_here() -> bool:
     """Whether `proofcut setup` installs on this OS and CPU.
 
-    Linux, Windows, and an Intel Mac. An Apple silicon Mac waits on a person's
-    report from the tester post (INSTALL.md § Step 5): its route is Homebrew,
-    and nothing has measured setup driving that. Here rather than in
-    `install`, because doctor asks it too and `install` imports doctor.
+    Linux, Windows, and both Macs. Apple silicon was refused until
+    2026-09-20, waiting on a tester report that never came (LAUNCH.md
+    § Step 2); its route is the Intel one's pinned downloads rather than the
+    Homebrew INSTALL.md § Step 5 assumed, because every piece it needs is
+    published for arm64 — Shotcut's macOS dmg is a universal build, and
+    OSXExperts releases an arm64 ffmpeg with libass. HISTORY.md § `proofcut
+    setup` on Apple silicon. Here rather than in `install`, because doctor
+    asks it too and `install` imports doctor.
     """
     if sys.platform.startswith("linux") or sys.platform == "win32":
         return True
-    return sys.platform == "darwin" and platform.machine().lower() in ("x86_64", "amd64")
+    return sys.platform == "darwin" and machine() is not None
+
+
+def machine() -> str | None:
+    """This CPU in `install.PINS`' spelling, or None for one no pin covers.
+
+    Here rather than in `install` for the same reason as above: the refusal
+    is a question about the pins, and doctor cannot import them.
+    """
+    return _ARCH.get(platform.machine().lower())
+
+
+#: Every CPU name a pin is keyed by, and what the machine may call itself.
+_ARCH = {"x86_64": "x86_64", "amd64": "x86_64", "aarch64": "aarch64", "arm64": "aarch64"}
 
 
 def root() -> Path:

@@ -196,7 +196,8 @@ That first run downloads Python 3.13 if uv has none, plus proofcut's
 dependencies — about 230 MB, all of it inside uv's own cache, which
 `uv cache clean` empties.
 
-**Then read what an install would do.** On Linux, Windows and an Intel Mac,
+**Then read what an install would do.** On Linux, Windows and a Mac of either
+kind,
 `proofcut setup --plan` prints every piece it would fetch, its size, and which
 doctor row asked for it, then stops without touching anything:
 
@@ -225,8 +226,7 @@ NVIDIA GPU the whisper row is CUDA torch and the total is about 5.8 GB.
 
 Drop `--plan` to go ahead. It reprints the plan, asks once, and installs for
 you alone, with no sudo or administrator rights; `proofcut setup --uninstall`
-removes exactly what it added, and nothing you already had. On an Apple silicon
-Mac, follow the fix doctor prints under each ✗ instead.
+removes exactly what it added, and nothing you already had.
 
 ```sh
 uvx proofcut setup
@@ -354,8 +354,8 @@ it touches nothing outside your own user account.
 
 GitHub's macOS and Windows runners take the demo to a checked render, but a
 runner never reads the instructions. On a Mac, one person has taken the demo
-to a checked render, on an Intel Mac (i7-8850H, macOS 15.7.9); nobody has on
-Apple silicon. On Windows, the author's own Windows 11 laptop has, twice, and
+to a checked render, on an Intel Mac (i7-8850H, macOS 15.7.9); on Apple
+silicon only the runner has. On Windows, the author's own Windows 11 laptop has, twice, and
 nobody else's PC; Windows 10 and ARM64 PCs have not been tried at all. If you
 have one of these machines and half an hour, one script installs what
 proofcut needs, makes a short test video, has proofcut cut, score, master and
@@ -402,7 +402,7 @@ the test suite passes on CI; where each OS stands by hand is
 Every hard part of an editor already exists as mature open source, and
 proofcut is the layer that lets an agent drive those tools and check what
 they produced. Run `uv run proofcut doctor` to check everything below at
-once. On Linux, Windows and an Intel Mac, `uv run proofcut setup` installs
+once. On Linux, Windows and a Mac of either kind, `uv run proofcut setup` installs
 any of the last four that doctor marks ✗
 ([§ What it puts on your machine](#what-it-puts-on-your-machine), and
 `--plan` to read it first): a static ffmpeg, whisper,
