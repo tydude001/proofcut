@@ -139,3 +139,78 @@ was meant to get out of before building.
 **Also learned, for the next fixture:** the demo project's b-roll reads as
 frozen at -60dB because its only motion is a counter. A freeze or motion
 measurement needs footage that moves everywhere (`testsrc2`).
+
+## The holds read — designed 2026-09-20, unbuilt
+
+What the positive control left standing. **No code has been written**; status
+is the wiki's Open items table's, not this file's.
+
+**The gap, stated exactly.** `vo_extend` and `vo_synth` splice a real segment
+into the Edit (`Edit.insert`) and report `covered_by` once, in their own reply.
+Nothing can ask afterwards. That matters because the state that reply describes
+does not hold still: `cue_rm` on the cue at the hold, or a cue moved off it,
+leaves a hold with no picture of its own and every check clean. A read the
+edit can be asked at any time closes that.
+
+**`covered_by` is the wrong thing to re-derive.** Once a cue table exists,
+every hold is covered by *some* shot — the picture lane is contiguous — so
+"covered" is always true and flags nothing. The question is **whether a shot
+starts inside the hold** (`cued`), and what the picture across it is when none
+does: footage, which measurably plays straight on, or a card/still, which
+measurably holds.
+
+**Shape: a field on `shots`, not a new tool.** Each shot dict gains `over`, the
+holds whose span it covers **without a cue of its own starting inside** —
+`{clip_id, start, end, seconds}` in Edit time, empty for nearly every shot.
+`build_shots` already runs over the mutated edit for `vo_extend`, so the
+projection is one it computes today; the picture lane, `shot_sheet`,
+`timeline_view` and an agent all read it with no new surface. A new tool would
+be another `_ANNOTATIONS` row, `_PARAM_DOCS` entries, a CLI twin,
+`EXPECTED_TOOLS` and a line inside `INSTRUCTIONS`' 2 KB, for a fact that
+belongs beside the picture it qualifies. `finish_report`'s `picture` gains
+`uncued_holds` (a count), which is a plain sum over it — `finish_report`
+composes and derives nothing.
+
+**Which segments are holds — the one real decision.**
+
+- **(a) A record, `SPLICES_KEY`, one clip id per splice, written by
+  `_splice_after`.** Additive and optional, so no schema bump (the
+  `TAIL_KEY`/`CANVAS_KEY` precedent) and no stored time — spans are read live
+  off the Edit's segments, the music bed's rule. A cut that removes the hold
+  drops it from the read. **Recommended**: it is what this repo does for every
+  other piece of authoring state, and a guess is exactly what a read of this
+  kind must not be.
+- **(b) Structure alone**: a segment of an audio-only clip between two of the
+  same clip, source-contiguous at the split. True the moment `Edit.insert`
+  finishes and untrue after the first cut through the join, which is when the
+  read would matter. Rejected.
+- **(c) The `silence-…ms` / `synth-…` names.** Guessable both ways; rejected.
+
+(a) reads nothing for a project spliced before it, and that is stated rather
+than backfilled: the only project known to hold splices is the Lambs/Longlegs
+rebuild, finished.
+
+**Report, never a gate, and no flag yet.** A hold under footage that plays on
+is ordinary — a breath, a beat — and a flag on every one is noise nobody can
+clear but by inventing a cue. So `uncued_holds` is a count beside `picture`,
+not an entry in `flags`, until a real film shows which cases are wrong.
+`SCENE_THRESHOLD`'s and `reframe_detect`'s precedent: the number is pinned by
+looking at output, never picked cold. Splitting the count by what covers the
+hold (`still` against `footage`) is in scope; a threshold is not.
+
+**What it does not do.** It says nothing about whether the picture across a
+hold is *right* — a card left up over a silence you meant to fill and a card
+you meant to hold read the same. It reads the edit, so it is blind to a render
+that disagrees with the edit, which is `check_frames`' job.
+
+**Tests it needs.** A hold with a cue starting inside it (`over` empty); with
+none, over footage and over a card; after `cue_rm` (the case this exists for);
+after a cut through the join (the case (b) loses); after `undo` past the splice
+(the record and the timeline restore as a pair); and one real-stdio test that
+`shots` over the wire carries `over`, since a body-level test proves nothing
+about reachability (CLAUDE.md § Conventions).
+
+**Open, and Tyler's:** (a) against a smaller version that skips the record and
+only reads at `vo_extend` time — which is what exists. That is the null option,
+and it is right if no agent will ever `cue_rm` after a hold; TRIAL.md's runs
+are the evidence to check before paying for the record.
