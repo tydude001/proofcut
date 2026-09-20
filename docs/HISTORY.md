@@ -17466,3 +17466,41 @@ line. It does make run four a different brief from runs one to three on length,
 so its pacing is not comparable with theirs. No run has been made on it.
 
 Suite: 2560 passed (`QT_QPA_PLATFORM=offscreen pytest -n auto`, 113 s).
+
+## B7, run four — 2026-09-19
+
+The scrim fix and the brief's length limit (§ The scrim is the launch clip's
+curve), everything else as run three: the same material and harness, the pack's
+`launch` variant applied to a fresh project first, `QT_QPA_PLATFORM=offscreen`.
+Run `trial/runs/20260920-040350` (the stamp is UTC): 204 turns, $6.98, 39 min.
+The clip is **48.83 s**, 44.82 s before the 4 s end card, so it is inside the
+brief's 45 s for the first time (run three 59.47 s, A 47.02 s). The agent's own
+report says it read the render's length and re-timed to it. Frames agree with
+the timeline; `verify` and `finish_check` still refuse, below.
+
+**Against A, frame by frame** (contact sheets at 2 s, `beats/round4/B4.png`):
+- **The lower thirds now sit on ink.** The transcript rows and the terminal's
+  lines dim behind their headlines, as A's do; run three printed over them.
+- **Pacing:** the typing is done by ~4 s (A 4.4, run three 8.6), the terminal
+  beat is about 6 s (A 5.6, run three 11.2), and the last terminal screen is no
+  longer held.
+- **The end card** cuts in clean with no terminal text under it, and the music
+  plays on and fades (−23 to −39 LUFS over the card; A −26 to −35).
+- **Loudness in 2 s bins:** the bed to film step is 7.5 LU (A 8), and the whole
+  clip reads −19.6 LUFS against A's −21.7. Every bin runs about 2 LU hot rather
+  than any one beat, because the export was not levelled; the A/B copy takes
+  −1.9 dB (`trial/clip-matched.mp4`, −21.7).
+- **Still not A:** the end card's tagline is white where A's is amber Zilla
+  Slab, the whole clip is 1.8 s longer, and the agent says it never listened to
+  the render. Both recordings still say `lucid`, as A's do.
+
+**The candidate defect from run three is now a finding:** with the voice a
+sound over a silent recording, `verify` and `finish_check` refuse with "no
+transcribed word survives on the timeline", so the agent's "audio and picture
+checks passed" rests on `check_frames` alone and nothing hears the render. The
+scorer's two failed checks (`picture_hung`, `render_exists`) are the demo-cut
+scorer's and read the same on all four runs.
+
+Nothing is judged until Tyler has watched it; the numbers above only say there
+is less left to find than in run three.
+
