@@ -669,8 +669,9 @@ PNG under 2000 bytes.
   answer "none" (`prompts/visual_verify.txt:19-33`) is the honest half of a
   reviewing pass. Its whole-timeline "executive producer" pass is the kind
   proofcut measured making picks worse (13 → 10), with no evidence here either
-  way. Held (2026-09-20) for a design note first: it is a measurement problem,
-  and the bar is 15 of 25 against embeddings' 10.
+  way. **Checked 2026-09-20 and not built** (docs/plans/PICKS-PRIOR.md): the
+  13-of-25 floor it would be held to is in-sample — held out, the learned
+  prior scores 7 — and there is one film's worth of human picks to test on.
 - **VoiceStudio's dub timing, for `vo_synth` — declined 2026-09-20**, because
   `vo_synth` splices in and lets the edit grow, so there is no slot to fit
   (HISTORY.md § Embedding the footage did not pick the b-roll). A duration predictor

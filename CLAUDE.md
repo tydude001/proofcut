@@ -100,6 +100,11 @@ read that survives is designed there and waits on a trial that needs it.
 Undoing an agent's turn — `undo --steps N [--plan]`, and why `snapshot`'s
 once-per-instance rule stays — is [docs/plans/GROUPED-UNDO.md](docs/plans/GROUPED-UNDO.md),
 written and built 2026-09-20 but for the panel's button.
+Whether a person's own b-roll picks could pick the next ones — checked
+2026-09-20 and not built: the "commonest three" floor is in-sample and scores
+7 of 25 held out, and there is one film's worth of human picks to test on —
+is [docs/plans/PICKS-PRIOR.md](docs/plans/PICKS-PRIOR.md), with the second film
+that would reopen it.
 Open-item status lives in the wiki, not here. **This repo is public: a
 goodsometimes video's production record (versions, renders, creative calls,
 release state) goes in `goodsometimes/ideas/<video>.md`**, and HISTORY.md
