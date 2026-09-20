@@ -157,6 +157,9 @@ GitHub's cap on a free plan is 10 MB.
 
 ## Step 2 — one stranger's run, on a Mac
 
+**Closed unmet 2026-09-20** — what the week measured, and what replaced the
+gate, is at the end of this step. The rest is the record of how it was run.
+
 **What it is.** A person who is not Tyler clones the repo, runs `uv sync`,
 `proofcut doctor`, and docs/DEMO.md end to end on a machine Tyler does not own,
 and reports every ✗ and every wrong number. A Mac, because that is where the
@@ -208,18 +211,10 @@ first, r/SideProject if its rules turn a tester call away; read the rules
 the day of posting. Moving a step 6 channel ahead of Show HN to do this was
 weighed on 2026-09-14 and rejected: self-promotion rules commonly read a
 second post about the same project as spam, so a request posted in a launch
-room spends that room's launch post. Draft:
-
-> **[Testers] A local AI video editor needs its first run on an Apple silicon Mac.**
-> proofcut is an MCP server an agent uses to cut video by transcript, then
-> check the render. An Intel Mac has run it end to end and CI's M1 runner
-> passes, but no person has run it on an M-series Mac. One script installs
-> what it needs, runs a 2-minute demo, zips a report, and `--uninstall`
-> removes exactly what it added. Half an hour:
-> https://github.com/tydude001/proofcut/issues/1
-
-The draft asked for "Apple silicon or Intel" until 2026-09-17, when the
-Intel run below made Intel the wrong ask.
+room spends that room's launch post. What was posted, in three rooms and in
+two wordings, is `~/proofcut-work/spikes/launch-listings/POSTS.md` § The
+Apple silicon tester posts; the drafts are not repeated here, since no
+further one is planned.
 
 **What comes back is a queue, not a verdict** — the trial's own rule (TRIAL.md
 § The queue). Every ✗ becomes a fix or a documented requirement; every
@@ -298,12 +293,10 @@ tester post unneeded, which was wrong**: the Intel run went through pinned
 downloads, while an Apple silicon Mac installs through Homebrew, a route no
 person has run and CI's runner (Homebrew preinstalled) cannot. HISTORY.md
 § The first person's Mac run said so that morning, and most of the Show HN
-audience's Macs are Apple silicon. So **the gate stays open for Apple
-silicon**: the tester post goes up now, asking for Apple silicon only,
-rather than waiting for 2026-09-21, and Show HN goes on the first weekday
-morning after an Apple silicon report or 7 days after that post, whichever
-comes first. README.md already says Apple silicon is untried by a person. **Posted 2026-09-17**, so the time-box ends **2026-09-24** —
-HISTORY.md § The Apple silicon tester post.
+audience's Macs are Apple silicon. So the gate stayed open for Apple silicon
+and the tester post went up that day rather than on its 2026-09-21 fallback,
+setting the time-box at 2026-09-24 — HISTORY.md § The Apple silicon tester
+post.
 
 ## Step 3 — the flip, and the ten minutes after it
 
