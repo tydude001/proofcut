@@ -13,7 +13,9 @@ evidence, not the decision.
 Re-run this survey before any major scope change. Last re-checked in full
 **2026-09-16** — § The re-check before Show HN; the counts above it stay as
 they were read. Seven more repos, two of them re-reads, were added
-**2026-09-20** — § Seven repos a new stargazer had starred.
+**2026-09-20** — § Seven repos a new stargazer had starred. OpenCut, the one
+of those seven marked "to watch", was then read in full the same day, both the
+rewrite and the classic app — § OpenCut, read in full.
 
 ## Why this survey happened
 
@@ -620,7 +622,7 @@ PNG under 2000 bytes.
 | Repo | Category | What matters against proofcut |
 |---|---|---|
 | [calesthio/OpenMontage](https://github.com/calesthio/OpenMontage) · 60.3k★ · AGPL-3.0 · Python + Remotion · created 2026-03-29 | Generator and orchestrator | 121 `BaseTool` classes, **no MCP server and no CLI** — an agent reads `AGENT_GUIDE.md` and calls a Python registry. Mostly provider tools (video, image, TTS, music, avatar). Four of its 13 pipelines cut the user's own footage (`talking-head`, `clip-factory`, `podcast-repurpose`, `screen-demo`), by silence removal or an agent's reading of a transcript; **no word-addressed edit, no retake handling.** State is per-stage JSON artifacts validated against schemas (`lib/checkpoint.py`), not a timeline, and there is no undo. Local faster-whisper by default |
-| [OpenCut-app/OpenCut](https://github.com/OpenCut-app/OpenCut) · 89.9k★ · MIT | Human CapCut clone, mid-rewrite | The repo the stars sit on is a **skeleton**: `README.md:11-22` says it is being rewritten, the editor route is "Coming soon", and MCP and headless mode are roadmap bullets. The working product is [opencut-app/opencut-classic](https://github.com/opencut-app/opencut-classic) (252★), a browser editor with local in-browser Whisper whose captions are spread evenly across a segment rather than aligned per word. No agent surface in either, no transcript cutting, no render check. **The one to watch**, because the roadmap names MCP and 90k stars is distribution none of the agent-facing editors has |
+| [OpenCut-app/OpenCut](https://github.com/OpenCut-app/OpenCut) · 89.9k★ · MIT | Human CapCut clone, mid-rewrite | The repo the stars sit on is a **skeleton**: `README.md:11-22` says it is being rewritten, the editor route is "Coming soon", and MCP and headless mode are roadmap bullets. The working product is [opencut-app/opencut-classic](https://github.com/opencut-app/opencut-classic) (252★), a browser editor with local in-browser Whisper whose captions are spread evenly across a segment rather than aligned per word. No agent surface in either, no transcript cutting, no render check. **The one to watch**, because the roadmap names MCP and 90k stars is distribution none of the agent-facing editors has. Read in full later that day: § OpenCut, read in full |
 | [ssrajadh/sentrysearch](https://github.com/ssrajadh/sentrysearch) · 4.5k★ · Apache-2.0 · Python | Footage retrieval | 30 s chunks, 5 s overlap, embedded *as video* (Gemini Embedding 2 by default; Qwen3-VL-Embedding locally, ~18 GB VRAM) into ChromaDB; a text or image query matches footage directly and the top hit is trimmed with ffmpeg. CLI only, no MCP, no timeline. **No retrieval evaluation anywhere** |
 | [erfsalehi/B-Roll-Finder](https://github.com/erfsalehi/B-Roll-Finder) · 4★ · **no licence file** · Python | Cloud b-roll sourcing | Voiceover to shot list to stock and YouTube candidates to a Premiere XML. Almost all cloud (Groq, OpenRouter, Pexels, Gemini). Its library index embeds the *query text that fetched a clip*, not what the footage shows — a text-similarity index over words. No evaluation, no agent surface |
 | [debpalash/VoiceStudio](https://github.com/debpalash/VoiceStudio) · 33.3k★ · AGPL-3.0 · Python | TTS and dubbing app | ~17 engines behind subprocess sidecars (proofcut's own pattern). **"646 languages" is the row count of one model's name-to-ID table** (`omnivoice/utils/lang_map.py`); its own docs say other engines differ. Dubbing never touches a timeline. **Default model's weights are CC-BY-NC**, so the default install is not commercial (`LICENSE-NOTICE.md:46`). 7-tool MCP, dubbing not among them. No take ranking and no runtime speaker-similarity check |
@@ -686,6 +688,165 @@ non-commercial licence, which rests on VoiceStudio's own competitive notes
 and not on voice-pro's source; sentrysearch's 0.41 default confidence
 threshold, whose derivation the read did not find; and every cost or latency
 figure the READMEs quote.
+
+## OpenCut, read in full — 2026-09-20
+
+Asked the same day § Seven repos a new stargazer had starred marked OpenCut
+"the one to watch": is it a better proofcut, and is it about to do everything
+proofcut does. Two readers, one per repo, source before README, every grep that
+mattered re-run around the shell's output filter; **nothing was installed, built
+or run**, so every "works" below is what the code says. Heads: the rewrite
+(`main`) `400f097`, last commit 2026-08-01, repo pushed 2026-08-10; classic
+`cf5e79e`, 2026-05-17. Clones are kept at
+`~/proofcut-work/spikes/opencut-read/{new,classic,classic-deploy}`.
+
+**No launch claim moves, and the "it is about to overshadow proofcut" reading
+is not supported.** The rewrite is an empty scaffold; the classic app is a real
+editor for a person's hands with no agent surface at all.
+
+**Three names for two codebases, and the READMEs disagree about which is live.**
+`OpenCut-app/OpenCut` (`main`, ~90k★, ~97 contributors) is the rewrite.
+`opencut-app/opencut-classic` (~253★, issues disabled) calls itself "Legacy…
+archived"; it was created 2026-05-16 as a copy with its history, and the same
+code is `main`'s `deploy` branch. `main`'s README says classic is "the one to
+reach for today" and that opencut.app still runs it, and new.opencut.app is the
+rewrite. **Not verified that opencut.app serves this commit**: a fetch returned
+only a landing page with a "Try early beta" link.
+
+### The rewrite (`main`) — a scaffold
+
+127 files, about 3.1k lines of hand-written code beside ~6.8k of vendored
+shadcn components. One person effectively owns it, and its README says outside
+contributions are not accepted "while the architecture is being designed".
+
+| Piece | What is in the tree |
+|---|---|
+| `apps/web` | TanStack Start on Cloudflare Workers. `/` renders "hello world!"; `/editor` renders "Coming soon." A fetch of new.opencut.app returned only a page title and `/editor` a 404 |
+| `apps/api` | Elysia on a Worker, 15 lines: `GET /`, `GET /health`, `POST /echo`. No auth, database, storage or queue |
+| `apps/desktop` | GPUI window with four panels that only draw their names (Browser, Preview, Inspector, Timeline) and a UI-primitive kit; its README: "Right now this is just a window that opens" |
+| `rust/`, `docs/`, `packages/` | **Not on `main`.** `Cargo.toml` lists only `apps/desktop`, `crates/*` commented out |
+
+**Every item in its README's "What's coming" is README-only**: an Editor API,
+plugins, an MCP server, headless mode, a scripting tab, a Rust core. Searched
+for keyframe, transcri, whisper, ffmpeg, wasm, webgpu, webcodecs, indexeddb,
+opfs, undo, export, plugin, mcp and headless across `apps/`: no hits outside
+unrelated identifiers and the changelog. Its `changelog/` describes the
+*classic* app's masks, graph editor and stickers and reads as rewrite status
+if taken at face value. Tests: 4 Rust unit tests, none in the web package.
+CI runs `moon ci` on three OSes.
+
+**The Rust core is the classic app's, on the `deploy` branch**, and a
+project-structure section copied from classic's README describes it as though
+it were the rewrite's. A session here said so wrongly, mid-survey, and had to
+correct it: read that structure section against `main`'s tree.
+
+### Classic — a real browser editor, no agent surface
+
+Browser-only and local-first. About 91k lines of TypeScript (Next.js 16, React
+19) and ~4.8k of Rust (`compositor`, `masks`, `time`, `gpu`, `effects`, `wasm`,
+`bridge`), migrating business logic into Rust per its `AGENTS.md`.
+
+- **Editing.** Tracks of video, text, audio, graphic and effect; elements of
+  video, image, audio, text, sticker, graphic and effect. Split, trim, move,
+  duplicate, group move/resize, copy/paste, ripple, snapping (10px), undo/redo
+  as a command stack, multiple scenes and bookmarks. **Keyframes** on
+  transform, opacity, volume and text colours (linear, hold, bezier, with a
+  graph editor). **Masks**: about nine shapes plus a freeform path, feathered
+  on the GPU. **17 blend modes.** Text with Google Fonts. Constant-rate speed
+  0.01–5x with pitch kept by SoundTouch — no ramps, no reverse. Audio
+  waveforms, volume −60 to +20 dB (keyframable), a master limiter; **no audio
+  fades found, by grep only**. Canvas presets (16:9, 9:16, 1:1, 4:3, custom),
+  24/25/30/60/120 fps, platform safe-zone guides, .srt and .ass import.
+- **Thin or stubbed.** The effect registry holds **one** effect, Gaussian blur.
+  Transitions and the adjustment tab are "coming soon" panels, freeze frame is
+  a disabled button, the stickers "logos" provider returns nothing, and the
+  songs library answers 501.
+- **Transcription** runs in the browser (transformers.js, Whisper ONNX: tiny,
+  small by default, medium, large-v3-turbo; 9 languages plus auto), over the
+  **whole timeline's mixed audio** in 30 s chunks. **Timestamps are
+  segment-level only, and `buildCaptionChunks` spreads each segment's words in
+  groups of three evenly across it** — the failure `verify` is built to catch,
+  confirmed in source. One user issue calls the transcript inaccurate.
+- **Export is all client-side.** A Rust/WASM wgpu compositor (WebGPU, WebGL2
+  fallback) feeds WebCodecs through mediabunny: MP4 (H.264 with AAC, Opus if
+  AAC is unsupported) or WebM (VP9 with Opus); four quality presets and no
+  numeric bitrate; resolution is the canvas, with no export-time picker; no
+  ProRes, GIF or image sequence. **No ffmpeg.wasm**, so no GPL codec build. The
+  mixed audio is one in-memory buffer and the muxed file another, with no
+  length cap in code — users report out-of-memory crashes (#628, #656). No
+  server-side or headless render.
+- **Storage.** Project JSON in IndexedDB, media in OPFS, a typed schema at
+  version 31 with 30 migration files, 20 of them tested. **No project-file
+  save/load, no FCPXML, OTIO or EDL, and no SRT export** (#719 asks for a
+  project export).
+- **Backend, all of it.** Four routes: auth (better-auth, but `signIn`,
+  `signUp` and `useSession` are never called from the UI; a schema comment says
+  "we don't have any auth flows currently"), a feedback box, health, and a
+  Freesound search proxy holding the key. Postgres holds only auth and
+  feedback rows; Redis only rate limits. **Projects and media never leave the
+  browser.** The fal.ai sponsor is a logo entry, not an integration. What
+  does leave: feedback text, sound-search queries, Whisper weights fetched
+  from Hugging Face on first use, Google Fonts, a Databuddy error-tracking
+  script and Vercel's bot check. A first read that took the database for a
+  project store was wrong.
+- **Self-hosting is not zero-config.** `env/web.ts` zod-parses about eight
+  required variables at import; Compose supplies Postgres and Redis and
+  placeholders satisfy the Freesound and blog keys, at the cost of the sound
+  library and the blog. The editor itself needs no cloud.
+- **Agent surface: none.** No MCP, plugin or scripting hook anywhere in the
+  classic tree; its "actions" registry is keybinding triggers only. #778 asks
+  for a headless render SDK, so it does not exist.
+- **Maturity.** 1,567 commits, ~95 contributors, one of whom made two thirds.
+  By month: 406 and 632 in 2025-06 and -07, a lull through 2025-12 (2 in
+  December), then a Rust-migration surge, 86 / 108 / 130 in 2026-02 to -04, and
+  21 in May before the archive. 30 web test files (20 are storage migrations)
+  and 11 Rust tests; **CI's test step is `echo "No tests implemented yet"`
+  with `continue-on-error`**, so none of them run there. Over 300 issues on the
+  main repo, mixing both eras: the most-commented are a Chinese translation,
+  the rewrite's tracking issue, out-of-memory, text that cannot be dragged, and
+  `db:migrate` failing; by title keyword, UI/timeline/text bugs ~60,
+  memory/crash/lag ~27, setup/DB/Docker ~21, export ~20.
+- **Licences.** MIT. Dependencies worth a look before borrowing anything:
+  `soundtouchjs` LGPL-2.1, `mediabunny` MPL-2.0. Whisper weights carry their
+  own licences, **not checked**.
+
+### Against proofcut
+
+- **OpenCut's classic is ahead** on what a person does with a mouse — masks, a
+  keyframe graph editor, blend modes, a GPU compositor, a browser tab with no
+  install — and on reach. That is FableCut's gap over proofcut again
+  (§ FableCut, read), and again not one proofcut is chasing.
+- **proofcut is ahead on everything an agent needs**: word-addressed edits,
+  a headless render, a check of the output, NLE export, and captions timed to
+  the words rather than the segment. The classic app has none of the five,
+  and a **hand-editor with an MCP layer added is still that editor**, which is
+  why even a shipped rewrite would compete with `proofcut web` before it
+  competed with the pipeline.
+- **The real risks are the two the survey already names**: distribution (90k
+  stars is reach no agent-facing editor has) and "good enough" beating "exact"
+  for someone who never needed a word diff. Neither is answered by code.
+- **Convergent, not borrowed**: platform safe-zone guides (`graphics.SAFE_ZONES`
+  is proofcut's report-only version), and a versioned, tested schema migration
+  chain.
+
+**Not queued.** Its keyframe graph editor, masks and blend modes are
+hand-editing breadth, in the class of § Glama's related servers' "breadth
+nobody here has asked for". Its in-memory export is the failure a `melt`
+render to disk does not have.
+
+**Re-check triggers for the next sweep**, so it looks for something rather than
+re-reading everything: `/editor` on `main` stops being a stub; a `rust/` or
+`crates/` directory appears on `main`; the README's MCP, headless or Editor API
+bullets acquire code; new.opencut.app serves more than a title; the two READMEs
+stop disagreeing about which app is live. Stars that day: `OpenCut-app/OpenCut`
+89,994, opencut-classic 253.
+
+**Not confirmed.** That opencut.app serves the classic commit; the running
+behaviour of either app; classic's export at any length or resolution (the
+memory limits are issue reports); the audio-fade absence beyond a grep; the
+Whisper weights' licences; issue counts, which are title-keyword matches over a
+repo that mixes both eras; and the rewrite-era commit count, since only the 30
+most recent commits were listed.
 
 ## Stateless-ffmpeg MCP servers
 
