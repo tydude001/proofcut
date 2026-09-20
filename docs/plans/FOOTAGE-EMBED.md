@@ -124,4 +124,5 @@ same.
 8B model, and any film but this one. Per the bar's own terms nothing is built,
 `describe` stays as it is, and the second-inside-a-clip arm is not run because
 this showed no signal to follow. The vectors and the scripts are in
-`~/proofcut-work/spikes/footage-embed/`.
+`~/proofcut-work/archive/spikes/footage-embed/` (run in `spikes/`, archived the
+same day; the extracted frames were deleted, and `embed.py` regenerates them).
