@@ -1,7 +1,7 @@
 {
   "name": "proofcut",
   "displayName": "proofcut",
-  "version": "0.37.0",
+  "version": "0.38.0",
   "description": "Local-first AI video editor: recordings to a finished film, cut by transcript, then verified",
   "author": { "name": "tydude001", "url": "https://github.com/tydude001" },
   "homepage": "https://github.com/tydude001/proofcut/blob/main/docs/DEMO.md",
