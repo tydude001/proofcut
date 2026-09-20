@@ -2054,6 +2054,65 @@ def pack_status(path: Path | str) -> dict[str, Any]:
     }
 
 
+def _safe_zone_table(
+    project: Project,
+) -> tuple[dict[str, dict[str, Any]], set[str], dict[str, Any] | None, dict[str, Any] | None]:
+    """`graphics.SAFE_ZONES` with the active pack variant's own laid over it.
+
+    Returns `(zones, names the pack declared, the stored pack, the active
+    variant's payload)`. Shared by `card_safe_zones`, which measures against
+    one zone, and `safe_zone_view`, which lists them all — a pack's platform
+    must be the same set in both.
+    """
+    zones = dict(graphics.SAFE_ZONES)
+    stored = _stored_pack(project)
+    active_payload: dict[str, Any] | None = None
+    from_pack: set[str] = set()
+    if stored is not None:
+        active_payload = stored.get("variants", {}).get(stored.get("active_variant"))
+        if active_payload:
+            declared = active_payload.get("safe_zones", {})
+            zones.update(declared)
+            from_pack = set(declared)
+    return zones, from_pack, stored, active_payload
+
+
+def safe_zone_view(path: Path | str) -> dict[str, Any]:
+    """Every platform safe zone, as rectangles on this project's own canvas.
+
+    What the preview draws for its safe-zone guide: the window only draws
+    rectangles, so the geometry is worked out here, by `graphics.
+    safe_zone_rects` — the function `card_safe_zones` measures with — never
+    re-derived in JS. **Report-only and read-only**, `card_safe_zones`'s
+    restraint: a guide is a fact about where platform chrome sits, and nothing
+    gates a render on it.
+
+    `vertical` is whether the canvas is taller than wide. The reference
+    geometry is a 1080x1920 short-form frame, so on a 2.35:1 film the same
+    numbers describe a band no platform draws; the window offers the guide
+    only where this is true, and the rectangles are still returned either way
+    so a caller can see what was refused. `source` says whether a zone is
+    proofcut's own or the active pack's, and a pack's zone of the same name
+    replaces the built-in one, as it does in `card_safe_zones`.
+    """
+    project = Project.open(path)
+    width, height = _mlt_resolution(project)
+    zones, from_pack, _stored, _active = _safe_zone_table(project)
+    view: dict[str, Any] = {}
+    for name in sorted(zones):
+        band, rail = graphics.safe_zone_rects((width, height), zones[name])
+        view[name] = {
+            "source": "pack" if name in from_pack else "built-in",
+            "band": [round(v, 2) for v in band],
+            "rail": [round(v, 2) for v in rail] if rail else None,
+        }
+    return {
+        "canvas": [width, height],
+        "vertical": height > width,
+        "zones": view,
+    }
+
+
 def card_safe_zones(path: Path | str, card: str, platform: str) -> dict[str, Any]:
     """Measure a rendered card's ink in and around `platform`'s reserved band.
 
@@ -2077,13 +2136,7 @@ def card_safe_zones(path: Path | str, card: str, platform: str) -> dict[str, Any
             f"no rendered PNG for card {card!r} at {png} — card_new or card_render it first"
         )
 
-    zones = dict(graphics.SAFE_ZONES)
-    stored = _stored_pack(project)
-    active_payload: dict[str, Any] | None = None
-    if stored is not None:
-        active_payload = stored.get("variants", {}).get(stored.get("active_variant"))
-        if active_payload:
-            zones.update(active_payload.get("safe_zones", {}))
+    zones, _from_pack, stored, active_payload = _safe_zone_table(project)
     if platform not in zones:
         raise ProjectError(f"no safe zone named {platform!r} (has: {sorted(zones)})")
 

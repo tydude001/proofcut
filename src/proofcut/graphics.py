@@ -562,6 +562,32 @@ def _hex_luminance(colour: str) -> float:
     return (r + g + b) / 3.0
 
 
+def safe_zone_rects(
+    canvas: tuple[int, int], band: dict[str, Any]
+) -> tuple[
+    tuple[float, float, float, float], tuple[float, float, float, float] | None
+]:
+    """A zone's reserved rectangles on `canvas`, as `(x0, y0, x1, y1)` pixels.
+
+    The bottom band and, where the zone declares one, the action rail —
+    scaled from the 1080x1920 reference by the canvas's own height / 1920.
+    **The one place that geometry is worked out**: `safe_zone_ink` measures
+    these rectangles and `ops.safe_zone_view` hands the same ones to the
+    window to draw, so the guide on screen is the region the report reads and
+    never a second derivation that could drift from it.
+    """
+    width, height = canvas
+    scale = height / 1920.0
+    band_top = max(0.0, height - float(band["bottom_px"]) * scale)
+    band_rect = (0.0, band_top, float(width), float(height))
+    rail = band.get("action_rail")
+    if not rail:
+        return band_rect, None
+    rail_width = float(rail["width"]) * scale
+    rail_top = float(rail.get("rail_below_ratio", 0.5)) * height
+    return band_rect, (max(0.0, width - rail_width), rail_top, float(width), float(height))
+
+
 def safe_zone_ink(
     png: Path | str, canvas: tuple[int, int], band: dict[str, Any], background: str | None
 ) -> dict[str, Any]:
@@ -597,16 +623,10 @@ def safe_zone_ink(
     path = Path(png)
     coverage = background is None
     width, height = canvas
-    scale = height / 1920.0
-    bottom_px = float(band["bottom_px"]) * scale
-    band_top = max(0.0, height - bottom_px)
-    band_rect = (0.0, band_top, float(width), float(height))
+    band_rect, rail_rect = safe_zone_rects(canvas, band)
+    band_top = band_rect[1]
 
-    rail = band.get("action_rail")
-    if rail:
-        rail_width = float(rail["width"]) * scale
-        rail_top = float(rail.get("rail_below_ratio", 0.5)) * height
-        rail_rect = (max(0.0, width - rail_width), rail_top, float(width), float(height))
+    if rail_rect is not None:
         overlap = _rect_intersect(band_rect, rail_rect)
         band_area, rail_area, overlap_area = (
             _rect_area(band_rect),

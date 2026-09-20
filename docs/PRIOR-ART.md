@@ -883,7 +883,10 @@ Three measured costs of a wholesale copy:
   it as "a graph for the easings already in the manifest", never as their feature.
 - **Multiple scenes and bookmarks** — no equivalent here.
 - **Drawn platform safe-zone guides**, which is the drawn half of the data
-  `graphics.SAFE_ZONES` already holds report-only.
+  `graphics.SAFE_ZONES` already holds report-only. **Built 2026-09-20**, and
+  the one item here that needed no verdict on how OpenCut feels in the hand,
+  because the geometry was already proofcut's (HISTORY.md § The safe-zone
+  guide, drawn).
 - **Its media browser and inspector layout**, against the rail's three tabs.
 
 **Not worth taking**, beyond the Not queued list: its export is in-memory and

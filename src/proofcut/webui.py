@@ -2308,6 +2308,8 @@ class Handler(BaseHTTPRequestHandler):
                 query = parse_qs(url.query)
                 clip_id = (query.get("clip_id") or [None])[0]
                 self._send_json(ops.caption_view(str(self.project_root), clip_id=clip_id))
+            elif path == "/api/safe-zones":
+                self._send_json(ops.safe_zone_view(str(self.project_root)))
             elif path == "/api/assets":
                 self._send_json(ops.assets(str(self.project_root)))
             elif path == "/api/properties":

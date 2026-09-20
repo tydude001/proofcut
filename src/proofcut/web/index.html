@@ -178,6 +178,27 @@
           preview
           <span class="spacer"></span>
           <span id="preview-canvas-note" class="chip-static mono"></span>
+          <!-- Where a platform's own buttons sit over a vertical film. Both
+               controls are hidden unless `/api/safe-zones` says the canvas is
+               vertical — the geometry is the server's, safezones.js only
+               draws it. The warning about the guide goes on the guide: it is
+               not in the render. The select comes BEFORE the toggle on
+               purpose: this header is right-aligned, so a select appearing
+               after it would shift the toggle out from under the click that
+               opened it (measured: 124px). -->
+          <span id="safezone-wrap" class="select-wrap" hidden>
+            <select id="safezone-select" aria-label="which platform's safe zone to draw"></select>
+          </span>
+          <button
+            id="safezone-toggle"
+            class="toggle"
+            type="button"
+            aria-pressed="false"
+            title="draw where the platform's own buttons cover the frame — a guide only, never in the render"
+            hidden
+          >
+            safe zone
+          </button>
           <!-- A retimed film previews at 1x: the warning goes on the control
                it is about (docs/plans/NATIVE.md § B5, designed). app.js fills
                it from `view.retime` and hides it without one. -->
@@ -229,6 +250,10 @@
                  in. Sized and coloured entirely from /api/captions — nothing
                  about this look is decided here or in the palette. -->
             <div id="caption-layer" hidden><div id="caption-line"></div></div>
+            <!-- A guide over everything, and never in the render: the reserved
+                 bottom band and action rail of one platform, as rectangles the
+                 server computed (`ops.safe_zone_view`). safezones.js fills it. -->
+            <div id="safezone-layer" hidden></div>
           </div>
           <!-- Outside the frame: a refused crop rect is a fact about the whole
                canvas, and the frame it would describe is the one not being

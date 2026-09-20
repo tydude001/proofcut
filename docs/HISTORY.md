@@ -17714,3 +17714,55 @@ false-positive test.
 No test had pinned `score()`'s check list — the wiki row and LOCAL.md both said
 one did, and a grep of `tests/` finds none — so nothing was widened; the new
 tests are `tests/test_trial_stutter.py`.
+
+## The safe-zone guide, drawn — 2026-09-20
+
+The first item harvested from PRIOR-ART.md § OpenCut, read in full: `graphics.
+SAFE_ZONES` had been report-only data since the channel pack, measured against
+a card's ink by `card_safe_zones` and drawn nowhere. The preview now draws one
+platform's reserved bottom band and action rail over `#frame`, from a toggle
+and a platform picker in the preview header (`web/safezones.js`).
+
+**One function makes the geometry, and both readers use it.**
+`graphics.safe_zone_rects(canvas, zone)` scales the 1080x1920 reference by the
+canvas's own height / 1920 and returns the band and the rail as pixel
+rectangles. `safe_zone_ink` used to derive them inline; it now calls this, and
+`ops.safe_zone_view` hands the same rectangles to the window
+(`GET /api/safe-zones`). So the guide on screen is the region the report
+measures by construction, never a second derivation in JS that could drift. A
+test holds it from the other side: each built-in zone's `reserved_area_px` from
+a real `magick` measurement equals the union of the rectangles drawn.
+`_safe_zone_table` merges the active pack variant's zones over the built-ins for
+`card_safe_zones` and the view alike, and the view marks which are the pack's.
+
+**Offered only on a vertical canvas.** The reference numbers are a short-form
+frame, so on a 1920x816 film they describe a band no platform draws. The view
+reports `vertical` and the window hides both controls without it; the
+rectangles are still returned, so a caller can see what was refused. It is a
+fact the server states, not a rule the window applies.
+
+**Measured in a real browser at 0ms and 120ms dwell**, on a 1080x1920 scratch
+project: the drawn rectangles read back from the DOM to the canvas's own
+pixels (worst-case band y 1536→1920 and rail x 780→1080 from y 960;
+tiktok-organic 1596 and 840), the layer never intercepts a click
+(`elementFromPoint` inside the band is the `<video>`), the choice survives a
+reload, and no console error involves the route.
+
+**One defect that measurement found, fixed before it shipped.** The header is
+right-aligned, so the platform select appearing *after* the toggle pushed the
+toggle 124px left, out from under the click that opened it, and a second click
+to turn the guide off missed. The select now sits before the toggle, and its
+x was 1031 on both states at both dwells afterwards.
+
+**Not a defect, and worth naming so the next sweep does not chase it:** the
+page-level overflow sweep reports `media@…` at 1000px and 700px on any vertical
+canvas over landscape footage, with the guide on or off. That is `#media`
+deliberately placed wider than its `overflow: hidden` frame (`reframe`'s
+`dest`), the very footage the export drops.
+
+**What it does not do.** It draws one zone at a time, a guide and never a
+check, and nothing in the render changes. A pack's own zones appear in the
+picker beside the built-ins. It was verified on a project whose media does not
+exist (the picture is black), so what is unmeasured is how the hatching reads
+over real footage; the geometry, the hit-testing and the layout do not depend
+on it.

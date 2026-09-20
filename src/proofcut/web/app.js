@@ -34,6 +34,7 @@ import * as assets from "./assets.js";
 import * as properties from "./properties.js";
 import * as finish from "./finish.js";
 import * as frame from "./frame.js";
+import * as safezones from "./safezones.js";
 
 let view = null; // the /api/view payload — the whole read model, shared read-only
 let captions = null; // the /api/captions payload: cues in timeline seconds and
@@ -171,6 +172,7 @@ async function load(clipId) {
   properties.update(view);
   finish.update(view);
   frame.update(view);
+  safezones.update();
   player.update(view);
   player.captions(captions);
   player.player.seek(Math.min(at, Math.max(0, view.timeline_duration - 0.01)));
@@ -752,6 +754,7 @@ assets.init(ctx);
 properties.init(ctx);
 finish.init(ctx);
 frame.init(ctx);
+safezones.init(ctx);
 setMode("edit");
 load(null).then(restoreSession);
 

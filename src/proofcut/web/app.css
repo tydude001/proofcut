@@ -1716,6 +1716,37 @@ textarea {
   transition: none;
 }
 
+/* The safe-zone guide (safezones.js) — a drawn reading of a platform's own
+   buttons, over every layer and never in the render. Each rectangle is placed
+   in percent of the canvas, so it needs nothing from `layoutFrame()` and cannot
+   disagree with the frame about where the canvas is. Hatched rather than
+   filled: a solid wash would hide the very thing being judged. Never takes a
+   click. `[hidden]` needs its companion rule — the `display` here outranks the
+   UA's, and a guide drawn permanently reads as part of the film. */
+#safezone-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+#safezone-layer[hidden],
+#safezone-toggle[hidden],
+#safezone-wrap[hidden] {
+  display: none;
+}
+
+.sz-rect {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed rgba(255, 190, 60, 0.95);
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(255, 190, 60, 0.28) 0 6px,
+    rgba(255, 190, 60, 0.08) 6px 12px
+  );
+}
+
 /* Why a shot is not showing, in words — a <video> that cannot decode its
    source fires one contentless error and shows black, which is otherwise
    indistinguishable from a black frame the edit meant. */
