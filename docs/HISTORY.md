@@ -17446,9 +17446,23 @@ darker over the bottom third on its next `card_reauthor`.
 against the brief's "about 45 s" (the agent said so), it types sentence one at
 1x where A speeds it through 3.2 s, its terminal camera is tight enough to cut
 words off mid-line, and it holds the last terminal screen for ~3 s before an
-end card that dissolves in over the terminal's text. The brief fixes beats that
-add up to more than 45 s, so an agent following it overshoots; that is the next
-thing to decide, not another template. The film's picture is identical in both
-clips.
+end card that dissolves in over the terminal's text. The film's picture is
+identical in both clips.
+
+**Corrected the same day:** this section first said the brief's fixed beats add
+up to more than 45 s. They do not, and that was the agent's own excuse repeated
+unchecked. The narrator's take (8.6 s) and the film (11.2 s) are the only
+beats at real speed, about 20 s, leaving 25 s for the rest, and A fits the whole
+clip in 43.2 s. Run three's overage is in three beats the brief calls fast:
+typing 8.6 s against A's 4.4, the terminal 11.2 against 5.6, the timeline 6.2
+against 4.05. The agent's report shows it knew it was 10 s over and shipped.
+What the brief did was say "about 45 s", which reads as a target.
+
+**The brief now says it as a limit** (`native-b7/brief.txt`, outside the repo;
+run three's own copy is kept in its run directory): "45 s at most before the
+end card", the fixed ~20 s named, and which beats give the time back if the
+render runs over. That is still a goal and no beat table, RECUT.md decision 4's
+line. It does make run four a different brief from runs one to three on length,
+so its pacing is not comparable with theirs. No run has been made on it.
 
 Suite: 2560 passed (`QT_QPA_PLATFORM=offscreen pytest -n auto`, 113 s).
