@@ -95,7 +95,8 @@ on two films, where 13 of 14 frozen spans were cards, so the finding is a
 span nothing explains — is
 [docs/plans/RENDER-CHECKS.md](docs/plans/RENDER-CHECKS.md), written
 2026-09-20 and unbuilt — **its positive control failed the same day**, so the op
-as designed should not be built; § The positive control, run has why.
+as designed should not be built (§ The positive control, run); the smaller holds
+read that survives is designed there and waits on a trial that needs it.
 Open-item status lives in the wiki, not here. **This repo is public: a
 goodsometimes video's production record (versions, renders, creative calls,
 release state) goes in `goodsometimes/ideas/<video>.md`**, and HISTORY.md
