@@ -90,6 +90,11 @@ the hardware — is [docs/plans/LOCAL.md](docs/plans/LOCAL.md), written
 2026-09-18; the director half is **measured on two briefs**, where
 Qwen3.6-35B-A3B passed all four runs' checks — and left a stutter the checks
 cannot see in two of the four films; the real-footage brief is not run.
+What a check for frozen and silent spans in a render would need — measured
+on two films, where 13 of 14 frozen spans were cards, so the finding is a
+span nothing explains — is
+[docs/plans/RENDER-CHECKS.md](docs/plans/RENDER-CHECKS.md), written
+2026-09-20 and unbuilt.
 Open-item status lives in the wiki, not here. **This repo is public: a
 goodsometimes video's production record (versions, renders, creative calls,
 release state) goes in `goodsometimes/ideas/<video>.md`**, and HISTORY.md
