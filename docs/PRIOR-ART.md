@@ -509,6 +509,12 @@ duration tolerance. No match turned up in `src/export/` or
 output filter and around it. docs/plans/LAUNCH.md's title rests on the old
 claim.
 
+The other half of that check — **frozen and silent spans** — is one proofcut
+lacks, and OpenChatCut and CutPilot both have. Measured 2026-09-20 on two
+films: 13 of 14 frozen spans were cards and one was footage that is still on
+purpose, so the finding is a span nothing explains, not a list
+(docs/plans/RENDER-CHECKS.md).
+
 What changed in the sections above:
 
 | Project | Change | Evidence |
