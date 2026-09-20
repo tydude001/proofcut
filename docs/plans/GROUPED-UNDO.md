@@ -32,8 +32,9 @@ keeps an op writing both files to one undo press, and `reel`, `migrate`'s
 it. A session that suppresses inner snapshots would also lose per-op undo
 *inside* the turn, need process-wide state (a CLI call is a process), and put
 a second writer path beside `ops`. None of that is needed: the boundary is a
-number the caller can already read (`undo_depth`, on `status` and most
-mutating replies), and a snapshot is already a separate numbered file.
+number the caller can already read (`undo_depth`, on `status`,
+`timeline_view`, `import_edit` and `undo` — a mutator's own reply does not
+carry it, so an agent reads `status` at the start of a turn), and a snapshot is already a separate numbered file.
 
 **Not OpenChatCut's approval gate.** Holding an agent's writes until a person
 approves is a queue in front of `ops`, which is a different feature from
