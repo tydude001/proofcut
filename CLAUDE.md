@@ -930,8 +930,11 @@ built; docs/plans/INSTALL.md):
   `tests/test_version.py` — a VCS-derived or
   `importlib.metadata` version reads the *installed* dist-info, so an
   editable checkout reports whatever the last `uv sync` wrote. Bump the minor
-  when something new becomes callable, `uv sync` behind it, tag, and name the
-  HISTORY.md `##` section in the annotation. **A pushed `v*` tag publishes
+  when something new becomes callable — read that off `git log v<latest>..HEAD`
+  and never off the session's own diff, which on 2026-09-20 answered "nothing
+  new became callable" with nine `feat:` commits sitting unreleased — then
+  `uv sync` behind it, tag, and name the HISTORY.md `##` section in the
+  annotation. **A pushed `v*` tag publishes
   itself**: Gitea's mirror syncs on commit, and `release.yml` uploads to PyPI
   (trusted publisher, no token) and then the MCP registry, which reads the
   `mcp-name` marker off PyPI's README. So a tag is a release — never tag a
@@ -940,8 +943,8 @@ built; docs/plans/INSTALL.md):
   settled before the tag. HISTORY.md § Releases publish from the tag. There is no `CHANGELOG.md` on
   purpose. HISTORY.md § The version caught up.
   - **A GitHub Release is a hand-written launch post, not a per-tag note, so
-    it does not follow a bump** — which is how `v0.23.0` stayed "Latest" two
-    versions on, describing a proofcut that stopped at the render and
+    it does not follow a bump** — which is how `v0.23.0` stayed "Latest"
+    fourteen versions on, describing a proofcut that stopped at the render and
     claiming nobody had run Windows. Cut one only where a release is worth
     announcing, and **a wording pass must name the published releases** or it
     silently misses them. HISTORY.md § The release nobody had cut.

@@ -233,7 +233,10 @@ install script. **Don't build either until this step says where the stranger
 actually stopped** — a container that packages the wrong thing is the
 inherited-blocker mistake (wiki `practice.md`), and `doctor` already prints
 the fix under each ✗. If the stranger stops at the same binary twice, that
-binary gets a one-line installer in DEMO.md § What you need.
+binary gets a one-line installer in DEMO.md § What you need. espeak-ng came
+off this list on 2026-09-20 — the demo falls back to the same library as a
+wheel, so it asks for no package manager at all. Shipped — see HISTORY.md
+§ The install a stranger was afraid of.
 
 **The kit, 2026-09-11 — a deliberate departure from the rule above.** Tyler
 asked for the tester's run to be "really really easy", for a friend rather
