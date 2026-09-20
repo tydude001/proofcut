@@ -17762,7 +17762,11 @@ deliberately placed wider than its `overflow: hidden` frame (`reframe`'s
 
 **What it does not do.** It draws one zone at a time, a guide and never a
 check, and nothing in the render changes. A pack's own zones appear in the
-picker beside the built-ins. It was verified on a project whose media does not
-exist (the picture is black), so what is unmeasured is how the hatching reads
-over real footage; the geometry, the hit-testing and the layout do not depend
-on it.
+picker beside the built-ins. The first pass ran on a project whose media does not
+exist (the picture is black); a second ran over a generated 1080x1920
+colour-bar clip, imported and seeded into a scratch project, with the picture
+decoded (`readyState` 4, not seeking) and composited in the capture. The dashed
+edge and the hatching read over every bar, weakest over yellow and cyan, where
+the amber is nearest in hue. **That is a test pattern and not footage**, so how
+it reads over a dim or busy real shot is still unjudged; the geometry, the
+hit-testing and the layout do not depend on it.
