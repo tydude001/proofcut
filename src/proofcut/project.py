@@ -920,11 +920,46 @@ class Project:
         try:
             manifest = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise ProjectError(f"{path} is not valid JSON: {exc}") from exc
+            raise ProjectError(
+                f"{path} is not valid JSON: {exc}{self._recovery_hint(path)}"
+            ) from exc
         if not isinstance(manifest, dict):
             raise ProjectError(f"{path} must contain a JSON object")
         self._manifest_stamp["digest"] = hashlib.sha256(raw).hexdigest()
         return manifest
+
+    def _recovery_hint(self, path: Path) -> str:
+        """What a refusal on a corrupt manifest can say about a way back.
+
+        **A sentence and never an action** — the manifest is somebody's
+        authoring state and this is a read. It is also why the hint names a
+        copy rather than `proofcut undo`: `undo` opens the project, which
+        reads the manifest, which is the thing that just refused. So the only
+        way back from here is by hand.
+
+        The newest snapshot that *parses* — a snapshot is a copy of the state
+        before an edit, so it is one edit behind the live file, and one that
+        is itself unreadable is skipped rather than offered. Only the live
+        manifest gets a hint: a legacy `lucid.json` has no snapshots under
+        that name, and `migrate --plan` reading one that is corrupt is not a
+        project to recover.
+        """
+        if path != self.manifest_path:
+            return ""
+        for snap in reversed(self.snapshots()):
+            if snap.manifest is None:
+                continue
+            try:
+                held = json.loads(snap.manifest.read_bytes().decode("utf-8"))
+            except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+                continue
+            if isinstance(held, dict):
+                return (
+                    f" — the newest readable snapshot is {snap.manifest}, the state "
+                    "before the last edit; copy it over the manifest to recover "
+                    "(`proofcut undo` cannot, because it opens the project first)"
+                )
+        return ""
 
     def write_manifest(self, manifest: dict[str, Any], *, snapshot: bool = True) -> None:
         """Snapshot, then write the manifest atomically, so a crash can't truncate it.

@@ -76,6 +76,75 @@ def test_open_rejects_a_corrupt_manifest(tmp_path: Path) -> None:
         Project.open(project.root)
 
 
+def _edited_project(tmp_path: Path, edits: int) -> Project:
+    """A project with `edits` snapshots behind it.
+
+    Each edit opens its own `Project`, because a snapshot fires at most once
+    per instance — the way every op runs.
+    """
+    root = Project.create(tmp_path / "demo").root
+    for n in range(edits):
+        project = Project.open(root)
+        manifest = project.read_manifest()
+        manifest["name"] = f"edit-{n}"
+        project.write_manifest(manifest)
+    return Project.open(root)
+
+
+def test_corrupt_manifest_refusal_names_the_newest_snapshot(tmp_path: Path) -> None:
+    project = _edited_project(tmp_path, edits=2)
+    newest = project.snapshots()[-1].manifest
+    assert newest is not None
+    project.manifest_path.write_text("{ not json", encoding="utf-8")
+
+    with pytest.raises(ProjectError, match="not valid JSON") as refused:
+        Project.open(project.root)
+
+    assert str(newest) in str(refused.value)
+
+
+def test_corrupt_manifest_refusal_skips_an_unreadable_snapshot(tmp_path: Path) -> None:
+    project = _edited_project(tmp_path, edits=2)
+    older, newest = (s.manifest for s in project.snapshots()[-2:])
+    assert older is not None and newest is not None
+    newest.write_text("{ also not json", encoding="utf-8")
+    project.manifest_path.write_text("{ not json", encoding="utf-8")
+
+    with pytest.raises(ProjectError) as refused:
+        Project.open(project.root)
+
+    assert str(older) in str(refused.value)
+    assert str(newest) not in str(refused.value)
+
+
+def test_corrupt_manifest_with_no_history_offers_no_recovery(tmp_path: Path) -> None:
+    """Nothing to name, so nothing is claimed — not "snapshot: none"."""
+    project = Project.create(tmp_path / "demo")
+    project.manifest_path.write_text("{ not json", encoding="utf-8")
+
+    with pytest.raises(ProjectError) as refused:
+        Project.open(project.root)
+
+    assert "snapshot" not in str(refused.value)
+
+
+def test_corrupt_manifest_recovery_is_the_copy_it_says_it_is(tmp_path: Path) -> None:
+    """The hint is advice, so follow it: the named file must open the project,
+    and `undo` must in fact be unable to — the reason the hint names a copy."""
+    from proofcut import ops
+
+    project = _edited_project(tmp_path, edits=2)
+    newest = project.snapshots()[-1].manifest
+    assert newest is not None
+    project.manifest_path.write_text("{ not json", encoding="utf-8")
+
+    with pytest.raises(ProjectError, match="not valid JSON"):
+        ops.undo(project.root)
+
+    project.manifest_path.write_bytes(newest.read_bytes())
+    assert Project.open(project.root).read_manifest()["schema_version"] == SCHEMA_VERSION
+
+
 def test_open_refusal_names_migrate_when_there_is_a_path_forward(tmp_path: Path) -> None:
     """The refusal is a dead end unless it says what clears it."""
     project = _v1_project(tmp_path)
