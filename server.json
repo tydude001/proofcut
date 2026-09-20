@@ -3,7 +3,7 @@
   "name": "io.github.tydude001/proofcut",
   "title": "proofcut",
   "description": "Local-first AI video editor: recordings to a finished film, cut by transcript, then verified",
-  "version": "0.36.0",
+  "version": "0.37.0",
   "repository": {
     "url": "https://github.com/tydude001/proofcut",
     "source": "github"
@@ -14,7 +14,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "proofcut",
-      "version": "0.36.0",
+      "version": "0.37.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
