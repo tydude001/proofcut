@@ -156,9 +156,10 @@ Shipped — see HISTORY.md § An inset can be levelled.
   the wrong slots: `title_font` is Zilla Slab and `body_font` is Outfit, where
   A uses the opposite. That pack lives in goodsometimes, and the fix is one
   edit there. The template's defaults stay neutral.
-- The scrim's `u^1.6` falloff is left alone unless a moment's tap asks for
-  it, since at 0.9 density the difference is within what nobody has
-  complained about.
+- The scrim's `u^1.6` falloff was left alone here "unless a moment's tap asks
+  for it". Measured on run three it was the cause of the lower-third
+  complaint, and it shipped — see HISTORY.md § The scrim is the launch
+  clip's curve.
 
 The stagger shipped — see HISTORY.md § The lower third staggers its
 footnote. The fonts wait on a call: the pack does not reach the B7 rerun,

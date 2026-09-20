@@ -17413,3 +17413,42 @@ ones) had failed on this box's Python 3.13.14 since before the day began.
 Faking win32 there makes `urlopen`'s default HTTPS opener reach ssl's
 Windows-only certificate store, even for a `file://` pin. The `windows`
 fixture now gives that store an empty answer; no assertion changed.
+
+## The scrim is the launch clip's curve — 2026-09-19
+
+Tyler said run three of B7 "has tons of the same issues as round 2", and the
+README clip is the one he likes most, so the render was compared with clip-v6
+frame by frame (`beats/round3/sheets/`) instead of by the per-moment length
+and LUFS table, which had called it "close" while it plainly was not. One
+difference was proofcut's and measurable: **the headlines printed over live
+text.** The transcript's rows ran through "It hears the false start.", the
+terminal's through "Or skip the window.", and the toolbar's buttons through the
+opening headline; in A the same rows are ink.
+
+The cause is the `scrim` template. clip.py's is `250 * min(1, u)**1.6` with
+`u = (y - 0.52H) / 0.22H`, so it is 98% ink from 0.74H to the bottom edge. The
+template was linear, with its midpoint fixed at 0.6 x density: **54% at 0.74H,
+70% at the headline's row (~0.83H)** on the card the agent rendered, and no
+`density` reaches A's, since the shape is not a slot. RECUT.md step 7 had left
+the falloff alone as "within what nobody has complained about"; he had.
+
+**Fixed:** the ramp is eight linear stops standing in for `u**1.6`
+(`SCRIM_RAMP_STOPS`, derived slots `ramp_1`..`ramp_7`), and it holds at
+`density` from 0.74H down. The default density was already 0.98, A's 250/255;
+the agent set 0.9. `tests/test_overlay.py::test_the_scrim_is_the_launch_clips_curve`
+reads the rendered alpha down a column at ten heights against clip.py's
+formula (±0.03), and fails on the old templates at its first sample. The portrait
+variant takes the same shape from its own 0.48 start, because every variant
+file has to place every derived slot. Any project with a scrim card redraws
+darker over the bottom third on its next `card_reauthor`.
+
+**What was not changed, and is the agent's:** B is 55.5 s before the end card
+against the brief's "about 45 s" (the agent said so), it types sentence one at
+1x where A speeds it through 3.2 s, its terminal camera is tight enough to cut
+words off mid-line, and it holds the last terminal screen for ~3 s before an
+end card that dissolves in over the terminal's text. The brief fixes beats that
+add up to more than 45 s, so an agent following it overshoots; that is the next
+thing to decide, not another template. The film's picture is identical in both
+clips.
+
+Suite: 2560 passed (`QT_QPA_PLATFORM=offscreen pytest -n auto`, 113 s).

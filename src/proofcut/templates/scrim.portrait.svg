@@ -2,6 +2,13 @@
   <defs>
     <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0.48" stop-color="{{ink}}" stop-opacity="0"/>
+      <stop offset="0.5125" stop-color="{{ink}}" stop-opacity="{{ramp_1}}"/>
+      <stop offset="0.5450" stop-color="{{ink}}" stop-opacity="{{ramp_2}}"/>
+      <stop offset="0.5775" stop-color="{{ink}}" stop-opacity="{{ramp_3}}"/>
+      <stop offset="0.6100" stop-color="{{ink}}" stop-opacity="{{ramp_4}}"/>
+      <stop offset="0.6425" stop-color="{{ink}}" stop-opacity="{{ramp_5}}"/>
+      <stop offset="0.6750" stop-color="{{ink}}" stop-opacity="{{ramp_6}}"/>
+      <stop offset="0.7075" stop-color="{{ink}}" stop-opacity="{{ramp_7}}"/>
       <stop offset="0.74" stop-color="{{ink}}" stop-opacity="{{mid_opacity}}"/>
       <stop offset="1" stop-color="{{ink}}" stop-opacity="{{edge_opacity}}"/>
     </linearGradient>

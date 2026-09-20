@@ -114,6 +114,33 @@ def test_an_overlay_card_is_transparent_where_it_draws_nothing(tmp_path: Path) -
     assert float(band) == 1.0, "and the headline is fully opaque"
 
 
+@needs_magick
+def test_the_scrim_is_the_launch_clips_curve(tmp_path: Path) -> None:
+    """clip.py's scrim: `250 * min(1, u) ** 1.6` with u = (y - 0.52H) / 0.22H.
+
+    The template's old gradient was linear through 0.6 x density at 0.74H and
+    drew a headline over 70% ink, so the type printed on live UI text. Judged
+    by the rendered alpha down a column, never by the stop list.
+    """
+    source = tmp_path / "s.svg"
+    source.write_text(graphics.fill_template("scrim", {"density": 0.98}, flow=False))
+    graphics.render_svg(source, tmp_path / "s.png")
+    height = 1080
+
+    def alpha_at(y: int) -> float:
+        out = subprocess.run(
+            ["magick", str(tmp_path / "s.png"), "-alpha", "extract", "-crop", f"1x1+960+{y}", "-format", "%[fx:u]", "info:"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        return float(out)
+
+    for fraction in (0.30, 0.52, 0.56, 0.60, 0.66, 0.70, 0.74, 0.80, 0.85, 0.95):
+        u = max(0.0, (fraction * height - height * 0.52) / (height * 0.22))
+        want = 250 / 255 * min(1.0, u) ** 1.6
+        assert alpha_at(int(fraction * height)) == pytest.approx(want, abs=0.03), fraction
+    assert alpha_at(int(0.83 * height)) > 0.95, "a headline's row is all but opaque"
+
+
 def test_the_scrim_density_is_a_fraction() -> None:
     assert 'stop-opacity="0.500"' in graphics.fill_template("scrim", {"density": 0.5}, flow=False)
     with pytest.raises(graphics.GraphicsError, match="0 to 1"):

@@ -1233,6 +1233,10 @@ BODY_MARGIN = 140
 #: template to it. A slot nothing measures overruns its margin at `magick`
 #: exit 0, which is the silent failure `flow=True` closes for the quote;
 #: PLAN.md § The vertical card layout, finding 3.
+#: How many linear stops stand in for the scrim's u**1.6 ramp; the `scrim`
+#: template's SVGs place one `ramp_k` per interior stop.
+SCRIM_RAMP_STOPS = 8
+
 TEMPLATES: dict[str, dict[str, Any]] = {
     "receipt": {
         "description": "A film, its rating out of five, when it was watched, and the note written then.",
@@ -1792,9 +1796,19 @@ TEMPLATES: dict[str, dict[str, Any]] = {
                 ),
             },
         },
+        # The launch clip's scrim: opacity climbs as u**1.6 over the ramp and
+        # holds at `density` from 0.74 of the height to the bottom edge, which
+        # is where a headline sits (RECUT.md § What B got wrong, measured
+        # against clip.py's own). The old linear gradient was 54% ink at 0.74H
+        # and 70% at the headline, so type printed over live text. The ramp is
+        # eight linear stops standing in for the curve.
         "derived": {
             "edge_opacity": ("fraction", "density", 1.0),
-            "mid_opacity": ("fraction", "density", 0.6),
+            "mid_opacity": ("fraction", "density", 1.0),
+            **{
+                f"ramp_{k}": ("fraction", "density", (k / SCRIM_RAMP_STOPS) ** 1.6)
+                for k in range(1, SCRIM_RAMP_STOPS)
+            },
         },
         "variants": {"portrait": {}},
     },
