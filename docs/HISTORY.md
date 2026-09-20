@@ -16623,6 +16623,18 @@ until it holds 10 points, earned from comments other members upvote; the
 founder has said the gate is the anti-spam filter and that it lifts at 10.
 It is not a launch room, so nothing was spent, and it is not rescheduled.
 
+**2026-09-20: the post was rewritten after its first replies.** One was a
+flat refusal; the other came from an M1 owner whose daily driver could not
+take a half-hour install, asking whether a fresh user account would do. The
+post had said only that the script "installs what it needs", so it now lists
+what `mac_trial.sh` adds — Homebrew and its admin password, four formulae, the
+Shotcut app, whisper in the home folder — and no longer claims a duration
+nobody has measured on Apple silicon. **A fresh account isolates the home
+folder and nothing else**: `find_brew` looks for `/opt/homebrew/bin/brew`, so
+on a Mac whose other account has Homebrew the kit installs into that one.
+Whether a second admin account can write to a Homebrew another user owns is
+untried.
+
 Posted on
 [r/sideprojects](https://www.reddit.com/r/sideprojects/s/ABgv7csHQq) on
 2026-09-20 with the `feedback request` flair, which the room requires. Its
