@@ -179,23 +179,54 @@ projections of one edit](https://raw.githubusercontent.com/tydude001/proofcut/ma
 
 ## Try it
 
-Check your machine first, before cloning anything. `proofcut doctor` probes
-every tool proofcut uses and prints the fix for anything missing
-([§ Requirements](#requirements) has the list). With
-[uv](https://docs.astral.sh/uv/) installed:
+Nothing below installs anything until you say so, and every step prints what
+it would do first. [§ What it puts on your machine](#what-it-puts-on-your-machine)
+is the whole footprint and how to reverse it.
+
+**Check your machine**, before cloning anything. `proofcut doctor` probes every
+tool proofcut uses and prints the fix for anything missing
+([§ Requirements](#requirements) has the list). It only looks — it installs
+nothing and writes nothing. With [uv](https://docs.astral.sh/uv/) installed:
 
 ```sh
 uvx proofcut doctor
 ```
 
-The first run downloads Python 3.13 if uv has none, plus proofcut's
-dependencies, about 230 MB together.
+That first run downloads Python 3.13 if uv has none, plus proofcut's
+dependencies — about 230 MB, all of it inside uv's own cache, which
+`uv cache clean` empties.
 
-On Linux, Windows and an Intel Mac, `proofcut setup` installs whatever doctor
-marked ✗, for you alone and with no sudo or administrator rights, and
-`proofcut setup --uninstall` removes exactly what it added. It says what it
-will download and asks first; whisper is about 1.9 GB of it. On an Apple
-silicon Mac, follow the fix doctor prints under each ✗.
+**Then read what an install would do.** On Linux, Windows and an Intel Mac,
+`proofcut setup --plan` prints every piece it would fetch, its size, and which
+doctor row asked for it, then stops without touching anything:
+
+```sh
+uvx proofcut setup --plan
+```
+
+```
+proofcut setup — installs into /home/you/.local/share/proofcut/deps
+
+Will install
+  ffmpeg — n8.1.2 (BtbN autobuild-2026-08-31-13-27), about 126 MB
+      because: ffmpeg is not on PATH. ffprobe is not on PATH.
+  whisper — openai-whisper (uv tool, Python 3.12, cpu torch), about 1.9 GB
+      because: whisper is not on PATH.
+  auto-editor — 31.6.0, about 46 MB
+      because: auto-editor is not on PATH.
+  melt — Shotcut 26.8.1 (melt 7.41.0), about 155 MB
+      because: melt is not on PATH.
+  total: about 2.2 GB
+```
+
+That is a bare machine. Yours will be shorter, because setup installs nothing
+doctor passed — a working ffmpeg or melt of your own is never touched. With an
+NVIDIA GPU the whisper row is CUDA torch and the total is about 5.8 GB.
+
+Drop `--plan` to go ahead. It reprints the plan, asks once, and installs for
+you alone, with no sudo or administrator rights; `proofcut setup --uninstall`
+removes exactly what it added, and nothing you already had. On an Apple silicon
+Mac, follow the fix doctor prints under each ✗ instead.
 
 ```sh
 uvx proofcut setup
@@ -267,6 +298,58 @@ uv run proofcut -C myproject web --open  # the same page in a browser tab
 proofcut is 0.x software. A project from an older version is refused rather
 than guessed at, and `proofcut migrate` brings it forward.
 
+## What it puts on your machine
+
+proofcut is a local tool that needs real media binaries, so `proofcut setup`
+does download a few hundred megabytes. Here is all of it, where it goes, and
+what takes it away. Sizes are a Linux x86_64 bare machine; `proofcut setup
+--plan` prints yours.
+
+| What | Where | Size | Removed by |
+|---|---|---|---|
+| ffmpeg, ffprobe | setup's folder, with symlinks in `~/.local/bin` | 126 MB | `proofcut setup --uninstall` |
+| auto-editor | setup's folder | 46 MB | `proofcut setup --uninstall` |
+| melt (Shotcut's portable build) | setup's folder | 155 MB | `proofcut setup --uninstall` |
+| whisper | a uv tool, plus the Python 3.12 uv fetches for it | 1.9 GB, or 5.5 GB with an NVIDIA GPU | `proofcut setup --uninstall` |
+| proofcut and its Python dependencies | uv's cache | 230 MB | `uv cache clean`, `uv tool uninstall proofcut` |
+| the demo's media | the directory you name it | under 2 MB | delete that directory |
+
+"Setup's folder" is one directory: `~/.local/share/proofcut/deps`
+(`$XDG_DATA_HOME` if you set it), or `%LOCALAPPDATA%\proofcut\deps` on
+Windows. It holds everything except whisper, which is a uv tool because that is
+how whisper ships.
+
+Five rules it holds to, each one enforced by a test rather than promised here:
+
+- **`--plan` writes nothing at all**, and its exit code reports only what is
+  missing (`test_setup_plan_writes_nothing_and_exits_by_what_is_missing`), so
+  reading the plan can never turn into performing it.
+- **Doctor's report is the input.** A piece is installed only when its row is
+  ✗. A tool you already have is never replaced, and never upgraded behind your
+  back.
+- **Every download is pinned by URL and SHA-256**, bumped by hand, never
+  resolved from a `latest` tag. A hash that does not match leaves nothing
+  behind.
+- **No sudo, no administrator rights, no distribution packages**, and nothing
+  is ever written over an existing file.
+- **Every link, file, folder and uv tool is recorded**, and `--uninstall`
+  removes exactly those — the Python uv fetched for whisper included.
+  `tests/test_install.py` installs the lot into a fake home, uninstalls, and
+  asserts the home's listing is what it was before
+  (`test_install_then_uninstall_leaves_the_home_as_it_was`), so "removes
+  exactly what it added" is checked on every run of the suite, not just meant.
+  A link you repointed yourself is left alone, because it is yours now.
+
+To see a removal before it happens:
+
+```sh
+proofcut setup --uninstall --plan
+```
+
+Two things setup deliberately does not do: it is a command you type and never
+an MCP tool, so an agent cannot start a 2 GB download or change your PATH; and
+it touches nothing outside your own user account.
+
 ## Help wanted: a Mac or a Windows run
 
 GitHub's macOS and Windows runners take the demo to a checked render, but a
@@ -320,7 +403,9 @@ Every hard part of an editor already exists as mature open source, and
 proofcut is the layer that lets an agent drive those tools and check what
 they produced. Run `uv run proofcut doctor` to check everything below at
 once. On Linux, Windows and an Intel Mac, `uv run proofcut setup` installs
-any of the last four that doctor marks ✗: a static ffmpeg, whisper,
+any of the last four that doctor marks ✗
+([§ What it puts on your machine](#what-it-puts-on-your-machine), and
+`--plan` to read it first): a static ffmpeg, whisper,
 auto-editor's release binary and Shotcut's melt — on Linux the portable
 build, which renders with no display at all
 ([docs/plans/INSTALL.md](https://github.com/tydude001/proofcut/blob/main/docs/plans/INSTALL.md)).

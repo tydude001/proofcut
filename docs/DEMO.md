@@ -12,12 +12,11 @@ decimal place and in whatever whisper hears, and that is the point of step 7.
 
 ## What you need
 
-`uv`, `ffmpeg`, `espeak-ng` (a few megabytes, only to *build* the demo voice),
-plus **whisper** for the transcript, **auto-editor** for the silence pass and
-**melt** for the picture. The ffmpeg has to be built with `libx264`, freetype
-and libass: step 1 labels the footage with `drawtext`, and it stops at its
-first command without it. On a Mac that means Homebrew's `ffmpeg-full`, not
-its `ffmpeg`, and because it is keg-only, first on `PATH`:
+`uv`, `ffmpeg`, plus **whisper** for the transcript, **auto-editor** for the
+silence pass and **melt** for the picture. The ffmpeg has to be built with
+`libx264`, freetype and libass: step 1 labels the footage with `drawtext`, and
+it stops at its first command without it. On a Mac that means Homebrew's
+`ffmpeg-full`, not its `ffmpeg`, and because it is keg-only, first on `PATH`:
 
 ```sh
 brew install ffmpeg-full
@@ -31,11 +30,21 @@ uv run proofcut doctor
 ```
 
 It probes all of them and, for anything missing, prints the fix rather than
-just a ✗. On Linux, Windows and an Intel Mac, `uv run proofcut setup`
-installs whichever of whisper, auto-editor, melt and ffmpeg it marked, for
-you alone and with no sudo; espeak-ng is yours to install (your
-distribution's package, or `brew install espeak-ng`). Step 8's end card also needs **ImageMagick 7** (`magick`), and is the
-one step you can skip without it.
+just a ✗. It only looks; it installs nothing.
+
+On Linux, Windows and an Intel Mac, `uv run proofcut setup` installs whichever
+of whisper, auto-editor, melt and ffmpeg doctor marked, for you alone and with
+no sudo. Read it before it runs — `uv run proofcut setup --plan` prints every
+piece, its size and why doctor asked for it, and stops without touching
+anything. What lands where, and what takes it away, is
+[README.md § What it puts on your machine](../README.md#what-it-puts-on-your-machine).
+
+Nothing else on this page needs a package manager. Step 1 synthesises the
+voice with espeak-ng, and where the program is not on PATH the script fetches
+the same library as a wheel into uv's cache instead — the same version, and a
+byte-identical voiceover, so the word counts below hold either way. Step 8's
+end card is the exception and needs **ImageMagick 7** (`magick`); it is also
+the one step you can skip.
 
 On a box with no desktop (a server, a container, SSH), step 7's render needs
 Qt to draw without one. `proofcut doctor`'s Display row renders a probe frame and

@@ -6,6 +6,113 @@ installed, and the quickstart — is the [README](../README.md); the design and
 the dated evidence behind everything here are [PLAN.md](PLAN.md) and
 [HISTORY.md](HISTORY.md).
 
+## `doctor` and `setup` — the tools proofcut drives
+
+proofcut does not cut, render or transcribe anything itself: it drives ffmpeg,
+whisper, auto-editor and MLT's `melt`, and checks what they produced. So the
+first command on a new machine asks whether they are there.
+
+```sh
+uv run proofcut doctor
+```
+
+It probes every one of them and prints the fix under each ✗ rather than only a
+cross. Three things it does that a `which` would not: it judges `melt` by its
+`-version` banner and never its exit code, because Windows ships an unrelated
+WiX `melt.EXE` and Fedora's `melt` package is a compression tool; it *runs*
+whisper rather than finding it, because a venv that has lost torch resolves
+fine and dies minutes into a job; and its Display row renders a real probe
+frame, so it can tell you whether your MLT draws under
+`QT_QPA_PLATFORM=offscreen` or needs `xvfb-run`. It reads your machine and
+writes nothing.
+
+An optional capability that is absent is reported "unavailable", never as a
+failure — everything else works without it. Doctor also lists any `LUCID_*`
+environment variable still set beside its `PROOFCUT_*` name, because no
+resolver reads the old name any more and a stale config file would otherwise
+lose what it configured at exit 0.
+
+### `setup` — filling in what doctor crossed
+
+On Linux, Windows and an Intel Mac, `setup` installs whatever doctor marked ✗,
+into your own user account, with no sudo or administrator rights. It installs
+nothing doctor passed: a working ffmpeg or `melt` of your own is never touched
+and never upgraded behind your back. On Apple silicon it refuses and points at
+doctor's own advice, until somebody reports a run.
+
+Read the plan first. `--plan` prints every piece, its version, its size and the
+doctor row that asked for it, then stops:
+
+```sh
+uv run proofcut setup --plan
+```
+
+```
+proofcut setup — installs into /home/you/.local/share/proofcut/deps
+
+Will install
+  ffmpeg — n8.1.2 (BtbN autobuild-2026-08-31-13-27), about 126 MB
+      because: ffmpeg is not on PATH. ffprobe is not on PATH.
+  whisper — openai-whisper (uv tool, Python 3.12, cpu torch), about 1.9 GB
+      because: whisper is not on PATH.
+  auto-editor — 31.6.0, about 46 MB
+      because: auto-editor is not on PATH.
+  melt — Shotcut 26.8.1 (melt 7.41.0), about 155 MB
+      because: melt is not on PATH.
+  total: about 2.2 GB
+```
+
+`--plan` writes nothing, and a test says so
+(`test_setup_plan_writes_nothing_and_exits_by_what_is_missing`), so reading the
+plan cannot turn into performing it. `--json` gives the same answer as a
+structured document. Then:
+
+```sh
+uv run proofcut setup           # reprints the plan and asks once
+uv run proofcut setup --yes     # for a script, with no terminal to answer on
+```
+
+Everything lands in one folder — `~/.local/share/proofcut/deps`, or
+`%LOCALAPPDATA%\proofcut\deps` on Windows — except whisper, which is a uv tool
+because that is how whisper ships. Two resolver details worth knowing, both of
+them the reason the folder exists at all: `melt` and auto-editor are resolved
+from setup's folder *ahead of* PATH, because a `melt` symlink loses to Fedora's
+`/usr/bin/mlt-melt`, which draws nothing headless; and ffmpeg is a
+`~/.local/bin` symlink instead, because whisper's own `audio.py` calls `ffmpeg`
+bare. Neither half can be the other's shape. On Windows, where a symlink needs
+Developer Mode, the two ffmpeg binaries are moved into `~/.local/bin` and
+recorded by SHA-256; uninstall removes one only while it still hashes the same.
+
+Every download is pinned by URL and SHA-256 and bumped by hand, never resolved
+from a `latest` tag — BtbN deletes its dated daily ffmpeg builds after a few
+weeks and keeps month-ends, so the pin is a month-end build. A download that
+does not hash to its pin leaves nothing behind, and neither does a `melt`
+missing the desktop libraries it links against: you are told which ones.
+
+### Taking it back out
+
+Every link, file, folder and uv tool setup added is recorded, and `--uninstall`
+removes exactly those and nothing else — including the Python uv downloaded for
+whisper. A link you have since repointed yourself is left alone, because it is
+yours now.
+
+```sh
+uv run proofcut setup --uninstall --plan   # what would go
+uv run proofcut setup --uninstall          # lists it, asks, removes it
+```
+
+`tests/test_install.py` installs everything into a fake home, uninstalls, and
+asserts the home's listing is what it was before
+(`test_install_then_uninstall_leaves_the_home_as_it_was`), so the claim is
+checked on every run of the suite rather than merely written here.
+
+Two things `setup` is deliberately not. It is **CLI-only and never an MCP
+tool**: an agent must not start a 2 GB download or change what is on your PATH.
+And it is **not a package manager** — it installs no distribution packages and
+writes nothing over an existing file, so nothing outside your own user account
+changes. What proofcut's own dependencies cost is separate and uv's: about
+230 MB in uv's cache, which `uv cache clean` empties.
+
 ## The core loop
 
 Trimming the retakes out of a voiceover, end to end:

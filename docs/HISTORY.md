@@ -17566,3 +17566,60 @@ line into a fixed gap in someone else's video. The two synth caches on disk hold
 six renders, none capped, which is too few to calibrate a predictor and shows no
 problem to fix. Reopen it if a use appears where a synthesised line must land
 in a fixed gap.
+
+## The install a stranger was afraid of — 2026-09-20
+
+Tyler's read was that people are not trying the demo because they are afraid of
+what it will do to their machine. That is not falsifiable from here — a nervous
+reader leaves no trace, and seven days public is more likely obscurity than
+fear — but the survey behind it found a real gap, so the fix stands either way.
+
+**`proofcut setup` already answered every version of that fear, and said none
+of it where the fear happens.** `setup --plan` prints every piece, its size and
+the doctor row that asked for it and stops; `setup --uninstall --plan` prints
+what would go; every download is pinned by URL and SHA-256; a test installs the
+lot into a fake home, uninstalls, and asserts the home's listing is what it was
+(`test_install_then_uninstall_leaves_the_home_as_it_was`), and another asserts
+`--plan` writes nothing at all
+(`test_setup_plan_writes_nothing_and_exits_by_what_is_missing`). The string
+`setup --plan` appeared in **zero** of README.md, docs/DEMO.md and
+docs/MANUAL.md, the SHA-256 pinning in none of the three, and MANUAL.md — the
+complete command reference — had no `setup` section of any kind. The README's
+one paragraph on it led with what it installs and closed on "whisper is about
+1.9 GB of it", with the reversal in a subordinate clause between them: the
+scariest number last and the answer to the question never mentioned.
+
+That is also an inconsistency with the repo's own courtesy. DEMO.md teaches
+that every mutating command takes `--plan`; `setup` is the most consequential
+mutation proofcut makes, it *has* `--plan`, and it was the one place the
+documentation never said so.
+
+**What shipped is documentation plus one code change.** README.md § Try it now
+runs doctor (stated as read-only), then `setup --plan` with its real output
+quoted, then the install; a new § What it puts on your machine is the whole
+footprint as a table — where each piece goes, its size, and the command that
+takes it away — with the five rules and the tests that hold them. MANUAL.md
+gained § `doctor` and `setup` — the tools proofcut drives, including the two
+resolver details that are the reason setup's folder exists (melt and
+auto-editor ahead of PATH, ffmpeg as a `~/.local/bin` link). The quoted plan is
+a bare Linux x86_64 machine: **about 2.2 GB**, or 5.8 GB where a GPU makes the
+whisper row CUDA torch.
+
+**The code change was the demo's one un-installable dependency.** `setup`
+covers ffmpeg, whisper, auto-editor and melt with no sudo, and then
+`make_demo.py` required `espeak-ng`, a distribution package everywhere — so the
+single path a newcomer takes was the only one that asked for a sudo password.
+`scripts/espeak_ng_lib.py` had stood in for it on Intel Macs since
+§ An Intel Mac route, without Homebrew, over the `espeakng-loader` wheel's copy
+of the library; `make_demo._espeak_command` now falls back to exactly that route
+wherever the program is absent, and the wheel ships for Linux x86_64/aarch64,
+Windows x64/ARM64 and both Macs, which was the one thing to check.
+
+**Measured, because the walkthrough quotes word counts:** the program and the
+wheel render the demo voiceover **byte-identically** — 825,100 bytes, same md5,
+against system espeak-ng 1.52.0 on this box — so nothing in DEMO.md drifts for
+a reader on the fallback. The whole generated demo is 1.9 MB. The trial kits
+were left alone on purpose: each puts an `espeak-ng` on PATH itself, so each
+still takes the program branch and behaves exactly as before, and a change
+there is judged by `setup-demo.yml`'s `trial_check` rather than the unit tests.
+
