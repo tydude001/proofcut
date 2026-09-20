@@ -94,3 +94,48 @@ Name open; `check_still` is provisional.
    0.23 s.
 4. **Does `finish_check` call it?** Unchecked. Read `finish_check` before the
    build; it may already scan a render and be the right home.
+
+## The positive control, run — 2026-09-20
+
+Decision 1's own test, run the same day: a project with a cue-less `vo_extend`
+hold, rendered through melt, then `freezedetect=n=-60dB:d=0.5` over the file.
+Spike: `~/proofcut-work/spikes/freeze-hold-control/` (the demo project, a 3 s
+hold after word 10 landing at timeline 3.5–6.5 s, inside the first shot, which
+has no cue of its own there — `covered_by` named it, as built).
+
+| First shot | Render | What `freezedetect` saw at the hold |
+|---|---|---|
+| The demo's own b-roll (flat colour, a counter that ticks once a second) | 0–11.83 s | frozen 0→11.83 in three spans, the hold **indistinguishable from the shot around it** — the fixture is near-static, and so is the *source* (same three spans). Not a usable control |
+| Moving footage (`testsrc2`), then `mandelbrot` for shot two | 19.88 s | **Nothing.** The clip plays straight on under the hold; no freeze exists to find |
+| A card (`card:hero`, the bumper template) | 19.88 s | One span, 0→11.83, the whole card shot, hold inside it. **The join's first rule, `card`, explains it** |
+
+**So the join cannot flag the defect, and by Decision 1's own rule the op as
+designed should not exist.** The defect this whole item was opened for is not
+a pixel fact:
+
+- Under moving footage the hold does not freeze anything. PLAN.md's "stale
+  picture over the manufactured silence" is the *editorial* problem — the
+  picture does not change to suit a line that plays — and it is true of the
+  shot plan, not of any frame.
+- Under a card or still it does freeze, and the design labels that `card`,
+  explained, which is the false negative: the hold is the reason the card is
+  still up, and the join has no way to say so.
+
+What it would take to flag it is a fourth `explained_by` that *subtracts* the
+hold — a frozen span overlapping a hold's own timeline span is not explained
+by the card under it. But that is a fact of the edit and the cue table
+(`covered_by`'s own computation, over the saved edit), and needs no decode at
+all: `vo_extend` reports it once, at write time, and nothing can be asked for
+it later. If the concern is holds, the gap is **that read**, not a
+render scan.
+
+What survives of the op is the case the 2026-09-20 measurement first named:
+footage that is static and that neither the edit nor the source explains (an
+idle screen recording). Nothing measured here says that happens on a film
+proofcut made — 13 of 14 spans were cards and the 14th was deliberate — so the
+op is now a check with **no known positive**, which is the state RENDER-CHECKS
+was meant to get out of before building.
+
+**Also learned, for the next fixture:** the demo project's b-roll reads as
+frozen at -60dB because its only motion is a counter. A freeze or motion
+measurement needs footage that moves everywhere (`testsrc2`).
