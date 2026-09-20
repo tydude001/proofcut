@@ -1008,7 +1008,11 @@ built; docs/plans/INSTALL.md):
     *is*, allowed to carry what no camera can see, and `broll_brief` hands it
     plus the narration to whatever is reading — which writes back through
     `cue_add`. **A second reviewing pass was measured and is worse (13 → 10);
-    do not add one.** HISTORY.md § Choosing the b-roll.
+    do not add one.** HISTORY.md § Choosing the b-roll. **Nor is it a visual
+    match**: a local embedding of the footage put the pick in its top three
+    at 10 of 25, against 13 for guessing the commonest three of nine clips —
+    read a shortlist score against that floor, never against 1-in-25.
+    HISTORY.md § Embedding the footage did not pick the b-roll.
 - **A cut cannot invalidate a cue and can still orphan one, and `build_shots`
   refuses the whole projection on a single orphan.** Word-indexing is what
   keeps a cue *valid* across cuts; it does not keep the word on the timeline.
