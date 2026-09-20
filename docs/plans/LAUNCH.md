@@ -583,8 +583,8 @@ reasoning if anyone wants it, and it is public.
 
 **The Release page has to name the version people will install.** A tag
 ships to PyPI and the registry on its own; the Release is only the page the
-repo's sidebar calls Latest, and `v0.36.0` holds it as of 2026-09-17
-(HISTORY.md § The release page caught up). So this morning needs a Release
+repo's sidebar calls Latest, and `v0.37.0` holds it as of 2026-09-20
+(HISTORY.md § The 0.37.0 Release, and the Latest that was not stale). So this morning needs a Release
 only if a later tag has moved Latest off the post's permalink — write that
 one against the current version, from a file and never through email, and
 diff the published body against it (HISTORY.md § The release nobody had

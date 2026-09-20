@@ -17623,3 +17623,32 @@ were left alone on purpose: each puts an `espeak-ng` on PATH itself, so each
 still takes the program branch and behaves exactly as before, and a change
 there is judged by `setup-demo.yml`'s `trial_check` rather than the unit tests.
 
+## The 0.37.0 Release, and the Latest that was not stale — 2026-09-20
+
+`v0.37.0 — the score, and the second take` was cut and holds Latest. The body
+was written to a file and posted with `--notes-file`, then diffed against that
+file: identical but for the trailing newline GitHub appends, the same single
+discrepancy § The release nobody had cut recorded, and no link rewritten. Its
+one new link, README § What it puts on your machine, was checked against
+GitHub's copy of the README rather than the checkout.
+
+**The post was cut on a false premise, and the premise was in CLAUDE.md.** The
+version bullet says `v0.23.0` stayed "Latest" two versions on — a sentence
+about 2026-09-15, which § The release page caught up already closed by cutting
+`v0.36.0` on 09-17. Read as the current state it produced three wrong things:
+a launch priority handed to Tyler that was not a priority, a wiki Open items
+row (`proofcut-github-release`) whose premise was false, and a rewrite of that
+CLAUDE.md sentence to "fourteen versions on", which turned a true record into a
+false one. All three are reverted.
+
+`gh release list -R tydude001/proofcut` settles it in one call, and `gh` had
+run two commands earlier in the same session. The standing rule covers it
+already — never report something missing or stale on a doc's say-so about a
+public surface — and what is new is the direction it failed in: the doc was
+right, and it was right *about the past*. A CLAUDE.md sentence naming a version
+or a page is history unless it says otherwise, so the always-loaded layer is
+the last place to read current state from. The bullet now says so.
+
+**Show HN needs no Release of its own now** (docs/plans/LAUNCH.md § Step 5):
+`v0.37.0` holds the permalink, and only a later tag moves it.
+

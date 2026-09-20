@@ -947,7 +947,10 @@ built; docs/plans/INSTALL.md):
     versions on, describing a proofcut that stopped at the render and
     claiming nobody had run Windows. Cut one only where a release is worth
     announcing, and **a wording pass must name the published releases** or it
-    silently misses them. HISTORY.md § The release nobody had cut.
+    silently misses them. **That example is history, not the current page** —
+    read Latest off `gh release list`, never off this file. HISTORY.md § The
+    release nobody had cut, § The 0.37.0 Release, and the Latest that was not
+    stale.
 - **A snapshot is a *pair* — `N.otio` + `N.manifest.json` — and
   `Project.write_manifest` takes one by default.** Most authoring state is
   manifest state (the cue table, framing rects, the music bed, the caption
