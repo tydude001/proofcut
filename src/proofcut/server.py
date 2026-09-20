@@ -463,6 +463,17 @@ _COMMON_PARAMS: dict[str, str] = {
 }
 
 _PARAM_DOCS: dict[str, dict[str, str]] = {
+    "undo": {
+        "steps": (
+            "How many mutations to roll back, from 1 (the last one) up to the undo "
+            "depth; the same count `changes` takes. All or nothing: a number past the "
+            "depth is refused, not walked as far as it goes."
+        ),
+        "plan": (
+            "Roll nothing back; return `changes`' account of what `steps` would undo. "
+            "There is no redo, so read it before a `steps` above 1."
+        ),
+    },
     "changes": {
         "steps": (
             "How many mutations back to compare against, from 1 (the last one — what "
@@ -3533,18 +3544,20 @@ def finish_report(
 
 
 @_tool()
-def undo(path: ProjectPath = None) -> dict[str, Any]:
-    """Roll the project back one mutation — the timeline, the manifest, or both.
+def undo(path: ProjectPath = None, steps: int = 1, plan: bool = False) -> dict[str, Any]:
+    """Roll the project back `steps` mutations (default one) — the timeline, the manifest, or both.
 
     Mutating tools snapshot first (`migrate_project` keeps its own backup
     instead), so this undoes cuts, cues, framing, the music bed, caption style
-    and the rest alike; call it again to go back further. The reply says what came back: `timeline_restored`,
+    and the rest alike. The reply says what came back: `timeline_restored`,
     `manifest_restored`, and `timeline_removed` when undoing a `seed_timeline`
     leaves no timeline at all. Undoing an import un-registers the clip but
-    leaves its media on disk. There is no redo, so read `undo_depth` first
-    when stepping back more than once.
+    leaves its media on disk; transcripts are not snapshotted and stay. There
+    is no redo, so an out-of-range `steps` is refused before anything is
+    restored, and `plan` shows what it would undo — `changes`' answer for the
+    same `steps` — first. `status` gives `undo_depth`.
     """
-    return ops.undo(path)
+    return ops.undo(path, steps=steps, plan=plan)
 
 
 @_tool()

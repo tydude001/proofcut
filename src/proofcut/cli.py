@@ -1119,7 +1119,15 @@ def _build_parser() -> argparse.ArgumentParser:
         "instead of one project (default: none — opens -C's project directly)",
     )
 
-    sub.add_parser("undo", help="roll back the last timeline mutation")
+    p_undo = sub.add_parser("undo", help="roll back the last mutation (or --steps N of them)")
+    p_undo.add_argument(
+        "--steps", type=int, default=1,
+        help="roll back this many mutations (default: 1); refused, whole, past the undo depth",
+    )
+    p_undo.add_argument(
+        "--plan", action="store_true",
+        help="roll nothing back; say what --steps would undo, as `changes` does",
+    )
 
     p_changes = sub.add_parser(
         "changes", help="what the last mutations did — what undo would roll back, in words"
@@ -2786,7 +2794,7 @@ def _cmd_open(args: argparse.Namespace) -> int:
 
 
 def _cmd_undo(args: argparse.Namespace) -> int:
-    return _emit(ops.undo(args.project))
+    return _emit(ops.undo(args.project, steps=args.steps, plan=args.plan))
 
 
 def _cmd_changes(args: argparse.Namespace) -> int:

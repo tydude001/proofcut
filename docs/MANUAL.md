@@ -178,7 +178,10 @@ and every later command reads it without knowing.
 reshaping it), and `undo` rolls back the last mutation while
 `restore` un-cuts one specific range. `changes [--steps N]` says what `undo`
 N times would roll back, in words: the source spans cut or restored and the
-manifest records added, removed or changed. It writes nothing. A project written by an older proofcut is
+manifest records added, removed or changed. It writes nothing. `undo --steps N`
+rolls back that many in one call, refusing a count past the undo depth before it
+restores anything (there is no redo), and `undo --steps N --plan` prints the
+`changes` account and writes nothing. A project written by an older proofcut is
 refused rather than guessed at; `proofcut migrate` brings it forward (`--plan`
 says what it would do first, and the old manifest is kept under
 `cache/history/`). A timeline with a cue table or a second

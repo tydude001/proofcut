@@ -19,6 +19,7 @@ test_ops_reel.py: no ffprobe is needed to have a project with a shape.
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -366,3 +367,105 @@ def test_migrate_plan_reports_the_filename_step_and_rewrites_no_keys(project: Pr
     # Still refused by every op until it is run for real.
     with pytest.raises(ProjectError, match="proofcut migrate"):
         ops.status(project.root)
+
+
+# -- `steps` and `plan`: an agent's turn undone as one call ----------------
+
+
+def _three_mutations(project: Project) -> None:
+    ops.cut_by_time(project.root, spans=[[1.0, 2.0]])
+    ops.cue_add(project.root, clip_id="vo", word_index=6, asset="card:title")
+    ops.cut_by_time(project.root, spans=[[8.0, 9.0]])
+
+
+def _state(project: Project) -> tuple[bytes, bytes]:
+    return project.timeline_path.read_bytes(), project.manifest_path.read_bytes()
+
+
+def test_steps_walks_back_exactly_that_many_mutations(project: Project) -> None:
+    before = _state(project)
+    _three_mutations(project)
+
+    report = ops.undo(project.root, steps=2)
+
+    assert report["steps"] == 2
+    assert report["undo_depth"] == 1
+    assert ops.status(project.root)["timeline_duration"] == pytest.approx(11.0)
+    assert ops.cue_ls(project.root)["cues"] == []
+    ops.undo(project.root)
+    assert _state(project) == before
+
+
+def test_steps_equals_that_many_single_undos_byte_for_byte(project: Project, tmp_path: Path) -> None:
+    _three_mutations(project)
+    twin = tmp_path / "twin"
+    shutil.copytree(project.root, twin, symlinks=True)
+
+    ops.undo(project.root, steps=3)
+    for _ in range(3):
+        ops.undo(twin)
+
+    assert _state(project) == _state(Project.open(twin))
+    assert ops.status(project.root)["undo_depth"] == 0
+
+
+@pytest.mark.parametrize("steps", [0, -1, 4])
+def test_an_out_of_range_steps_is_refused_before_anything_is_restored(
+    project: Project, steps: int
+) -> None:
+    _three_mutations(project)
+    before = _state(project)
+
+    with pytest.raises(ProjectError, match="steps must be between 1 and 3"):
+        ops.undo(project.root, steps=steps)
+
+    assert _state(project) == before
+    assert ops.status(project.root)["undo_depth"] == 3
+
+
+def test_plan_writes_nothing_and_is_changes_account_of_the_same_steps(project: Project) -> None:
+    _three_mutations(project)
+    before = _state(project)
+    files = sorted(p.name for p in project.history_dir.iterdir())
+
+    planned = ops.undo(project.root, steps=2, plan=True)
+
+    assert planned["plan"] is True
+    assert planned["steps"] == 2
+    assert planned["undo_depth"] == 3
+    assert planned["changes"] == ops.changes(project.root, steps=2)
+    assert _state(project) == before
+    assert sorted(p.name for p in project.history_dir.iterdir()) == files
+
+
+def test_plan_refuses_the_same_range_undo_does(project: Project) -> None:
+    _three_mutations(project)
+
+    with pytest.raises(ProjectError, match="steps must be between 1 and 3"):
+        ops.undo(project.root, steps=9, plan=True)
+
+
+def test_a_write_landing_mid_walk_stops_it_and_says_how_far_it_got(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stale-write check is `restore`'s, once per step, so a second writer
+    arriving between two steps is refused rather than overwritten — and the
+    refusal names the steps that had already come back."""
+    from proofcut.project import ProjectConflictError
+
+    _three_mutations(project)
+    real = Project.restore
+    calls = {"n": 0}
+
+    def racing(self: Project):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            self.manifest_path.write_text(self.manifest_path.read_text() + " ")
+        return real(self)
+
+    monkeypatch.setattr(Project, "restore", racing)
+
+    with pytest.raises(ProjectConflictError, match="1 of 3 steps had already been undone"):
+        ops.undo(project.root, steps=3)
+
+    assert len(Project.open(project.root).snapshots()) == 2

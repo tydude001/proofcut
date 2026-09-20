@@ -76,7 +76,7 @@ from proofcut import transcript as tx
 # `verify` is also the name of the op below, so the module needs an alias here
 # or the function would shadow it at call time.
 from proofcut import verify as vfy
-from proofcut.project import Project, ProjectError
+from proofcut.project import Project, ProjectConflictError, ProjectError
 
 WordRange = tuple[int, int]
 
@@ -7118,8 +7118,24 @@ def speech_overlap(
     }
 
 
-def undo(path: Path | str) -> dict[str, Any]:
-    """Roll the project back one mutation — the timeline, the manifest, or both.
+def undo(path: Path | str, *, steps: int = 1, plan: bool = False) -> dict[str, Any]:
+    """Roll the project back `steps` mutations — the timeline, the manifest, or both.
+
+    **`steps` is `changes`' own argument and counts the same thing**: `undo`
+    with `steps=N` is what `changes(steps=N)` describes, so a caller reads one
+    and does the other. An agent's turn is many mutations, each its own
+    snapshot (`Project.snapshot` is once per instance, and every op opens its
+    own), and there is no redo — so an out-of-range `steps` is refused before
+    anything is restored, never walked as far as it goes. `plan=True` writes
+    nothing and returns `changes`' answer for the same `steps`
+    (docs/plans/GROUPED-UNDO.md).
+
+    **A write landing mid-walk stops it**, and the refusal says how many steps
+    had already come back: the stale-write check is `restore`'s, made once per
+    step, and a second writer is the one thing an up-front check cannot rule out.
+    The reply's flags describe the *last* step — the state the project now
+    equals; they only differ from the first step's on a legacy timeline-only
+    snapshot.
 
     Most authoring state is manifest state now (the cue table, framing rects,
     the music bed, the caption style, head/tail/holds, marks, card records),
@@ -7140,8 +7156,32 @@ def undo(path: Path | str) -> dict[str, Any]:
     was a mutation like any other.
     """
     project = Project.open(path)
-    restored = project.restore()
+    depth = len(project.snapshots())
+    if depth == 0:
+        raise ProjectError("nothing to undo — this project has no history")
+    if steps < 1 or steps > depth:
+        raise ProjectError(
+            f"steps must be between 1 and {depth} (this project's undo depth), not {steps}"
+        )
+    if plan:
+        return {
+            "plan": True,
+            "steps": steps,
+            "undo_depth": depth,
+            "changes": changes(path, steps=steps),
+        }
+    for done in range(steps):
+        try:
+            restored = project.restore()
+        except ProjectConflictError as exc:
+            if not done:
+                raise
+            raise ProjectConflictError(
+                f"{exc} — {done} of {steps} steps had already been undone; "
+                "`changes` shows what is left"
+            ) from exc
     report: dict[str, Any] = {
+        "steps": steps,
         "restored_from": str(restored.timeline or restored.manifest),
         "timeline_restored": restored.timeline is not None,
         "manifest_restored": restored.manifest is not None,

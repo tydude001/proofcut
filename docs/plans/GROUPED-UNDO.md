@@ -1,8 +1,9 @@
 # Undoing an agent's turn as one decision
 
 Written 2026-09-20, off PRIOR-ART.md § OpenChatCut (its `begin_edit_session` /
-`review_edit_session` lands an agent's edits as a single undo step). Unbuilt.
-Status of the work lives in the wiki, not here.
+`review_edit_session` lands an agent's edits as a single undo step). Design
+steps 1–2 were built the same day; step 3 is not. Status of the work lives in
+the wiki, not here.
 
 ## The gap
 
@@ -52,8 +53,10 @@ the same thing there.
    redo, so a partial walk-back is the one outcome that cannot be repaired.
    `plan=True` resolves and writes nothing, and returns `changes(steps=N)`'s
    answer: the read-before-you-destroy the tool description already asks for
-   by hand. The stale-write refusal (`ProjectConflictError`) applies on the
-   first restore and holds for the rest, since `restore` re-stamps after each.
+   by hand. The stale-write refusal (`ProjectConflictError`) is `restore`'s,
+   made once per step, so a second writer landing *between* steps stops the
+   walk — a check made up front cannot rule that out — and the refusal says
+   how many steps had already come back.
    Reply keys stay what they are, computed after the last restore, plus
    `steps`; `restored_from` is the last snapshot consumed, i.e. the state the
    project now equals.
@@ -85,7 +88,7 @@ the same thing there.
 1. Step 1–2 above — a day, one op, one CLI flag, tests beside
    `tests/test_ops_undo.py` (all-or-nothing on an over-long `steps`; `plan`
    writes nothing; a two-step undo equals two one-step undos byte for byte;
-   the stale-write refusal fires mid-walk without half-restoring).
+   a write landing mid-walk stops it and names how many steps had come back).
 2. Measure the real number first if it is to be quoted: run one trial and
    diff `undo_depth` across the unattended turn, rather than the whole
    project's count above.
