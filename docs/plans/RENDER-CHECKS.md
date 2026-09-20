@@ -210,7 +210,15 @@ after a cut through the join (the case (b) loses); after `undo` past the splice
 `shots` over the wire carries `over`, since a body-level test proves nothing
 about reachability (CLAUDE.md § Conventions).
 
-**Open, and Tyler's:** (a) against a smaller version that skips the record and
-only reads at `vo_extend` time — which is what exists. That is the null option,
-and it is right if no agent will ever `cue_rm` after a hold; TRIAL.md's runs
-are the evidence to check before paying for the record.
+**Open, and Tyler's — and the evidence points at the null option.** Read
+across the 20 unattended-trial `events.jsonl` under `~/proofcut-work/spikes/`
+that mention `vo_extend` at all (counting `"name":"mcp__<server>__<tool>"`
+tool_use lines; `cue_add` is the control, non-zero exactly where the runs cued
+pictures): **`vo_extend` was called 0 times.** `cue_rm` was called 4 times, in
+one run (`agent-trial-real` 2026-09-03), which had no hold to uncover. So the
+sequence this read exists for — a hold, then the cue at it removed — has never
+been made by an agent, and (a)'s record is unearned today. **Recommended: do
+not build it now.** What exists (`covered_by` at write time) stands, and this
+section is the design to pick up when a brief hands an agent `vo_extend` and a
+run shows the sequence. What no run can show is a person doing it in the window
+by hand, which is Tyler's to say.
