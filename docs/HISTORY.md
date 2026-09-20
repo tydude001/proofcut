@@ -16623,6 +16623,20 @@ until it holds 10 points, earned from comments other members upvote; the
 founder has said the gate is the anti-spam filter and that it lifts at 10.
 It is not a launch room, so nothing was spent, and it is not rescheduled.
 
+Posted on
+[r/sideprojects](https://www.reddit.com/r/sideprojects/s/ABgv7csHQq) on
+2026-09-20 with the `feedback request` flair, which the room requires. Its
+flairs are meta, showcase prerelease, showcase open source, showcase
+free(mium), showcase purchase required, feedback request, question and
+discussion; the morning's email had recommended a "vibecoded showcase" that
+does not exist, and `showcase open source` would have misdescribed a
+PolyForm Shield licence, so the post asks for what it is — testers. That
+same email said it could not check GitHub, and it had not been able to on
+any of the three mornings: the routine's sandbox has no repo attached, and
+its proxy answers `api.github.com` with a 403. Only the last morning said
+so, having skipped the public issues page that the first two fell back to.
+The routine now reads the pages and never the API.
+
 The r/SideProject thread's first question asked whether a `cut` without
 `plan` commits with no confirmation. It does, and nothing had said so; the
 answer is now MANUAL.md § The MCP server — destructive hints for the client
