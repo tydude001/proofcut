@@ -17674,3 +17674,43 @@ and says how many came back. Unattended trial projects hold 10–21 snapshots,
 a whole-project upper bound; one turn was not measured. The design, and the
 panel button, session tools and approval gate it leaves out:
 docs/plans/GROUPED-UNDO.md. Suite: 2572 passed.
+
+
+## The trial can see a stutter now — 2026-09-20
+
+`scripts/agent_trial.py`'s `score()` gained a check, `no_stutter`, for the gap
+docs/plans/LOCAL.md § The score cannot see a stutter named: the fluffed take
+and the good one open with the same words, so a cut that stops short of the
+fluff's opening passed `retake_removed` and `good_take_kept` over a film that
+said it twice, and `verify` compares the render with a timeline that has the
+stutter in it.
+
+**What it reads.** The words still on the timeline (`timeline_view`'s
+`present`), from `STUTTER_LOOKBACK` (14) words before the keeper phrase's first
+word to its last. A run of two or more words, at least one not a stopword,
+whose second copy starts within `STUTTER_GAP` (6) words of the first ending is
+a stutter, longest first. It needs the brief's `keep` phrase and a transcribed
+voiceover, and is unsettled (`None`) without either, `retake_removed`'s rule.
+
+**Measured against the projects still on disk, before it was written into
+`score()`.** Both films LOCAL.md called stuttering fail it — the first demo run
+on `every cut you make names`, said twice with no gap, and the film run on
+`every cut you make names a`, whole take and all — and the second and third
+demo runs and the last Claude demo run pass. Those are five real projects and
+two known answers each way; the two Claude projects the doc also names were
+written before the rename and were not migrated to read them
+(`proofcut migrate` mutates them). Spike:
+`~/proofcut-work/spikes/stutter-check/`. The film run's residue is the whole
+fluffed take rather than the "names a…" fragment LOCAL.md recorded, which is
+what the surviving words show.
+
+**What it does not do.** It is a window around one declared phrase, not a scan
+of the film: a stutter elsewhere is invisible to it, and so is a real-footage
+run whose `--phrases` names no keeper. A stopword-only repeat ("of the … of
+the") is ignored on purpose, and the list is short for the reason its comment
+gives. A new check's first findings are candidates, so `--control` remains the
+false-positive test.
+
+No test had pinned `score()`'s check list — the wiki row and LOCAL.md both said
+one did, and a grep of `tests/` finds none — so nothing was widened; the new
+tests are `tests/test_trial_stutter.py`.

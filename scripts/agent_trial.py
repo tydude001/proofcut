@@ -145,6 +145,23 @@ KEEPER_PHRASE = "names a word in the transcript"
 #: rather than against whatever this file says today.
 DEMO_PHRASES = {"remove": RETAKE_PHRASE, "keep": KEEPER_PHRASE}
 
+#: `no_stutter` looks this many surviving words back from the keeper's first
+#: word — the fluffed take's residue sits immediately ahead of the good take —
+#: and calls a repeated run a stutter only when its second copy starts within
+#: `STUTTER_GAP` words of the first ending. Both are read off the two films
+#: that kept one (LOCAL.md § The score cannot see a stutter): a five-word
+#: restart with no gap, and a two-word fragment four words ahead of its repeat.
+STUTTER_LOOKBACK = 14
+STUTTER_GAP = 6
+
+#: A run made only of these is ordinary speech ("of the … of the"), not a
+#: restart. Deliberately short: a word missing here costs a false finding the
+#: control run shows, and a word wrongly here hides a real one.
+STUTTER_STOPWORDS = frozenset(
+    ("a", "an", "the", "of", "to", "in", "on", "at", "and", "or", "but", "is", "it",
+     "its", "as", "for", "with", "that", "this", "be")
+)
+
 #: How many registered clips the demo brief's three files should produce. It
 #: is a parameter because a real folder is not three files and an agent is not
 #: obliged to import all of it: over real material the floor is what the
@@ -706,6 +723,15 @@ def score(
         else:
             checks.append(_phrase_check(project, vo, phrase, want_present=want_present,
                                         name=name))
+    # The two checks above cannot see this one: the fluffed take and the good
+    # one open with the same words, so a cut that stops short of the fluff's
+    # opening leaves both phrase checks passing over a film that stutters.
+    if not keep:
+        checks.append(_check("no_stutter", None, "no phrase declared for this run (--phrases)"))
+    elif vo is None:
+        checks.append(_check("no_stutter", None, "no transcribed voiceover clip to ask about"))
+    else:
+        checks.append(_stutter_check(project, vo, keep))
 
     # --- the render --------------------------------------------------------
     outputs = list(evidence.get("outputs") or [])
@@ -937,6 +963,63 @@ def _phrase_check(
         ok = not present
         detail = f"{len(present)}/{len(span)} words of {phrase!r} still on the timeline"
     return _check(name, ok, detail)
+
+
+def find_restart(words: list[str]) -> list[str] | None:
+    """The longest run of words that repeats within `STUTTER_GAP` words of itself.
+
+    Order-only, like every reader of a transcript here: it takes the words as
+    spoken and knows nothing of their durations. A run repeats when a second
+    copy starts at most `STUTTER_GAP` words after the first one ends, and a run
+    of two or more words with at least one word that is not a stopword counts.
+    """
+    tokens = ["".join(ch for ch in w.lower() if ch.isalnum()) for w in words]
+    tokens = [t for t in tokens if t]
+    best: list[str] | None = None
+    for i in range(len(tokens)):
+        for j in range(i + 1, len(tokens)):
+            run = 0
+            while j + run < len(tokens) and tokens[i + run] == tokens[j + run] and i + run < j:
+                run += 1
+            if run < 2 or j - (i + run) > STUTTER_GAP:
+                continue
+            found = tokens[i : i + run]
+            if all(t in STUTTER_STOPWORDS for t in found):
+                continue
+            if best is None or len(found) > len(best):
+                best = found
+    return best
+
+
+def _stutter_check(project: Path, clip_id: str, keep: str) -> dict[str, Any]:
+    """Does the good take's opening survive twice, or in part, ahead of itself?
+
+    Read off the words still on the timeline (`timeline_view`'s `present`), in
+    a window ending at the keeper phrase — the residue of a fluffed take sits
+    right in front of the take that replaced it. Unsettled when the phrase or
+    the view cannot be read, `score()`'s own rule.
+    """
+    name = "no_stutter"
+    try:
+        resolved = ops.resolve_phrase(project, clip_id, keep)
+        first, last = resolved.get("first_word"), resolved.get("last_word")
+        if first is None:
+            return _check(name, None, f"phrase not found in the transcript: {keep!r}")
+        words = ops.timeline_view(project, clip_id).get("words") or []
+    except Exception as exc:  # noqa: BLE001
+        return _check(name, None, f"could not read the timeline: {exc}")
+    present = [w for w in words if w.get("present")]
+    at = next((n for n, w in enumerate(present) if w.get("index", -1) >= first), None)
+    if at is None:
+        return _check(name, None, f"no word of {keep!r} is on the timeline")
+    window = [
+        w for w in present[max(0, at - STUTTER_LOOKBACK):]
+        if w.get("index", -1) <= last
+    ]
+    found = find_restart([str(w.get("text", "")) for w in window])
+    if found:
+        return _check(name, False, f"{' '.join(found)!r} is said twice within {STUTTER_GAP} words")
+    return _check(name, True, f"no repeated run in the {len(window)} words up to {keep!r}")
 
 
 def _captions_check(final: Path, evidence: dict[str, Any]) -> dict[str, Any]:

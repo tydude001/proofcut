@@ -250,8 +250,9 @@ there, and the two takes open with the same six words, so a cut that stops short
 of them passes both; `verify` compares the render with the *timeline*, which has
 the stutter in it. The two Claude projects still on disk — the last run of the
 demo and of the film brief — are clean, which is two films and no comparison.
-`score()` is unchanged, because tests pin its check list; the gap is a wiki
-Open items row (`proofcut-trial-stutter-blind`).
+`score()` gained `no_stutter` on 2026-09-20 (HISTORY.md § The trial can see
+a stutter now); no test had pinned its check list, whatever this paragraph said
+until then.
 
 **What this does not settle.**
 - **Four runs, sampled.** The same brief took 30 to 63 turns and 330 to 746 s
