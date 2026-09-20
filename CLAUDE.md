@@ -943,8 +943,8 @@ built; docs/plans/INSTALL.md):
   settled before the tag. HISTORY.md § Releases publish from the tag. There is no `CHANGELOG.md` on
   purpose. HISTORY.md § The version caught up.
   - **A GitHub Release is a hand-written launch post, not a per-tag note, so
-    it does not follow a bump** — which is how `v0.23.0` stayed "Latest"
-    fourteen versions on, describing a proofcut that stopped at the render and
+    it does not follow a bump** — which is how `v0.23.0` stayed "Latest" two
+    versions on, describing a proofcut that stopped at the render and
     claiming nobody had run Windows. Cut one only where a release is worth
     announcing, and **a wording pass must name the published releases** or it
     silently misses them. HISTORY.md § The release nobody had cut.
