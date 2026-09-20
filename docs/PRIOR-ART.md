@@ -12,7 +12,8 @@ evidence, not the decision.
 
 Re-run this survey before any major scope change. Last re-checked in full
 **2026-09-16** — § The re-check before Show HN; the counts above it stay as
-they were read.
+they were read. Seven more repos, two of them re-reads, were added
+**2026-09-20** — § Seven repos a new stargazer had starred.
 
 ## Why this survey happened
 
@@ -583,6 +584,91 @@ awesome-mcp-servers' Multimedia section; Glama's `video editing` search; and
 web searches for Show HN and Product Hunt launches. **A filtered `grep`
 dropped two of kinocut's 201 `@mcp.tool(` lines** and counted 199, so every
 count and every absence above was re-run around the shell's output filter.
+
+## Seven repos a new stargazer had starred — 2026-09-20
+
+A new star on the public repo led to that account's own starred list, which
+held two competitors the survey had and five it lacked. Each was read from a
+shallow clone, source before README, nothing run. The same pass re-read the
+two already covered against § The re-check before Show HN's recorded heads.
+Heads that day: OpenMontage `08e2151`, OpenCut `400f097` (the rewrite) and
+opencut-classic `cf5e79e`, sentrysearch `acd5a00`, B-Roll-Finder `c1f7ff6`,
+VoiceStudio `7c9e7a4`, voice-pro `7231384`, video-use `9575612`, Diffusion
+Studio `57c3983`.
+
+**No launch claim moves.** The narrowed one from 2026-09-16 — transcribing
+the render and diffing its words against the cut, and an exact frame count —
+holds against all seven. The nearest is OpenMontage's `final_review`, and it
+never runs a transcription: `_compare_transcript_to_script` diffs a transcript
+*file the caller supplies* against the script
+(`tools/video/video_compose.py:2183-2200`, `2640-2649`), which is why its own
+docstring says "Only runs when caller provides both". Its duration check
+flags only past 25% of target and it samples four frames, "black" meaning a
+PNG under 2000 bytes.
+
+| Repo | Category | What matters against proofcut |
+|---|---|---|
+| [calesthio/OpenMontage](https://github.com/calesthio/OpenMontage) · 60.3k★ · AGPL-3.0 · Python + Remotion · created 2026-03-29 | Generator and orchestrator | 121 `BaseTool` classes, **no MCP server and no CLI** — an agent reads `AGENT_GUIDE.md` and calls a Python registry. Mostly provider tools (video, image, TTS, music, avatar). Four of its 13 pipelines cut the user's own footage (`talking-head`, `clip-factory`, `podcast-repurpose`, `screen-demo`), by silence removal or an agent's reading of a transcript; **no word-addressed edit, no retake handling.** State is per-stage JSON artifacts validated against schemas (`lib/checkpoint.py`), not a timeline, and there is no undo. Local faster-whisper by default |
+| [OpenCut-app/OpenCut](https://github.com/OpenCut-app/OpenCut) · 89.9k★ · MIT | Human CapCut clone, mid-rewrite | The repo the stars sit on is a **skeleton**: `README.md:11-22` says it is being rewritten, the editor route is "Coming soon", and MCP and headless mode are roadmap bullets. The working product is [opencut-app/opencut-classic](https://github.com/opencut-app/opencut-classic) (252★), a browser editor with local in-browser Whisper whose captions are spread evenly across a segment rather than aligned per word. No agent surface in either, no transcript cutting, no render check. **The one to watch**, because the roadmap names MCP and 90k stars is distribution none of the agent-facing editors has |
+| [ssrajadh/sentrysearch](https://github.com/ssrajadh/sentrysearch) · 4.5k★ · Apache-2.0 · Python | Footage retrieval | 30 s chunks, 5 s overlap, embedded *as video* (Gemini Embedding 2 by default; Qwen3-VL-Embedding locally, ~18 GB VRAM) into ChromaDB; a text or image query matches footage directly and the top hit is trimmed with ffmpeg. CLI only, no MCP, no timeline. **No retrieval evaluation anywhere** |
+| [erfsalehi/B-Roll-Finder](https://github.com/erfsalehi/B-Roll-Finder) · 4★ · **no licence file** · Python | Cloud b-roll sourcing | Voiceover to shot list to stock and YouTube candidates to a Premiere XML. Almost all cloud (Groq, OpenRouter, Pexels, Gemini). Its library index embeds the *query text that fetched a clip*, not what the footage shows — a text-similarity index over words. No evaluation, no agent surface |
+| [debpalash/VoiceStudio](https://github.com/debpalash/VoiceStudio) · 33.3k★ · AGPL-3.0 · Python | TTS and dubbing app | ~17 engines behind subprocess sidecars (proofcut's own pattern). **"646 languages" is the row count of one model's name-to-ID table** (`omnivoice/utils/lang_map.py`); its own docs say other engines differ. Dubbing never touches a timeline. **Default model's weights are CC-BY-NC**, so the default install is not commercial (`LICENSE-NOTICE.md:46`). 7-tool MCP, dubbing not among them. No take ranking and no runtime speaker-similarity check |
+| [abus-aikorea/voice-pro](https://github.com/abus-aikorea/voice-pro) · 12.8k★ · GPL-3.0 (README says LGPL; unresolved) · Python/Gradio | Dubbing convenience app | Gradio only, no CLI or MCP. Dubbing is a sequential cursor, so one overrunning line pushes every later line late; no output check, no ranking. Different category |
+
+**Re-checked, unchanged.**
+
+- **video-use** — head still `9575612`, 0 commits since 2026-09-16, 25,156★.
+  Every claim in § browser-use/video-use holds. **New detail, present at the
+  same head:** `SKILL.md:91-99` has a self-eval step — a filmstrip at each cut
+  boundary and the first and last 2 s, and `ffprobe` of the output's duration
+  against the edit list, capped at 3 passes. It is a prompt instruction, not
+  code, and it neither detects black or frozen frames nor transcribes the
+  output.
+- **diffusionstudio/editor** — 2,964★, MPL-2.0, 18 tools
+  (`packages/dapi/src/catalog.ts:32-51`). **The head § The re-check before
+  Show HN recorded, `b312417`, is in neither the repo's history nor its refs**
+  — force-pushed away or mistyped — so the diff ran from v0.205.1
+  (`5529819`, 2026-09-14): 16 commits, UI and chat refactors, `packages/dapi`
+  untouched. Transcription is a cloud call (`media-transcribe.ts:28`;
+  `whisper.ts` is only a caption-format decoder, so a grep for "whisper" there
+  reads as local ASR and is not). `capture` draws contact sheets of the
+  *composition*, not the output file (`capture.ts:14`), and edits still
+  address nodes by id.
+
+**Worth taking, as evidence and not as a decision** (PLAN.md decides):
+
+- **Footage embeddings against `describe`'s text.** sentrysearch is the only
+  thing here that skips the lexical step proofcut measured at 2 of 25 human
+  picks — and it brings no number of its own, so it is a candidate for the
+  same 25-pick test and not a reason to build one. Its cheap parts stand
+  alone: a model-free still-chunk skip (JPEG sizes of three frames at a 0.98
+  ratio, `chunker.py:204-296`), which could skip `describe` windows on static
+  footage, and an image as the query, which a `footage_sheet` tile could be.
+- **B-Roll-Finder's learned trims.** Re-importing the user's edited XML records
+  their in and out points per clip (`clip_library.py:490-512`) — human-pick
+  signal, the thing the 25-pick measurement used. Its VLM prompt that may
+  answer "none" (`prompts/visual_verify.txt:19-33`) is the honest half of a
+  reviewing pass. Its whole-timeline "executive producer" pass is the kind
+  proofcut measured making picks worse (13 → 10), with no evidence here either
+  way.
+- **VoiceStudio's dub timing, for `vo_synth`.** A duration predictor
+  calibrated from the same voice's own characters-per-second, run *before* the
+  GPU is spent (`duration_planner.py`); an overrun split between audio
+  speed-up and picture slow-down under hard caps (`fit_planner.py`); a
+  per-line WER drift score against the target, opt-in and never fatal
+  (`dub_qc.py`) — proofcut's own report-not-gate stance, arrived at
+  separately.
+- **OpenCut's integer ticks** (120,000 per second, dividing 24/25/30/60
+  exactly, `rust/crates/time/src/media_time.rs:10`) and its even-spread
+  captions as the failure `verify` is built to catch.
+
+**Not confirmed.** OpenCut's and opencut-classic's ages and commit counts
+(both clones were shallow); OpenMontage's real commit count (API only, ~449)
+and whether its `final_review` is enforced or advisory; the F5-TTS weights'
+non-commercial licence, which rests on VoiceStudio's own competitive notes
+and not on voice-pro's source; sentrysearch's 0.41 default confidence
+threshold, whose derivation the read did not find; and every cost or latency
+figure the READMEs quote.
 
 ## Stateless-ffmpeg MCP servers
 
