@@ -17652,3 +17652,25 @@ the last place to read current state from. The bullet now says so.
 **Show HN needs no Release of its own now** (docs/plans/LAUNCH.md § Step 5):
 `v0.37.0` holds the permalink, and only a later tag moves it.
 
+
+## Undo takes steps, and a corrupt manifest names its snapshot — 2026-09-20
+
+Two items from PRIOR-ART.md's survey, built the day it was read; the ones it
+held are marked beside their bullets there.
+
+**A corrupt `proofcut.json` names the snapshot that recovers it** (CutPilot's
+`.bak` recovery, the cheap half). The refusal cannot say `proofcut undo`:
+`undo` opens the project, which reads the manifest, which is what refused. It
+names the newest `cache/history/N.manifest.json` that still parses, one edit
+behind the live file, and restores nothing unasked.
+
+**`undo(steps, plan)`** (OpenChatCut's single-undo-step edit session). The
+first read had it changing `snapshot`'s once-per-instance rule; reading
+`changes` showed it need not, since snapshots are numbered files and
+`changes(steps)` already counts them. So `undo` takes the same count, refuses
+one outside `1..undo_depth` before restoring anything (there is no redo), and
+`plan` returns `changes`' account. A write landing between steps stops the walk
+and says how many came back. Unattended trial projects hold 10–21 snapshots,
+a whole-project upper bound; one turn was not measured. The design, and the
+panel button, session tools and approval gate it leaves out:
+docs/plans/GROUPED-UNDO.md. Suite: 2572 passed.

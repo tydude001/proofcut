@@ -97,6 +97,9 @@ span nothing explains — is
 2026-09-20 and unbuilt — **its positive control failed the same day**, so the op
 as designed should not be built (§ The positive control, run); the smaller holds
 read that survives is designed there and waits on a trial that needs it.
+Undoing an agent's turn — `undo --steps N [--plan]`, and why `snapshot`'s
+once-per-instance rule stays — is [docs/plans/GROUPED-UNDO.md](docs/plans/GROUPED-UNDO.md),
+written and built 2026-09-20 but for the panel's button.
 Open-item status lives in the wiki, not here. **This repo is public: a
 goodsometimes video's production record (versions, renders, creative calls,
 release state) goes in `goodsometimes/ideas/<video>.md`**, and HISTORY.md

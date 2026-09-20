@@ -465,7 +465,9 @@ right.
   tokenized Cloudflare quick-tunnel link (NeuroCut, `run.sh`).
 - A gapless two-`<video>` preview, word-highlight captions rasterized with
   Pillow and shared byte-for-byte between preview and export, and an
-  `export_publish_package` for manual upload (vidcut).
+  `export_publish_package` for manual upload (vidcut). The gapless preview was
+  considered 2026-09-20 and is not queued: `player.js` sets `pictureVideo.src`
+  per shot, so a cut to another asset stalls the window and never the render.
 - Breadth nobody here has asked for: free N-track placement, crossfades and
   arbitrary filter passthrough (NeuroCut); Remotion/JSX motion graphics,
   multicam sync, CapCut handoff and genre "director" presets (CutPilot); a
@@ -655,13 +657,15 @@ PNG under 2000 bytes.
   alone: a model-free still-chunk skip (JPEG sizes of three frames at a 0.98
   ratio, `chunker.py:204-296`), which could skip `describe` windows on static
   footage, and an image as the query, which a `footage_sheet` tile could be.
+  The skip is held (2026-09-20) until a static clip costs enough windows to matter.
 - **B-Roll-Finder's learned trims.** Re-importing the user's edited XML records
   their in and out points per clip (`clip_library.py:490-512`) — human-pick
   signal, the thing the 25-pick measurement used. Its VLM prompt that may
   answer "none" (`prompts/visual_verify.txt:19-33`) is the honest half of a
   reviewing pass. Its whole-timeline "executive producer" pass is the kind
   proofcut measured making picks worse (13 → 10), with no evidence here either
-  way.
+  way. Held (2026-09-20) for a design note first: it is a measurement problem,
+  and the bar is 15 of 25 against embeddings' 10.
 - **VoiceStudio's dub timing, for `vo_synth` — declined 2026-09-20**, because
   `vo_synth` splices in and lets the edit grow, so there is no slot to fit
   (HISTORY.md § Embedding the footage did not pick the b-roll). A duration predictor
