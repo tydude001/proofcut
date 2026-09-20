@@ -639,8 +639,10 @@ PNG under 2000 bytes.
 
 - **Footage embeddings against `describe`'s text.** sentrysearch is the only
   thing here that skips the lexical step proofcut measured at 2 of 25 human
-  picks — and it brings no number of its own, so it is a candidate for the
-  same 25-pick test and not a reason to build one. Its cheap parts stand
+  picks — and it brings no number of its own. **Tested 2026-09-20, and it
+  failed**: shortlist-of-3 at 10 of 25 against a bar of 15, top-1 at 1, no
+  better than chance (docs/plans/FOOTAGE-EMBED.md; HISTORY.md § Embedding the
+  footage did not pick the b-roll). Its cheap parts stand
   alone: a model-free still-chunk skip (JPEG sizes of three frames at a 0.98
   ratio, `chunker.py:204-296`), which could skip `describe` windows on static
   footage, and an image as the query, which a `footage_sheet` tile could be.
@@ -651,7 +653,9 @@ PNG under 2000 bytes.
   reviewing pass. Its whole-timeline "executive producer" pass is the kind
   proofcut measured making picks worse (13 → 10), with no evidence here either
   way.
-- **VoiceStudio's dub timing, for `vo_synth`.** A duration predictor
+- **VoiceStudio's dub timing, for `vo_synth` — declined 2026-09-20**, because
+  `vo_synth` splices in and lets the edit grow, so there is no slot to fit
+  (HISTORY.md § Embedding the footage did not pick the b-roll). A duration predictor
   calibrated from the same voice's own characters-per-second, run *before* the
   GPU is spent (`duration_planner.py`); an overrun split between audio
   speed-up and picture slow-down under hard caps (`fit_planner.py`); a

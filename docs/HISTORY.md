@@ -17504,3 +17504,39 @@ scorer's and read the same on all four runs.
 Nothing is judged until Tyler has watched it; the numbers above only say there
 is less left to find than in run three.
 
+
+## Embedding the footage did not pick the b-roll — 2026-09-20
+
+PRIOR-ART.md § Seven repos a new stargazer had starred left one question open:
+sentrysearch embeds footage as video and matches a text query against it, which
+skips the lexical step § Choosing the b-roll measured at 2 of 25. The test was
+preregistered in docs/plans/FOOTAGE-EMBED.md before it ran, and it **failed its
+bar**: Qwen3-VL-Embedding-2B, run locally, put the person's pick in its
+top three at 10 of 25 positions against a required 15, and first at 1 of 25.
+
+**The control the old table never had decided how to read it.** The 25 picks
+are spread over only **nine** clips, so chance for a shortlist of three is 8.3,
+not the 1-in-25 the 2 of 25 invites — the `describe` index's shortlist of 8 was
+chance — and simply guessing the three commonest clips scores 13. The
+hand-written `synopsis` catalogue's 15 is two above that oracle, which is still
+real and is now stated against the right floor. Ten of 25 is a result chance
+gives three times in ten, and the two declared variants (a mean of the best
+three chunks against a 730 s clip's length advantage, and the narration cut to
+its last 15 words) gave 10 and 11.
+
+The video vectors were sound — chunks of one clip at 0.73 cosine, of different
+clips at 0.54 — so this is not a broken run. It is § Choosing the b-roll's
+finding from the other side: the connection an essay draws between a sentence
+and a picture is not in either the description of the pixels or the pixels, and
+`synopsis` works because a person who knows the films wrote the connection down.
+Nothing was built. One film, nine clips and 25 picks is thin, and the in-point
+question — *which second inside a clip*, `describe`'s remaining honest job —
+was not tested.
+
+**VoiceStudio's dub-fit planner was declined the same day, without a
+measurement, and the reason is that there is no slot.** `vo_synth` splices audio
+in after a word and lets the `Edit` grow (`_splice_after`); a dubber fits a
+line into a fixed gap in someone else's video. The two synth caches on disk hold
+six renders, none capped, which is too few to calibrate a predictor and shows no
+problem to fix. Reopen it if a use appears where a synthesised line must land
+in a fixed gap.
