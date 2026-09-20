@@ -66,6 +66,18 @@ SCRIPT: list[tuple[str, bool]] = [
 #: than on a consonant, short enough that the demo is not mostly waiting.
 GAP = 0.6
 
+#: The espeak-ng library as a wheel, for a machine whose package manager has no
+#: espeak-ng — or whose owner would rather not be asked for a sudo password in
+#: the middle of a two-minute demo. Pinned to the version
+#: `scripts/mac_trial.sh` already pins, which carries the same library version
+#: as the program (1.52.0), and that is the whole point: through
+#: `scripts/espeak_ng_lib.py` the two render a **byte-identical** voiceover
+#: (measured 2026-09-20 on Linux against system espeak-ng 1.52.0: the whole
+#: 825,100-byte wav, same md5), so the walkthrough's word count and timings
+#: hold whichever route built the voice.
+#: It ships for Linux x86_64/aarch64, Windows x64/ARM64 and both Macs.
+ESPEAK_WHEEL = "espeakng-loader==0.2.4"
+
 #: The two b-roll clips. Flat, unmistakable colours with a burnt-in second
 #: counter, so a frame of the finished render says which clip it came from and
 #: how far into it — the "every moment names itself" rule.
@@ -111,6 +123,49 @@ def _run(command: list[str]) -> None:
         raise DemoError(f"{command[0]} failed:\n{' '.join(command)}\n{detail}")
 
 
+def _espeak_command() -> list[str]:
+    """The command prefix answering `-w OUT -s RATE TEXT`, however espeak-ng is available.
+
+    espeak-ng is the demo's one dependency `proofcut setup` cannot supply: it
+    is a distribution package everywhere, and a sudo prompt in the middle of a
+    two-minute demo is the wrong first impression for a tool whose claim is
+    that it installs for you alone and reverses exactly. So the program is
+    preferred where it exists, and the wheel's copy of the same library stands
+    in where it does not — the route `scripts/mac_trial.sh` already takes for
+    Intel Macs, which no package manager will serve.
+
+    `--no-project` keeps the wheel out of proofcut's own environment, which is
+    `scripts/espeak_ng_lib.py`'s own rule: nothing under `src/` imports it, and
+    the demo is the library's one use in this repo.
+    """
+    found = shutil.which("espeak-ng")
+    if found is not None:
+        return [found]
+    uv = shutil.which("uv")
+    if uv is None:
+        raise DemoError(
+            "neither espeak-ng nor uv is on PATH, and the demo voiceover is "
+            "synthesised rather than vendored. Either install uv "
+            "(https://docs.astral.sh/uv/), which lets this script fetch the "
+            f"espeak-ng library itself ({ESPEAK_WHEEL}, about 10 MB, into uv's "
+            "cache and nowhere else), or install the program (`dnf install "
+            "espeak-ng`, `apt install espeak-ng`, `brew install espeak-ng`)."
+        )
+    library = Path(__file__).resolve().parent / "espeak_ng_lib.py"
+    if not library.is_file():
+        raise DemoError(
+            f"espeak-ng is not on PATH and its stand-in is missing: {library}. "
+            "Run this script from a proofcut checkout."
+        )
+    print(
+        f"espeak-ng is not on PATH — using its library from {ESPEAK_WHEEL} "
+        "instead (about 10 MB, fetched once into uv's cache). It is the same "
+        "library version as the program, and renders the same voice.",
+        flush=True,
+    )
+    return [uv, "run", "--no-project", "--with", ESPEAK_WHEEL, "python", str(library)]
+
+
 def make_voiceover(out: Path) -> Path:
     """Render the script to one wav, with a real gap at every take boundary.
 
@@ -120,14 +175,7 @@ def make_voiceover(out: Path) -> Path:
     the speaker stopping. The difference is exactly what the demo's cut needs
     to land in.
     """
-    espeak = _require(
-        "espeak-ng",
-        "the demo voiceover is synthesised rather than vendored",
-        "Install it (`dnf install espeak-ng`, `apt install espeak-ng`, "
-        "`brew install espeak-ng`; on an Intel Mac, scripts/mac_trial.sh "
-        "stands scripts/espeak_ng_lib.py in for it) — it is a few megabytes and is needed only "
-        "to build the demo, never by proofcut itself.",
-    )
+    espeak = _espeak_command()
     _require("ffmpeg", "every media step goes through it", "Install ffmpeg.")
 
     work = out.parent / "_demo-parts"
@@ -136,7 +184,7 @@ def make_voiceover(out: Path) -> Path:
     for index, (line, _retake) in enumerate(SCRIPT):
         raw = work / f"line{index}.wav"
         # `-s 150` is close to an unhurried read; the default gabbles.
-        _run([espeak, "-w", str(raw), "-s", "150", line])
+        _run([*espeak, "-w", str(raw), "-s", "150", line])
         if index:
             silence = work / f"gap{index}.wav"
             _run([
