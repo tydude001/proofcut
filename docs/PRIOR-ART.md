@@ -15,7 +15,10 @@ Re-run this survey before any major scope change. Last re-checked in full
 they were read. Seven more repos, two of them re-reads, were added
 **2026-09-20** — § Seven repos a new stargazer had starred. OpenCut, the one
 of those seven marked "to watch", was then read in full the same day, both the
-rewrite and the classic app — § OpenCut, read in full.
+rewrite and the classic app — § OpenCut, read in full. What is worth
+harvesting from classic's UI, and the three measured reasons its tree cannot be
+vendored into a Python wheel, are § What is worth taking, and what a copy would
+cost.
 
 ## Why this survey happened
 
@@ -833,6 +836,72 @@ Browser-only and local-first. About 91k lines of TypeScript (Next.js 16, React
 hand-editing breadth, in the class of § Glama's related servers' "breadth
 nobody here has asked for". Its in-memory export is the failure a `melt`
 render to disk does not have.
+
+### What is worth taking, and what a copy would cost
+
+Asked the same day, after the read: evaluate classic's web UI and copy it into
+proofcut if it is good. **The design is worth harvesting; the tree is not
+vendorable**, and the licence is the one thing that does not block it.
+
+**MIT into Shield is the permitted direction** — classic is MIT, so a file
+lifted with its copyright notice kept ships under proofcut's own terms with no
+relicensing. The reverse is what is closed. Two dependencies in its export path
+are copyleft and travel with anything borrowed from it (`soundtouchjs`
+LGPL-2.1, `mediabunny` MPL-2.0), and the Whisper weights' licences are still
+unchecked.
+
+Three measured costs of a wholesale copy:
+
+- **They are two different kinds of software.** `src/proofcut/web/` is **15,181
+  lines** of vanilla ES modules, CSS and HTML — no `package.json`, no
+  `node_modules`, no build step, ten native imports in `app.js`. Classic's
+  `apps/web` is Next.js 16 and React 19 on bun, with Radix UI, drizzle over
+  Postgres, Upstash Redis, better-auth, OpenNext-on-Cloudflare, `opencut-wasm`
+  and motion behind it — about 91k lines of TypeScript. Taking the UI means
+  taking the stack.
+- **proofcut ships as a wheel, and `web/` is static files inside it.** A Next
+  build wants a node toolchain at install time, which no Python wheel carries —
+  against an install story (`proofcut setup`, docs/plans/INSTALL.md) built this
+  month to remove exactly that kind of step.
+- **It is the implementation, and proofcut's must not be.** Project JSON in
+  IndexedDB, media in OPFS, undo as a client-side command stack, a schema at
+  version 31: there is no server-side truth for it to be a client of. Copying
+  that UI copies a state model that *decides*, against CLAUDE.md's rule that the
+  web UI is a third client and never a third implementation — and the browser
+  and the CLI would stop agreeing about what the film is.
+
+**Worth harvesting as design**, reimplemented in proofcut's own JS against
+`ops`, never vendored:
+
+- **10px timeline snapping**, read against `snapTolerance()` and the rule that a
+  hit target smaller than the tolerance resolves to nothing.
+- **A curve editor for a window's `interp`.** This is the one item that refines
+  the **Not queued** paragraph above rather than agreeing with it: OpenCut's
+  linear/hold/bezier graph over transform, opacity, volume and text colour *is*
+  hand-editing breadth, but proofcut already stores eased curves
+  (§ Eased slides and event-addressed windows) and has no way to draw one. Re-ask
+  it as "a graph for the easings already in the manifest", never as their feature.
+- **Multiple scenes and bookmarks** — no equivalent here.
+- **Drawn platform safe-zone guides**, which is the drawn half of the data
+  `graphics.SAFE_ZONES` already holds report-only.
+- **Its media browser and inspector layout**, against the rail's three tabs.
+
+**Not worth taking**, beyond the Not queued list: its export is in-memory and
+OOMs on real files (#628, #656), which is the failure a `melt` render to disk
+does not have; and its captions spread each segment's words evenly across it,
+which is the defect `verify` is built to catch. The workspace redesign and the
+look pass are both recent and approved, so **harvest mechanics, not chrome**.
+
+**A live check the source read did not make** (GitHub API, 2026-09-20): `main`'s
+last commit is **2026-08-01** and the repo was last pushed 2026-08-10 — fifty
+days still — at 89,999 stars and 378 open issues. Its README declines outside
+contributions "while the architecture is being designed", which answers the
+collaboration question without anyone having to ask it.
+
+**Not confirmed.** Whether any of these interactions is good in the hand:
+nothing was run for this either, and the cheap evaluation is opencut.app in a
+browser rather than a self-host, which wants about eight environment variables,
+Postgres and Redis.
 
 **Re-check triggers for the next sweep**, so it looks for something rather than
 re-reading everything: `/editor` on `main` stops being a stub; a `rust/` or
