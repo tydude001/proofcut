@@ -448,6 +448,9 @@ right.
   optimistic concurrency and `.bak` recovery on a corrupt read (CutPilot,
   `project-store.mjs`) — the same ground as `Project._manifest_stamp`,
   with recovery added.
+  The cheap half of the recovery is built (2026-09-20): a corrupt-manifest
+  refusal names the newest readable snapshot to copy back
+  (`Project._recovery_hint`), and restores nothing unasked.
 - Tool arguments checked against the real function signature (mcpCut,
   `app/mcp/argspec.py`), the goal `_PARAM_DOCS` serves from the other side.
 - Checksum-verified ffmpeg downloaded on first run, cross-platform from day
