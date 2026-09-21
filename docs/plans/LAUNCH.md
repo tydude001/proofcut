@@ -593,12 +593,15 @@ reasoning if anyone wants it, and it is public.
 
 **The Release page has to name the version people will install.** A tag
 ships to PyPI and the registry on its own; the Release is only the page the
-repo's sidebar calls Latest, and `v0.37.0` holds it as of 2026-09-20
-(HISTORY.md § The 0.37.0 Release, and the Latest that was not stale). So this morning needs a Release
-only if a later tag has moved Latest off the post's permalink — write that
-one against the current version, from a file and never through email, and
-diff the published body against it (HISTORY.md § The release nobody had
-cut). The comment's link to `v0.23.0` stays: the uncut runs are attached
+repo's sidebar calls Latest, and the `v0.37.0` Release holds it (HISTORY.md
+§ The 0.37.0 Release, and the Latest that was not stale) while PyPI and the
+registry serve **0.38.0** — a tag with no Release of its own. Nothing on
+that page is false: "nobody has run it by hand" is still true of Apple
+silicon. What it does not say is that `proofcut setup` now installs there,
+which is the Mac audience's first objection, so **the call before the post
+is whether that is worth cutting a Release for** — write one against the
+current version, from a file and never through email, and diff the published
+body against it (HISTORY.md § The release nobody had cut). The comment's link to `v0.23.0` stays: the uncut runs are attached
 there.
 
 **Done when:** posted, the first comment up within a minute, and every
