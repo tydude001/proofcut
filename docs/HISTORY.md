@@ -17863,16 +17863,17 @@ README.md, DEMO.md and MANUAL.md now say a Mac of either kind, and
 README.md § Help wanted still says no person has run Apple silicon, because
 none has.
 
-**The arm64 `setup-demo` job had not run when this was written.** It fires
-on a push to main touching `install.py` and its neighbours, and nothing here
-can push. So every sentence above about what CI measures is a claim about
-the *design* until that job is green — read
-`gh run list --workflow setup-demo.yml` before repeating it, and if
-`demo (macos-latest)` fails, this section is the thing to correct rather
-than the runner. What is measured without it is the artifacts: the dmg's
-Mach-O headers, the two ffmpeg configurations, and the four hashes, all read
-on this machine (`~/proofcut-work/spikes/arm64-pins`, kept until the job
-passes).
+**`demo (macos-latest)` passed the same day** (run 35545868991, commit
+`5493dc6`), so the sentences above are measured rather than designed. The
+runner had **none** of the four pieces, which is what makes it evidence: the
+plan installed all of them, so every arm64 pin was exercised, the
+osxexperts zip's member check included. doctor then read ✓ on ffprobe 9.0
+and whisper from `~/.local/bin`, auto-editor 31.6.0 and melt 7.41.0 from
+setup's own folder; the demo rendered 289 frames against the timeline's 289
+with `agrees: true`, `verify` heard 34 words back, and the uninstall left
+`deps`, `bin`, uv's tools and uv's Pythons each as empty as it found them.
+The measuring spike is archived at
+`~/proofcut-work/archive/spikes/arm64-pins`.
 
 **What was deliberately not done.** The kits were not rewired to call setup
 (INSTALL.md § Step 5's other half): they are the instrument a tester post
