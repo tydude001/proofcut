@@ -514,40 +514,55 @@ anchors that no longer exist. That page now carries a dated note pointing at
 the README's current platform status, and its two anchors resolve; the
 paragraph under the note is left as the day's record. The paste-ready copy, one line per
 paragraph, is `~/proofcut-work/spikes/launch-listings/SHOW-HN-COMMENT.txt`.
-Draft:
+**Rewritten the same day** to lead with the problem — an agent can do a
+narrated video's bookkeeping and cannot tell whether its render is the film
+it meant — and to state what proofcut holds to, the README's new § Why it
+exists and § What it holds to in five sentences. The earlier draft is
+`SHOW-HN-COMMENT.before-rewrite.txt` beside it. Draft:
 
-> proofcut takes your recordings to a finished film, and then proves the
-> film matches the edit. Transcription, editing and rendering run on your own
-> machine — whisper, ffmpeg, auto-editor, MLT and OpenTimelineIO under an MCP
-> server, with no cloud service of its own; the only thing that talks to a
-> model provider is the agent you choose. Any agent that speaks MCP (Claude
-> Code, Codex, your own) can cut by transcript, hang b-roll off phrases, score
-> it, caption, render and master it, and then check the render against the
-> edit.
+> Most of the work in a narrated video is bookkeeping: find the retakes and
+> cut them clean, put the right footage under each line, level the music
+> under the voice, caption it, render it. An agent can do that now. What it
+> can't do on its own is know that the file it rendered is the film it
+> meant. ffmpeg, melt and auto-editor all exit 0 on some failures, so a
+> render can drop a line, keep a retake or carry no captions and still
+> report success.
+>
+> proofcut is the editor I built around that gap. It's an MCP server, a CLI
+> and a browser workspace over whisper, ffmpeg, auto-editor, MLT and
+> OpenTimelineIO, all running on your machine. The edit is addressed by the
+> words in the transcript, so "cut vo 111:114" names the same words however
+> many cuts came before it. After it renders, it transcribes the render and
+> diffs it word for word against the timeline, and counts the render's
+> frames against the timeline's.
 >
 > The repo scores three unattended runs, each handed a goal and no steps.
-> The clip at the top of the README is the first, cutting and captioning a
-> demo start to finish. The two runs it was cut from, uncut:
+> The one I'd judge it on was briefed as a finished film ready to upload: it
+> cut the fluffed takes, laid music 18 LU under the voice, ended on a card,
+> mastered to −16.1 LUFS and checked its own render — 387 frames against the
+> timeline's 387, every word heard back — in 192 seconds and $2.27. That ran
+> on generated demo footage; an earlier run on real footage stopped at a
+> captioned cut. The clip at the top of the README is the first run, and
+> here are the two recordings it was cut from, uncut:
 > https://github.com/tydude001/proofcut/releases/download/v0.23.0/proofcut-v0.23.0-uncut-workspace-run.mp4
 > and
 > https://github.com/tydude001/proofcut/releases/download/v0.23.0/proofcut-v0.23.0-uncut-claude-code-run.mp4
 >
-> The newest is the one I'd judge it on: briefed as a finished film ready to
-> upload, it cut the fluffed takes, laid music 18 LU under the voice, ended on
-> a card, mastered to −16.1 LUFS and checked its own render — 387 frames
-> against the timeline's 387, every word heard back — in 192 seconds and
-> $2.27. The music, the level and the card were each measured in the delivered
-> file, not read off the project. That one ran on generated demo footage; the
-> run before it used real footage and stopped at a captioned cut. Two things
-> people will ask:
+> What it holds to: a check reads the rendered file, never the project. It
+> makes no footage and writes no script; it cuts what you recorded. It has
+> no account and no cloud service of its own; the only thing that talks to a
+> model provider is the agent you choose. Every tool is also a command that
+> prints JSON, with --plan before a change and undo after, so nothing an
+> agent does is out of your reach. And the design record is public, failures
+> included.
 >
-> *Licence.* PolyForm Shield — source-available; you can read, run, modify
-> and redistribute it, and the one thing reserved is shipping a competing
+> Licence: PolyForm Shield, which is source-available. You can read, run,
+> modify and redistribute it; the one thing reserved is shipping a competing
 > product. I chose it before publishing because I'd like this to earn a
-> living and a shipped MIT version stays MIT forever. Not open source by the
-> OSI definition, and I'd rather say so here than have it found.
+> living, and a shipped MIT version stays MIT forever. It's not open source
+> by the OSI definition, and I'd rather say so here than have it found.
 >
-> *Platforms.* Developed on Linux. On macOS and Windows the suite passes in
+> Platforms: developed on Linux. On macOS and Windows the suite passes in
 > CI, and GitHub's runners take the demo to a checked render, Apple silicon
 > included. By hand it has run on my Windows PC and a friend's Intel Mac;
 > nobody has run it on an Apple silicon Mac yet, so that one is the runner's
@@ -574,8 +589,8 @@ the PolyForm text and move on. HISTORY.md § The licence, chosen has the full
 reasoning if anyone wants it, and it is public.
 
 **What else will come up, with the answer ready:**
-- *"Why not just use Descript / Opus Clip / CapCut?"* — README.md § Why
-  proofcut's second bullet: those are desktop apps around a metered cloud;
+- *"Why not just use Descript / Opus Clip / CapCut?"* — README.md § What it
+  holds to, *Your machine, no meter*: those are desktop apps around a metered cloud;
   this is the same primitives, local, with an agent surface. Don't name a competitor the
   README does not.
 - *"How is this different from kinocut / FableCut?"* — the question the
