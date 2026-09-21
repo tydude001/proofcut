@@ -506,7 +506,13 @@ uncut run, and pre-empts the two questions that will otherwise be the
 thread. **Redrafted 2026-09-15**, because the draft it replaces led with the
 demo cut — it predated the third trial, which is the strongest measured thing
 here and the one a reader should be handed first (TRIAL.md § The third
-trial — a whole film). Draft:
+trial — a whole film). **Made HN-ready 2026-09-21**: HN renders no
+Markdown, so the links are bare URLs and nothing is in backticks, and the
+uncut runs are linked as the two files rather than the v0.23.0 Release page,
+whose body still says no person has run it on a Mac or Windows and links
+README anchors that no longer exist. The paste-ready copy, one line per
+paragraph, is `~/proofcut-work/spikes/launch-listings/SHOW-HN-COMMENT.txt`.
+Draft:
 
 > proofcut takes your recordings to a finished film, and then proves the
 > film matches the edit. Transcription, editing and rendering run on your own
@@ -518,8 +524,12 @@ trial — a whole film). Draft:
 > edit.
 >
 > The repo scores three unattended runs, each handed a goal and no steps.
-> Here is the first, cutting and captioning a demo start to finish:
-> [clip](https://github.com/user-attachments/assets/4153d180-3d7c-4c70-af5f-54d63d0a8bd5) / [the uncut runs](https://github.com/tydude001/proofcut/releases/tag/v0.23.0).
+> The clip at the top of the README is the first, cutting and captioning a
+> demo start to finish. The two runs it was cut from, uncut:
+> https://github.com/tydude001/proofcut/releases/download/v0.23.0/proofcut-v0.23.0-uncut-workspace-run.mp4
+> and
+> https://github.com/tydude001/proofcut/releases/download/v0.23.0/proofcut-v0.23.0-uncut-claude-code-run.mp4
+>
 > The newest is the one I'd judge it on: briefed as a finished film ready to
 > upload, it cut the fluffed takes, laid music 18 LU under the voice, ended on
 > a card, mastered to −16.1 LUFS and checked its own render — 387 frames
@@ -536,12 +546,11 @@ trial — a whole film). Draft:
 > OSI definition, and I'd rather say so here than have it found.
 >
 > *Platforms.* Developed on Linux. On macOS and Windows the suite passes in
-> CI and GitHub's runners take the demo to a checked render — on Apple
-> silicon too, both from a clone and through `proofcut setup`; one Windows PC
-> has as well, mine, and so has a friend's Intel Mac. No person has run an
-> Apple silicon Mac, so that one is the runner's word and not a person's.
-> This tells you
-> what's missing and how to fix it, without cloning anything:
+> CI, and GitHub's runners take the demo to a checked render, Apple silicon
+> included. By hand it has run on my Windows PC and a friend's Intel Mac;
+> nobody has run it on an Apple silicon Mac yet, so that one is the runner's
+> word, not a person's. This tells you what's missing and how to fix it,
+> without cloning anything:
 >
 >     uvx proofcut doctor
 >
@@ -600,8 +609,8 @@ matches what PyPI serves (HISTORY.md § The 0.38.0 Release, and the date that
 outlived its reason). So this morning needs a Release only if a later tag has
 moved Latest off it — write that one against the current version, from a file
 and never through email, and diff the published body against it (HISTORY.md
-§ The release nobody had cut). The comment's link to `v0.23.0` stays: the uncut runs are attached
-there.
+§ The release nobody had cut). The comment links the uncut runs' two files on `v0.23.0` directly, never
+that Release's page, whose platform paragraph is a month stale.
 
 **Done when:** posted, the first comment up within a minute, and every
 question in the thread answered within the day. Whatever the thread finds
