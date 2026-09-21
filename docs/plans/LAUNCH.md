@@ -474,6 +474,14 @@ queue they produced closed.
 
 ## Step 5 — Show HN
 
+**HN refused the first attempt, 2026-09-21**: submitting a Show HN
+redirected to `news.ycombinator.com/showlim`, which says Show HNs are
+temporarily restricted to users who already know the site, and to come back
+after becoming a contributor. It is a gate on the account, not the post, and
+no threshold is published. Submitting the same link without "Show HN" to get
+past it is not a route: it is the thing the page is asking people not to do,
+and it spends the one shot. So this step waits on an HN history of Tyler's own.
+
 One shot, so it goes after steps 1 and 4 — both done — on a weekday morning
 US Eastern, with Tyler at a keyboard for the following six hours. **Step 2
 gates nothing now**: it closed unmet, and its 2026-09-24 was seven days from
