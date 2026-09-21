@@ -17998,3 +17998,14 @@ Not done: captions still draw only the timeline's words, so a narrator
 placed as a sound gets no subtitles. The bed's lyrics are not expected
 either. `tests/test_verify_placed_audio.py` has six tests, and all six fail
 against the code before this change.
+
+**Same day, `repeats` no longer counts a line the edit says twice.**
+`finish_check` now splits its heard repeats with `verify.split_expected_repeats`.
+A repeat counts as expected when the expected words hold both of its sides,
+in order, each at 0.75 or better. It is reported under `repeats_expected`
+and is not a fault. On the run-three copy this cleared 3 of the 4 faults.
+The fourth is not the edit's: the windowed pass heard whisper's "thank you
+for watching" three times over quiet stretches, and one of those runs
+into "in July". That is a hallucination the check is right not to excuse.
+It does not count occurrences, so a third take of a line the edit already
+says twice would be excused. `compare`'s `repeated` still sees that.

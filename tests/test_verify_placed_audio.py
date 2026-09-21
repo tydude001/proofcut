@@ -152,3 +152,24 @@ def test_finish_check_no_longer_refuses_a_voice_sound_film(
     assert result["similarity"] == pytest.approx(1.0)
     assert result["missing"] == []
     assert result["placed_audio"][0]["words"] == 4
+
+
+def test_finish_check_does_not_call_a_line_the_edit_says_twice_a_repeat(
+    project: Project, tmp_path: Path
+) -> None:
+    """Run three's shape: the take's false start, then the film saying the line."""
+    take = vfy.tokens(["in july of 1969 half a billion people watched three men leave for the moon"])
+    line = vfy.tokens(["in july of 1969 half a billion people watched three men leave the earth"])
+    tx.save(_words("vo", [(t, 0.2 + 0.3 * i, 0.4 + 0.3 * i) for i, t in enumerate(take)]), project.transcript_path("vo"))
+    tx.save(_words("film", [(t, 0.1 + 0.25 * i, 0.3 + 0.25 * i) for i, t in enumerate(line)]), project.transcript_path("film"))
+    ops.sound_add(project.root, "vo", "rec", event="early", src_out=5.0, ducks=True)
+    ops.inset_add(project.root, "rec", "film", RECT, event="film", seconds=3.9)
+    final = tmp_path / "final.wav"
+    _ffmpeg("-f", "lavfi", "-i", "sine=frequency=300:duration=10:sample_rate=48000", str(final))
+
+    result = ops.finish_check(project.root, final, transcript_path=_heard(tmp_path, take + line))
+
+    assert result["expected_words"] == len(take) + len(line)
+    assert result["repeats"] == []
+    assert result["repeats_expected"], "the planned repeat is still reported"
+    assert result["missing"] == []

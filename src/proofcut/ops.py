@@ -19237,7 +19237,9 @@ def finish_check(
     )
 
     # -- 7. self-repeats --------------------------------------------------------
-    repeats = vfy.find_adjacent_repeats(heard)
+    # A line the edit itself says twice is reported and not a fault
+    # (`vfy.split_expected_repeats`, HISTORY.md § B7, run three).
+    repeats, repeats_expected = vfy.split_expected_repeats(vfy.find_adjacent_repeats(heard), expected)
 
     # -- 8. aggregate & log -----------------------------------------------------
     faults = (
@@ -19310,6 +19312,7 @@ def finish_check(
         "missing": missing,
         "boundary_misses": boundary_misses,
         "repeats": repeats,
+        "repeats_expected": repeats_expected,
         "faults": faults,
         "ok": ok,
     }

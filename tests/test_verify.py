@@ -227,3 +227,31 @@ def test_repeats_far_apart_are_not_adjacent() -> None:
     )
 
     assert verify.find_adjacent_repeats(words) == []
+
+
+# -- repeats the edit itself contains (HISTORY.md § B7, run three) ------------
+
+TAKE = verify.tokens(["in july of 1969 half a billion people watched three men leave for the moon um no let me take that again"])
+FILM_LINE = verify.tokens(["in july of 1969 half a billion people watched three men leave the earth four days later"])
+
+
+def test_a_repeat_the_expected_words_also_say_twice_is_expected() -> None:
+    """The narrator's false start is said again by the film: planned, not a retake."""
+    heard = TAKE + FILM_LINE
+    repeats = verify.find_adjacent_repeats(heard)
+    assert repeats, "the heard words do repeat the line"
+
+    unexpected, expected = verify.split_expected_repeats(repeats, TAKE + FILM_LINE)
+
+    assert unexpected == []
+    assert expected == repeats
+
+
+def test_a_repeat_the_expected_words_say_once_is_still_a_fault() -> None:
+    heard = TAKE + FILM_LINE
+    repeats = verify.find_adjacent_repeats(heard)
+
+    unexpected, expected = verify.split_expected_repeats(repeats, FILM_LINE)
+
+    assert unexpected == repeats
+    assert expected == []

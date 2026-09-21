@@ -172,6 +172,48 @@ def find_adjacent_repeats(words: list[str]) -> list[dict[str, Any]]:
     ]
 
 
+#: How closely each side of a heard repeat must match the expected words for
+#: the repeat to count as the edit's own. Stricter than `SIMILAR`: at 0.5 two
+#: shared words of four ("of the") would excuse a real retake.
+EXPECTED_REPEAT_SIMILAR = 0.75
+
+
+def _says_twice(first: list[str], second: list[str], expected: list[str]) -> bool:
+    """Whether `expected` holds `first` and, after it, `second` — either
+    found first, since `_closest_run` returns only the best match."""
+    at, ratio = _closest_run(first, expected)
+    if at >= 0 and ratio >= EXPECTED_REPEAT_SIMILAR:
+        at2, ratio2 = _closest_run(second, expected[at + len(first) :])
+        if at2 >= 0 and ratio2 >= EXPECTED_REPEAT_SIMILAR:
+            return True
+    at, ratio = _closest_run(second, expected)
+    if at >= 0 and ratio >= EXPECTED_REPEAT_SIMILAR:
+        at2, ratio2 = _closest_run(first, expected[:at])
+        if at2 >= 0 and ratio2 >= EXPECTED_REPEAT_SIMILAR:
+            return True
+    return False
+
+
+def split_expected_repeats(
+    repeats: list[dict[str, Any]], expected: list[str]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """`find_adjacent_repeats` hits on a render, split into `(unexpected,
+    expected)`: a line the edit itself says twice — a narrator's false start
+    the film then says properly (HISTORY.md § B7, run three) — is the edit's,
+    not a surviving retake. Reported either way; only the first is a fault.
+
+    Not a count: a render that says a line three times where the edit says
+    it twice can have its extra take excused here. `compare`'s `repeated`,
+    which diffs against the expected words, is the check that sees that.
+    """
+    unexpected: list[dict[str, Any]] = []
+    planned: list[dict[str, Any]] = []
+    for repeat in repeats:
+        first, second = repeat["first_text"].split(), repeat["second_text"].split()
+        (planned if _says_twice(first, second, expected) else unexpected).append(repeat)
+    return unexpected, planned
+
+
 def compare(expected: list[str], heard: list[str]) -> dict[str, Any]:
     """Diff the timeline's expected words against the render's heard words.
 
