@@ -509,8 +509,10 @@ here and the one a reader should be handed first (TRIAL.md § The third
 trial — a whole film). **Made HN-ready 2026-09-21**: HN renders no
 Markdown, so the links are bare URLs and nothing is in backticks, and the
 uncut runs are linked as the two files rather than the v0.23.0 Release page,
-whose body still says no person has run it on a Mac or Windows and links
-README anchors that no longer exist. The paste-ready copy, one line per
+whose body said no person had run it on a Mac or Windows and linked README
+anchors that no longer exist. That page now carries a dated note pointing at
+the README's current platform status, and its two anchors resolve; the
+paragraph under the note is left as the day's record. The paste-ready copy, one line per
 paragraph, is `~/proofcut-work/spikes/launch-listings/SHOW-HN-COMMENT.txt`.
 Draft:
 
@@ -610,7 +612,7 @@ outlived its reason). So this morning needs a Release only if a later tag has
 moved Latest off it — write that one against the current version, from a file
 and never through email, and diff the published body against it (HISTORY.md
 § The release nobody had cut). The comment links the uncut runs' two files on `v0.23.0` directly, never
-that Release's page, whose platform paragraph is a month stale.
+that Release's page, whose platform paragraph describes release day.
 
 **Done when:** posted, the first comment up within a minute, and every
 question in the thread answered within the day. Whatever the thread finds
