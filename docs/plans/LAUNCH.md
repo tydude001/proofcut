@@ -482,7 +482,7 @@ deadline outliving its reason. The date is the wiki row `lucid-publish`.
 
 **Title** (draft; HN strips "Show HN:" formatting quirks, keeps it under 80
 characters, no exclamation):
-> Show HN: proofcut – an AI video editor that transcribes its render to check it
+> Show HN: proofcut – an agent edits video by transcript, then checks the render
 
 **Retitled 2026-09-15**, off "…that's an MCP server": MCP is how it is
 reached rather than what it does, and it narrows the title to the readers who
@@ -499,6 +499,15 @@ render and diff its words against the cut**, and the title now names that
 mechanism rather than the general claim. "Local-first" came out to fit 80
 characters; the first comment's opening sentence carries it.
 PRIOR-ART.md § The re-check before Show HN.
+
+**Retitled a third time 2026-09-21**, before posting, off "…an AI video
+editor that transcribes its render to check it": two pronouns made it hard
+to parse, and it named the check without the edit, when editing by
+transcript is the part an HN reader already knows. "An agent edits" says
+what happens where "AI video editor" did not. It gives up naming the exact
+mechanism in the title, which the 2026-09-16 retitle bought, and the first
+comment's second paragraph carries it instead: a title read at a glance
+over one exact to the word. 78 characters.
 
 **The first comment is Tyler's, posted immediately, and it does three
 things**: says what it is in two sentences, links the 47-second clip and the
