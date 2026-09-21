@@ -25,15 +25,64 @@ starting a second run that would hide the first. Until 2026-09-04 neither
 wrote anything at all, and `finish_report` answered `captions.burned` with
 `"unknown"` for two of proofcut's three clients on films whose captions were
 demonstrably burned in (TRIAL.md § 2).
+
+**A line's `sources` maps each stage that read the project to the hashes
+of `project.otio` and the manifest as that stage found them** (`stamp`).
+Only `export` and `burn` read the project; `check_frames` and `verify` read
+the render. It sits beside `stages` rather than inside each stage's dict, so
+a stage reads exactly as it did before stamps existed, and `amend` carries it
+forward the way it carries `stages`. It is kinocut's receipt idea at its cheapest (PRIOR-ART.md § kinocut),
+and it answers the question a render lying on disk otherwise cannot: which
+edit is this? A dogfood project has held the wrong cut while every check
+passed four times (CLAUDE.md), and each time the render was settled by length
+and eye. `current` compares a run's stamps against the project now. Hashes of
+the two files and never an mtime: a clock is the wrong witness for "did the
+bytes change" (HISTORY.md § The stamp that was a clock). A line written
+before this has no `sources`, and `current` answers `None` for it, never
+`True`.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from proofcut.project import Project
+
+
+def stamp(project: Project) -> dict[str, str | None]:
+    """The project's edit as a stage is about to read it: a sha256 of each file's bytes.
+
+    `timeline` is `None` for a project with no `project.otio`, which no render
+    can come from, but a stamp is a record and not a check, so it says so
+    rather than raising.
+    """
+
+    def digest(path: Path) -> str | None:
+        return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+
+    return {
+        "timeline": digest(project.timeline_path),
+        "manifest": digest(project.manifest_path),
+    }
+
+
+def current(project: Project, run: dict[str, Any]) -> bool | None:
+    """Whether every stage of `run` that read the project read the project as it is now.
+
+    `None` when the line has no `sources` — one older than the stamp, or a
+    run that failed before any stage finished — because "not recorded" is not
+    "unchanged". `False` means the edit has moved since the render, so the
+    render is not the film the project describes any more.
+    """
+    sources = [s for s in (run.get("sources") or {}).values() if s]
+    if not sources:
+        return None
+    now = stamp(project)
+    return all(source == now for source in sources)
 
 
 def append(
@@ -43,6 +92,7 @@ def append(
     preset: str | None,
     expected_duration: float,
     stages: dict[str, dict[str, Any]],
+    sources: dict[str, dict[str, str | None]] | None = None,
 ) -> None:
     """Append one run to the log. Stamps its own timestamp — callers never pass one.
 
@@ -59,6 +109,10 @@ def append(
         "expected_duration": expected_duration,
         "stages": stages,
     }
+    if sources:
+        # Absent rather than `{}` when no stage stamped anything, so a run
+        # that failed before its export finished reads like a pre-stamp line.
+        record["sources"] = sources
     with project.renders_log_path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, default=str) + "\n")
 
@@ -71,6 +125,7 @@ def amend(
     expected_duration: float,
     stages: dict[str, dict[str, Any]],
     continues: str | None = None,
+    sources: dict[str, dict[str, str | None]] | None = None,
 ) -> None:
     """Append a run that carries the last one's stages forward, when it is the same render.
 
@@ -90,10 +145,12 @@ def amend(
     one.
     """
     carried: dict[str, dict[str, Any]] = {}
+    carried_sources: dict[str, dict[str, str | None]] = {}
     if continues is not None:
         previous = last(project)
         if previous is not None and previous.get("output") == continues:
             carried = dict(previous.get("stages") or {})
+            carried_sources = dict(previous.get("sources") or {})
             # The preset is the export's property, and a later stage of the
             # same render does not know it — `add_captions` has no preset of
             # its own to pass. Carry the earlier one rather than writing null
@@ -107,6 +164,7 @@ def amend(
         preset=preset,
         expected_duration=expected_duration,
         stages={**carried, **stages},
+        sources={**carried_sources, **(sources or {})},
     )
 
 

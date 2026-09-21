@@ -288,7 +288,11 @@ engine over stateless ffmpeg instead — i.e. reinvented a weaker timeline model
 as their model — § The re-check before Show HN.)
 
 Worth stealing: the **Video Receipt** idea — per-operation JSON provenance with
-input/output hashes, ffmpeg version, and a resume cursor.
+input/output hashes, ffmpeg version, and a resume cursor. **Its input half was
+built 2026-09-21**: each render-log line stamps the edit it read, and
+`finish_report` says whether the last render is still the project's film
+(HISTORY.md § A render knows which edit it was made from). The output hash,
+tool versions and resume cursor are not built.
 
 ## The OTIO + MCP niche is empty — but the broader thesis is not
 

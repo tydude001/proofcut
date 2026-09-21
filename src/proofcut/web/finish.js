@@ -227,6 +227,14 @@ function renderLastOutput() {
   const name = el("span", "finish-output-name", last.name);
   name.title = last.name;
   line.append(name);
+  // `current` is false only when the render log's stamps say the edit has
+  // moved since this file was made; null (a render from before stamps) says
+  // nothing, since "not recorded" is not "unchanged".
+  if (last.current === false) {
+    const stale = el("span", "warn", "older than the edit");
+    stale.title = "The timeline or project settings changed after this render. Export again to watch the current cut.";
+    line.append(stale);
+  }
   line.append(el("span", "spacer"));
   const watch = el("button", null, "Watch");
   watch.type = "button";

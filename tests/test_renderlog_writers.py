@@ -284,3 +284,77 @@ def test_amend_replaces_a_repeated_stage_rather_than_merging_it(project: Project
     )
 
     assert renderlog.last(project)["stages"]["burn"] == {"outcome": "done", "detail": None}
+
+
+# -- sources: which edit a render was made from --------------------------------
+
+
+def test_an_export_stamps_the_edit_it_read(project: Project, stub_render: None) -> None:
+    """The stamp is the two files' bytes as the export found them, so a render
+    lying on disk can be matched to the edit that made it."""
+    before = renderlog.stamp(project)
+    out = project.render_dir / "cut.wav"
+    reply = ops.export(project.root, out, export_format=None)
+
+    assert reply["source"] == before
+    assert before["timeline"] is not None and before["manifest"] is not None
+    assert renderlog.last(project)["sources"] == {"export": before}
+
+
+def test_a_render_goes_stale_when_the_edit_moves(project: Project, stub_render: None) -> None:
+    """`current` is the whole point: a cut after the render means the file on
+    disk is no longer the film the project describes."""
+    ops.export(project.root, project.render_dir / "cut.wav", export_format=None)
+    assert ops.finish_report(project.root)["last_render"]["current"] is True
+
+    edit = tl.Edit([tl.Segment("vo", 0.0, 1.0)])
+    clips_by_id = {c["clip_id"]: c for c in project.read_manifest()["clips"]}
+    tl.write(tl.to_otio(edit, clips_by_id, rate=1000.0, name="proj"), project.timeline_path)
+
+    assert ops.finish_report(project.root)["last_render"]["current"] is False
+
+
+def test_a_manifest_change_counts_too(project: Project, stub_render: None) -> None:
+    """Most authoring state is manifest state (the cue table, the caption
+    style, the bed), so a render is stale when only the manifest moved."""
+    ops.export(project.root, project.render_dir / "cut.wav", export_format=None)
+    manifest = project.read_manifest()
+    manifest["caption_style"] = {"preset": "clean"}
+    Project.open(project.root).write_manifest(manifest)
+
+    assert ops.finish_report(project.root)["last_render"]["current"] is False
+
+
+def test_a_burn_stamps_itself_and_keeps_the_export_s_stamp(
+    project: Project, stub_render: None, stub_burn: None
+) -> None:
+    """The burn reads the edit's words, so it stamps what it read; the export's
+    stamp rides forward beside it. An edit between the two calls leaves them
+    different, and the render is then two edits at once, so it is not current."""
+    out = project.render_dir / "cut.wav"
+    exported = ops.export(project.root, out, export_format=None)
+    result = ops.add_captions(project.root, project.render_dir / "cut.ass", burn=out)
+
+    run = renderlog.last(project)
+    assert run["sources"] == {"export": exported["source"], "burn": result["source"]}
+    assert renderlog.current(project, run) is True
+
+    renderlog.amend(
+        project, output="/r/x.mp4", preset=None, expected_duration=1.0,
+        stages={"burn": {"outcome": "done", "detail": None}},
+        sources={"burn": {"timeline": "0" * 64, "manifest": "0" * 64}},
+        continues=run["output"],
+    )
+    assert renderlog.current(project, renderlog.last(project)) is False
+
+
+def test_a_line_from_before_stamps_is_unknown_never_current(project: Project) -> None:
+    """"Not recorded" is not "unchanged": an old log line must not read as a
+    render of the edit the project holds today."""
+    renderlog.append(
+        project, output="/r/a.mp4", preset=None, expected_duration=1.0,
+        stages={"export": {"outcome": "done", "detail": None}},
+    )
+    run = renderlog.last(project)
+    assert "sources" not in run
+    assert renderlog.current(project, run) is None

@@ -29,7 +29,7 @@ from urllib.parse import urlsplit
 import pytest
 from stubs import write_stub
 
-from proofcut import media, ops, progress, webui
+from proofcut import media, ops, progress, renderlog, webui
 from proofcut import timeline as tl
 from proofcut.faces import FaceError
 from proofcut.project import Project, ProjectError
@@ -2504,6 +2504,39 @@ def test_render_stop_kills_the_encode_rather_than_waiting_for_it(
         assert not _render_output_path(project, job_id).exists()
     finally:
         conn.close()
+
+
+def test_the_render_pipeline_logs_the_edit_its_export_read(
+    server: str, project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`RenderJob` logs the whole run itself (`log=False` on the op), so the
+    export's `source` stamp reaches the log only if the pipeline carries it —
+    and without it the window's own renders could never say they were stale."""
+    stamped: dict[str, Any] = {}
+
+    def _stub(path: str, output: str, **kwargs: Any) -> dict[str, Any]:
+        _make_wav(Path(output), duration=0.3)
+        stamped.update(renderlog.stamp(Project.open(path)))
+        return {"output": output, "format": "media", "source": dict(stamped)}
+
+    monkeypatch.setattr(ops, "export", _stub)
+    monkeypatch.setattr(ops, "verify", lambda *a, **k: {"agrees": True, "stub": True})
+    host, port = _host_and_port(server)
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    try:
+        conn.request("GET", "/api/events")
+        events = _sse_events(conn.getresponse())
+        next(events)  # the initial project-changed
+
+        status, payload = _post(f"{server}/api/render", {"burn": False})
+        assert status == 202
+        assert _next_render_event(events, payload["job_id"])["status"] == "done"
+    finally:
+        conn.close()
+
+    run = renderlog.last(Project.open(project))
+    assert run["sources"] == {"export": stamped}
+    assert ops.finish_report(str(project))["last_render"]["current"] is True
 
 
 def test_render_completion_event_carries_dimensions_and_check_results(

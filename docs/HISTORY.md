@@ -17914,3 +17914,47 @@ plan. The post moves to 2026-09-22, chosen for a clear day to cut the Release
 and reread the first comment rather than for anything measured about which
 weekday HN favours. LAUNCH.md § Step 5 now states the requirements without
 the dead gate, and the date lives only in the wiki row.
+
+## A render knows which edit it was made from — 2026-09-21
+
+kinocut's "Video Receipt" (PRIOR-ART.md § kinocut), at its cheapest. Of what
+the survey still held open, this was ranked first on a failure proofcut has
+already had four times: a project holding the wrong cut while `verify`,
+`check_frames` and the render all agreed with it (CLAUDE.md, the
+`final-cut`/`brief-check`/`kf-probe` entries). Each time the render was
+settled by length and eye, because nothing recorded which edit a render had
+read.
+
+**`renderlog.stamp` hashes `project.otio` and the manifest**, and `export`
+and `add_captions` each take one before they read the edit. It rides the op's
+reply as `source` and the log line as `sources` (stage name → stamp). The
+stamps sit **beside** `stages` and never inside a stage's dict, so a stage
+reads byte for byte as it did before, and `amend` carries them forward the
+way it carries `stages`. Keeping them out of the stage dicts also left every
+existing exact-equality test true unedited. Only `export` and `burn` stamp,
+since `check_frames` and `verify` read the render and not the project. The web
+UI's pipeline logs with `log=False` on the op, so it takes the stamp off each
+op's reply; an HTTP test holds that, and it fails with the `webui.py` half
+taken back out. Suite: 2607 passed.
+
+**`finish_report`'s `last_render.current`** compares the run's stamps against
+the project now: `False` once the edit has moved, `None` for a line from
+before this (never `True`, since "not recorded" is not "unchanged"). A burn
+stamped against a different edit from its export makes the run not current,
+because that file is two edits at once. It is reported and never a flag: an
+edit after a render is what editing is, and a flag every cut raises is one
+nobody reads. The Finish pane puts "older than the edit" on the last-render
+line itself, where the Watch button would otherwise play the old cut as if it
+were this one.
+
+Hashes and never mtimes, per § The stamp that was a clock, and the real run
+showed why that matters beyond correctness. On a fresh demo project
+(`~/proofcut-work/spikes/render-receipt`), a real `export --render` logged
+both hashes and `current: true`; `cut vo 0:1` made it `false`, and `undo`
+made it `true` again, because a restore puts the same bytes back. In a real
+browser the chip drew, was hit-testable, cleared on the window's own Undo at
+both 0ms and 120ms dwell, and came back when a cut arrived from the CLI, with
+no console errors. Not done: nothing yet looks a render up by the file's own
+hash (a render found on disk still has to be matched through its project's
+log by path), and no tool versions are recorded. Both wait for a case that
+needs them.

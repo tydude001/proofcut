@@ -1355,9 +1355,20 @@ class RenderJob:
         # the same number `check_frames`/`verify` measure a render against.
         expected_duration = ops.status(str(self.project_root))["expected_duration"]
         stages_log: dict[str, dict[str, Any]] = {}
+        sources_log: dict[str, dict[str, Any]] = {}
 
-        def publish_stage(stage: str, outcome: str, detail: dict[str, Any] | None = None) -> None:
+        def publish_stage(
+            stage: str,
+            outcome: str,
+            detail: dict[str, Any] | None = None,
+            *,
+            source: dict[str, Any] | None = None,
+        ) -> None:
+            # `source` is the op's own `renderlog.stamp`, for the stages that
+            # read the project; it goes to the log's `sources`, not the bus.
             stages_log[stage] = {"outcome": outcome, "detail": detail}
+            if source is not None:
+                sources_log[stage] = source
             self.bus.publish(
                 "render",
                 {
@@ -1376,6 +1387,7 @@ class RenderJob:
                 preset=preset,
                 expected_duration=expected_duration,
                 stages=stages_log,
+                sources=sources_log,
             )
 
         # -- export ------------------------------------------------------
@@ -1398,7 +1410,7 @@ class RenderJob:
             with refusing_path_too_long(), progress.reporting(
                 _job_progress(self.bus, "render", job_id)
             ):
-                ops.export(
+                exported = ops.export(
                     str(self.project_root), str(output), export_format=None, log=False,
                     **export_kwargs,
                 )
@@ -1423,7 +1435,10 @@ class RenderJob:
             self.bus.publish("render", {"job_id": job_id, "status": "cancelled"})
             return
 
-        publish_stage("export", "done")
+        publish_stage(
+            "export", "done",
+            source=exported.get("source") if isinstance(exported, dict) else None,
+        )
 
         # -- burn ----------------------------------------------------------
         # `burn is None` means "apply the project's own default": on when a
@@ -1462,7 +1477,7 @@ class RenderJob:
                 append_run(final_output)
                 self.bus.publish("render", {"job_id": job_id, "status": "cancelled"})
                 return
-            publish_stage("burn", "done")
+            publish_stage("burn", "done", source=result.get("source"))
         else:
             publish_stage("burn", "skipped", {"reason": "burn not requested"})
 

@@ -4021,7 +4021,9 @@ def finish_report(
     returns a report (empty `by_kind`, zero `count`), the `framing` shape.
 
     `last_render` is the render log's own last `output`, its basename, its
-    timestamp, and whether that file is still on disk — `None` when nothing
+    timestamp, whether that file is still on disk, and `current` — whether
+    the edit that render read is still the project's (`renderlog.current`:
+    `None` for a render logged before stamps existed) — `None` when nothing
     has ever rendered here. It is what `GET /api/output` streams and what the
     Finish pane offers to play: the window rebuilds the picture live and
     never reads `renders/`, so before this the Export button wrote a file the
@@ -4115,6 +4117,10 @@ def finish_report(
             "name": out_path.name,
             "exists": out_path.is_file(),
             "timestamp": run.get("timestamp"),
+            # Whether the edit has moved since this render read it. Reported
+            # and never a flag: an edit after a render is what editing is, and
+            # a flag raised by every cut would be one nobody reads.
+            "current": renderlog.current(project, run),
         }
 
     view = timeline_view(path)
@@ -16764,6 +16770,7 @@ def _log_render(
     preset: str | None,
     stages: dict[str, dict[str, Any]],
     continues: str | None = None,
+    sources: dict[str, dict[str, str | None]] | None = None,
 ) -> None:
     """Record a CLI/MCP render in the same log the web UI's pipeline writes.
 
@@ -16785,6 +16792,7 @@ def _log_render(
         expected_duration=status(str(project.root))["expected_duration"],
         stages=stages,
         continues=continues,
+        sources=sources,
     )
 
 
@@ -16807,6 +16815,11 @@ def export(
     after and refused rather than kept when it misses — and the reply's
     `loudness` says what it measured before and after. Render only; an NLE
     project has no audio of its own to master. docs/plans/NATIVE.md § A3.
+
+    **The reply's `source` is `renderlog.stamp`** — hashes of `project.otio`
+    and the manifest, taken before the edit was read — and the render log
+    keeps it under `sources["export"]`, so `finish_report` can say whether the
+    last render is still the film the project describes.
 
     `export_format="kdenlive"` writes an MLT project — the only handoff that
     actually opens on this box. `export_format=None` renders media instead.
@@ -16891,6 +16904,9 @@ def export(
     bundle = _resolve_preset(preset, resolution)
 
     project = Project.open(path)
+    # Taken before anything reads the edit, so it names the state this render
+    # was built from even if the project moves while melt runs.
+    source = renderlog.stamp(project)
     _check_preset_canvas(project, preset)
     edit = _load_edit(project)
     if not edit.segments:
@@ -16922,12 +16938,14 @@ def export(
             reply["loudness"] = finish.master_loudness(
                 reply["output"], integrated=loudness, true_peak=true_peak
             )
+        reply["source"] = source
         if export_format is None and log:
             _log_render(
                 project,
                 output=reply["output"],
                 preset=preset,
                 stages={"export": {"outcome": "done", "detail": None}},
+                sources={"export": source},
             )
         return reply
 
@@ -16979,6 +16997,7 @@ def export(
         "segments": len(edit.segments),
         "timeline_duration": edit.duration,
         "preset": preset,
+        "source": source,
         **extra,
     }
     if loudness is not None:
@@ -16989,6 +17008,7 @@ def export(
             output=reply["output"],
             preset=preset,
             stages={"export": {"outcome": "done", "detail": None}},
+            sources={"export": source},
         )
     return reply
 
@@ -17797,7 +17817,9 @@ def add_captions(
     say `captions.burned: "yes"` for a film an agent rendered and captioned
     through the CLI or the MCP server. `log=False` is the web UI's, which logs
     its pipeline whole. Writing the `.ass` alone logs nothing: no render
-    happened, so there is nothing a burn could be true of.
+    happened, so there is nothing a burn could be true of. The reply's
+    `source` is the edit the captions were read from (`renderlog.stamp`),
+    kept in the log's `sources` beside `export`'s own.
 
     The look comes from the project (`caption_style`), not from this call.
     `preset` and the four grouping numbers still override it for a one-off
@@ -17829,6 +17851,9 @@ def add_captions(
             "`.ass` path either way."
         )
     project = Project.open(path)
+    # The captions are the edit's words, so a burn reads the project as surely
+    # as `export` does; its stamp is what the render log checks it against.
+    edit_stamp = renderlog.stamp(project)
     edit = _load_edit(project)
 
     stored = _stored_caption_style(project)
@@ -17888,6 +17913,7 @@ def add_captions(
         "head_seconds": head_seconds,
         # Words a retime plays off speed and mutes — not burned, and counted.
         "retimed_words_dropped": retimed_words_dropped,
+        "source": edit_stamp,
     }
 
     if burn is not None:
@@ -17907,6 +17933,7 @@ def add_captions(
                 output=result["burned"],
                 preset=None,
                 stages={"burn": {"outcome": "done", "detail": None}},
+                sources={"burn": edit_stamp},
                 continues=str(source),
             )
 
