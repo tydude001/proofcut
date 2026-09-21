@@ -49,6 +49,8 @@ dev = [
 # an Intel Mac's `uv sync` compiled it, which needs Rust and OpenSSL: a tester's
 # Mac has neither (issue #5), and GitHub's Intel runner has both. 48.0.1 is the
 # last universal2 wheel. HISTORY.md § An Intel Mac route, without Homebrew.
+# It keeps Dependabot's GHSA-g6cj-pr64-35w5 open (fixed only in 50.0.0): that is
+# PKCS#7 decryption, and pyjwt only signs, so the alert is dismissed, not fixed.
 constraint-dependencies = [
     "cryptography<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
 ]
