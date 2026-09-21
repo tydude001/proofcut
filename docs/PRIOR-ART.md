@@ -941,6 +941,26 @@ establish what the interaction *should* feel like.
   become cut ranges; export via multi-threaded ffmpeg.wasm.
   **Notable:** they shipped drag-to-adjust word edges — direct field evidence
   that ASR word alignment alone is not accurate enough for clean cuts.
+  **Measured against proofcut 2026-09-21, and it does not carry over by ear.**
+  On VO2.wav, a cut placed exactly on whisper's word edge has sound on both
+  sides 84% of the time where the words touch, and 43% of the time even
+  across a pause of 0.3 s or more; the middle of a pause reads 12% (the
+  negative control), and Tyler's own by-ear Kdenlive cut of the same file 3%.
+  The sound is real: past a removed word's reported end it stays at speech
+  level for 175 to 425 ms, and whisper run on that span alone heard "being",
+  a word the cut was meant to take. The two agent trials never met it, since
+  one cut by `cut_by_time` seconds and the other with `pad: 0.1`. Two blind
+  A/B rounds on 10 phrase cuts each, served by `proofcut review serve`:
+  snapping each edge to the *quietest* point between the words lost (Tyler
+  "maybe" preferred the exact edges), because it moved edges up to 1.4 s,
+  shortened each join's pause by 0.4 to 1.8 s and clipped two kept words;
+  snapping to the *nearest* quiet point, which removes only that tail, was
+  "can't tell". So neither a snap nor a drag handle is queued. What this does
+  not cover: one voice, one listener on a phone, cuts at pauses only (a
+  mid-phrase cut, where 40% of touching word pairs have no quiet point at
+  all, was not listened to). The probes, both keys and both verdicts are in
+  `~/proofcut-work/spikes/cut-edges/`, and round 1's first page, whose clip
+  edges were themselves cut mid-word, is kept there marked invalid.
 - [DataAnts-AI/CutScript](https://github.com/DataAnts-AI/CutScript) — 184★, MIT,
   TypeScript, local-first Descript-alike. Last pushed 2026-03
 - [Ekaanth/OpenCut-AI](https://github.com/Ekaanth/OpenCut-AI) — Whisper
