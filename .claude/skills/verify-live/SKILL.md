@@ -18,6 +18,9 @@ in more than one session. Node 24's global `WebSocket`, no dependencies.
 
 ```sh
 # 1. serve a project (a COPY of anything real — check it first with film-check)
+#    Check the port first: a server another session left there answers the
+#    goto below with ITS project, and the new one's bind error is only in its log.
+ss -ltnp | grep :8793 && echo "8793 taken, pick another port"
 uv run proofcut -C /path/to/proj web --port 8793
 
 # 2. a browser to drive, left running between calls

@@ -1289,7 +1289,11 @@ built; docs/plans/INSTALL.md):
     became writers of the log as well (renderlog.py § two writers): both take
     an output path from their caller, so the log can now name a file outside
     the project, and the `relative_to(root)` check is what refuses to stream
-    it rather than a second belt on the same braces.
+    it rather than a second belt on the same braces. **A stage that reads
+    the project passes its `renderlog.stamp` as `sources`** (beside
+    `stages`, never inside one), or `finish_report`'s `last_render.current`
+    reads that render as unknown. HISTORY.md § A render knows which edit it
+    was made from.
   - **A thumbnail is a preview artifact and keeps the same containment rather
     than adding a caller to it.** `ops.thumbnail` never enters the manifest
     and never calls `preview_path()` — it resolves media through
