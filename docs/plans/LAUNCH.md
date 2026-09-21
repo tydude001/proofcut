@@ -539,8 +539,9 @@ exists and § What it holds to in five sentences. The earlier draft is
 > The repo scores three unattended runs, each handed a goal and no steps.
 > The one I'd judge it on was briefed as a finished film ready to upload: it
 > cut the fluffed takes, laid music 18 LU under the voice, ended on a card,
-> mastered to −16.1 LUFS and checked its own render — 387 frames against the
-> timeline's 387, every word heard back — in 192 seconds and $2.27. That ran
+> mastered to −16.1 LUFS and checked its own render, in 192 seconds and
+> $2.27. The render had 387 frames against the timeline's 387, and every
+> word was heard back. That ran
 > on generated demo footage; an earlier run on real footage stopped at a
 > captioned cut. The clip at the top of the README is the first run, and
 > here are the two recordings it was cut from, uncut:

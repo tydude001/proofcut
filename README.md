@@ -17,8 +17,8 @@ film the agent cut): [the workspace](https://github.com/tydude001/proofcut/relea
 
 ## Why it exists
 
-Most of the work in a narrated video — an essay, a tutorial, a screencast, a
-talk — is bookkeeping. Find the retakes and cut them clean. Put the right
+Most of the work in a narrated video, whether an essay, a tutorial, a
+screencast or a talk, is bookkeeping. Find the retakes and cut them clean. Put the right
 footage under each line. Level the music under the voice, caption it, end on
 a card, render it, master it. An agent can do that bookkeeping now, given an
 editor it can drive.
@@ -26,7 +26,7 @@ editor it can drive.
 What an agent cannot do on its own is know that the file it rendered is the
 film it meant. ffmpeg, melt and auto-editor all exit 0 on some failures, so a
 render can drop a line, keep a retake, add a frame of black or carry no
-captions and still report success — and every check that reads the project
+captions and still report success. Every check that reads the project
 rather than the file agrees with it. The usual way to find out is to watch
 the whole thing.
 
@@ -107,7 +107,7 @@ Beyond those stages:
   the render is ffmpeg's and MLT's. Export a `.kdenlive` or OTIO file and
   finish anywhere.
 
-![Frame mode: a shot list beside the selected shot's windows — each crop
+![Frame mode: a shot list beside the selected shot's windows, each crop
 drawn as a rect on three of the source's own frames, over a filmstrip of the
 whole shot with the sampled instants ticked on it, the window's rect quoted
 in source pixels, Approve/Re-frame beside it, and coverage chips for stale
@@ -175,7 +175,7 @@ round-trip are in the
 ![The proofcut workspace on the demo project: the transcript with a retake struck
 through, the preview drawing the shot under the playhead with its captions, the
 side rail on its agent tab reporting a finished render against the timeline,
-and the layered timeline below — picture, waveform and captions as three
+and the layered timeline below: picture, waveform and captions as three
 projections of one edit](https://raw.githubusercontent.com/tydude001/proofcut/main/docs/img/edit-mode.png)
 
 ## What it holds to
@@ -197,7 +197,7 @@ projections of one edit](https://raw.githubusercontent.com/tydude001/proofcut/ma
   tool to a matching command printing JSON. Changes take `--plan` to show
   what they would do first, anything addressed by word echoes the words it
   resolved to, and `undo --steps N` walks back an agent's whole turn.
-- **Say what is not measured.** The design record is public — the plans,
+- **Say what is not measured.** The design record is public: the plans,
   and a dated history of what shipped and what the evidence said, failures
   included. Where only a CI runner has done something, the docs say a runner
   did it, not a person; where a check is a model's reading of a picture, it
@@ -211,7 +211,7 @@ is the whole footprint and how to reverse it.
 
 **Check your machine**, before cloning anything. `proofcut doctor` probes every
 tool proofcut uses and prints the fix for anything missing
-([§ Requirements](#requirements) has the list). It only looks — it installs
+([§ Requirements](#requirements) has the list). It only looks. It installs
 nothing and writes nothing. With [uv](https://docs.astral.sh/uv/) installed:
 
 ```sh
@@ -219,7 +219,7 @@ uvx proofcut doctor
 ```
 
 That first run downloads Python 3.13 if uv has none, plus proofcut's
-dependencies — about 230 MB, all of it inside uv's own cache, which
+dependencies. That is about 230 MB, all of it inside uv's own cache, which
 `uv cache clean` empties.
 
 **Then read what an install would do.** On Linux, Windows and a Mac of either
@@ -247,7 +247,7 @@ Will install
 ```
 
 That is a bare machine. Yours will be shorter, because setup installs nothing
-doctor passed — a working ffmpeg or melt of your own is never touched. With an
+doctor passed, so a working ffmpeg or melt of your own is never touched. With an
 NVIDIA GPU the whisper row is CUDA torch and the total is about 5.8 GB.
 
 Drop `--plan` to go ahead. It reprints the plan, asks once, and installs for
@@ -359,7 +359,7 @@ Five rules it holds to, each one enforced by a test rather than promised here:
 - **No sudo, no administrator rights, no distribution packages**, and nothing
   is ever written over an existing file.
 - **Every link, file, folder and uv tool is recorded**, and `--uninstall`
-  removes exactly those — the Python uv fetched for whisper included.
+  removes exactly those, including the Python uv fetched for whisper.
   `tests/test_install.py` installs the lot into a fake home, uninstalls, and
   asserts the home's listing is what it was before
   (`test_install_then_uninstall_leaves_the_home_as_it_was`), so "removes
@@ -432,9 +432,9 @@ once. On Linux, Windows and a Mac of either kind, `uv run proofcut setup` instal
 any of the last four that doctor marks ✗
 ([§ What it puts on your machine](#what-it-puts-on-your-machine), and
 `--plan` to read it first): a static ffmpeg, whisper,
-auto-editor's release binary and Shotcut's melt — on Linux the portable
-build, which renders with no display at all
-([docs/plans/INSTALL.md](https://github.com/tydude001/proofcut/blob/main/docs/plans/INSTALL.md)).
+auto-editor's release binary and Shotcut's melt (on Linux the portable
+build, which renders with no display at all;
+[docs/plans/INSTALL.md](https://github.com/tydude001/proofcut/blob/main/docs/plans/INSTALL.md)).
 
 | You need | For | Notes |
 |---|---|---|
