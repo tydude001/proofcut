@@ -17958,3 +17958,43 @@ no console errors. Not done: nothing yet looks a render up by the file's own
 hash (a render found on disk still has to be matched through its project's
 log by path), and no tool versions are recorded. Both wait for a case that
 needs them.
+
+## `verify` hears a sound's words — 2026-09-21
+
+§ B7, run three's candidate defect, confirmed in run four: with the voice a
+narrator take placed as a sound over a silent recording, `verify` and
+`finish_check` both refused with "no transcribed word survives on the
+timeline". Their expected words were only those of clips the timeline
+itself plays, so on that film nothing checked the audio.
+
+**Decided: a sound's or an audible inset's clip counts when it has a
+transcript.** Each one plays a known slice of a registered clip at a known
+render second, which is exactly what the timeline's words are. The two
+checks now share `ops._expected_speech`:
+- the timeline's words, taken through the retime as before;
+- then each sound hit's words, where a word counts when its middle is inside
+  `src_in`..`src_out`, and each audible inset's words over its own slice;
+- all merged by render second.
+
+`placed_audio` reports what each record added. A clip with no transcript
+adds nothing, so a click can never make the check refuse. A sound marked
+`ducks`, which says it is a voice, and whose clip has no transcript is
+listed in `voice_sounds_untranscribed`. When nothing is left to check, the
+refusal names it.
+
+**Measured on a copy of run three's project**
+(`~/proofcut-work/spikes/verify-sound/run3`), against its own `clip.mp4`:
+- The old refusal is gone. `vo`'s 22 words are expected and heard in order.
+  The film's 35 words came back as insertions, because its clip had no
+  transcript.
+- With `transcribe film`, the result is **57 of 57, similarity 1.0**.
+- `finish_check`, windowed, now runs through: missing 0, duration delta
+  0.011 s, and 4 faults, all of them `repeats`. The take's false start ("in July
+  of 1969 … watched three men leave for the") is said again by the film.
+  The brief asks for that, but `repeats` reads only the heard words, so it
+  has no way to know.
+
+Not done: captions still draw only the timeline's words, so a narrator
+placed as a sound gets no subtitles. The bed's lyrics are not expected
+either. `tests/test_verify_placed_audio.py` has six tests, and all six fail
+against the code before this change.

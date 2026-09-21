@@ -17304,6 +17304,128 @@ def _unmuted(warp: rt.Warp | None, words: list[Any]) -> tuple[list[Any], int]:
     return kept, len(words) - len(kept)
 
 
+def _slice_words(
+    transcript: tx.Transcript, src_in: float, src_out: float | None, at: float
+) -> list[tuple[float, str]]:
+    """A clip's words that play when `[src_in, src_out)` of it starts at
+    render second `at`: `(render start, text)`, a word kept when its middle
+    is inside the slice — `_unmuted`'s test, for the same reason."""
+    out: list[tuple[float, str]] = []
+    for word in transcript.words:
+        middle = (word.start + word.end) / 2
+        if middle >= src_in and (src_out is None or middle < src_out):
+            out.append((at + word.start - src_in, word.text))
+    return out
+
+
+def _placed_audio_words(
+    project: Project,
+    edit: tl.Edit,
+    transcripts: dict[str, tx.Transcript],
+    warp: rt.Warp | None,
+) -> tuple[list[tuple[float, str]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """The words the render plays off a sound's or an inset's own audio.
+
+    HISTORY.md § B7, run three: a narrator take placed as a sound over a
+    silent recording is the whole voice of the film, and `verify` expected
+    only the timeline's own words, so it refused the render outright — and on
+    a film with dialogue too, such a take read as words nobody placed. A
+    sound or an audible inset plays a known slice of a registered clip at a
+    known render second, so where that clip has a transcript, which words it
+    says and in what order is as known as the timeline's.
+
+    Only records whose clip is in `transcripts` are resolved, so a click
+    with no transcript — or a sound that no longer resolves and has none —
+    can never make the check refuse. Returns `(words, placed, untranscribed)`:
+    words as `(render start, text)`; what each record contributed; and every
+    sound marked `ducks` (the flag that says it is a voice) whose clip has
+    no transcript, so the gap is named instead of passing in silence.
+    """
+    rate = _export_fps(_clips_by_id(project))
+    clock = _Clock(rate, warp)
+    words: list[tuple[float, str]] = []
+    placed: list[dict[str, Any]] = []
+    untranscribed: list[dict[str, Any]] = []
+
+    sounds = _stored_sounds(project)
+    heard = [(k, r) for k, r in enumerate(sounds) if any(a in transcripts for a in r["assets"])]
+    for k, record in enumerate(sounds):
+        if record.get("ducks") and not any(a in transcripts for a in record["assets"]):
+            untranscribed.append({"kind": "sound", "position": k, "assets": record["assets"]})
+    if heard:
+        plans = _sound_plan(project, edit, stored=[r for _, r in heard], clock=clock)
+        for (position, record), plan in zip(heard, plans, strict=True):
+            src_in, src_out = _sound_slice(record)
+            count = 0
+            for hit in plan["hits"]:
+                transcript = transcripts.get(hit["asset"])
+                if transcript is None:
+                    continue
+                said = _slice_words(transcript, src_in, src_out, hit["at"])
+                words.extend(said)
+                count += len(said)
+            placed.append({"kind": "sound", "position": position, "assets": record["assets"], "words": count})
+
+    insets = _stored_insets(project)
+    audible = [
+        (k, r) for k, r in enumerate(insets)
+        if r["asset"] in transcripts and not r.get("mute")
+    ]  # fmt: skip
+    if audible:
+        views = _inset_views(project, edit, rate, stored=[r for _, r in audible])
+        for (position, record), view in zip(audible, views, strict=True):
+            if not view["audible"]:
+                continue
+            length = view["render_end"] - view["render_start"]
+            said = _slice_words(
+                transcripts[record["asset"]], view["src_in"], view["src_in"] + length, view["render_start"]
+            )
+            words.extend(said)
+            placed.append({"kind": "inset", "position": position, "assets": [record["asset"]], "words": len(said)})
+    return words, placed, untranscribed
+
+
+def _expected_speech(
+    project: Project, edit: tl.Edit, transcripts: dict[str, tx.Transcript], *, what: str
+) -> tuple[list[str], dict[str, Any]]:
+    """Every word the render should say, in the order it says them — `verify`
+    and `finish_check`'s one expectation.
+
+    The timeline's own words through the retime (muted ones left out and
+    counted), then the words of any sound or inset whose clip has a
+    transcript (`_placed_audio_words`), merged by render second. Refuses when
+    there is nothing at all, naming any voice sound that could supply words.
+    """
+    placed, cut = captions.place(edit, transcripts)
+    warp = _project_warp(project, edit)
+    placed, retimed_words_dropped = _unmuted(warp, placed)
+    render_at = (lambda s: s) if warp is None else warp.render_at
+    timed = [(render_at(word.start), word.text) for word in placed]
+    extra, placed_audio, untranscribed = _placed_audio_words(project, edit, transcripts, warp)
+    # A stable sort, the timeline's words first: where a voice overlaps
+    # dialogue the order is a guess either way, and whisper will make its own.
+    timed = sorted([*timed, *extra], key=lambda pair: pair[0])
+    if not timed:
+        hint = ""
+        if untranscribed:
+            names = ", ".join(f"sound {u['position']} ({'/'.join(u['assets'])})" for u in untranscribed)
+            hint = (
+                f" {names} is marked as a voice (ducks) but its clip has no transcript — "
+                "transcribe it and its words become what the render is checked against"
+            )
+        raise vfy.VerifyError(
+            "no transcribed word survives on the timeline, and no sound or inset plays a "
+            f"transcribed clip — there is nothing for {what} to be checked against.{hint}"
+        )
+    report = {
+        "words_cut_from_transcript": cut,
+        "retimed_words_dropped": retimed_words_dropped,
+        "placed_audio": placed_audio,
+        "voice_sounds_untranscribed": untranscribed,
+    }
+    return [text for _, text in timed], report
+
+
 def _warp_cues(cues: list[captions.Cue], warp: rt.Warp) -> tuple[list[captions.Cue], int]:
     """Caption cues moved onto the render's clock, muted words left out."""
     spans = warp.muted_edit_spans()
@@ -18614,7 +18736,9 @@ def verify(
     proofcut already knows the words the timeline should play — every clip's
     transcript mapped through the accumulated edit, exactly as captions are
     placed. This transcribes the render itself and compares the two word
-    sequences.
+    sequences. A sound's or an audible inset's clip counts too when it has a
+    transcript, merged by render second (`_expected_speech`, HISTORY.md § B7,
+    run three) — a narrator take placed as a sound is the render's voice.
 
     It is the only check that catches a retake the transcript never contained:
     whisper collapses an immediate repeat, so a phrase said twice can appear
@@ -18658,14 +18782,8 @@ def verify(
     transcripts = _transcripts_for(project, clip_id)
     transcripts, unspoken = _spoken_transcripts(project, transcripts)
 
-    placed, cut = captions.place(edit, transcripts)
-    placed, retimed_words_dropped = _unmuted(_project_warp(project, edit), placed)
-    if not placed:
-        raise vfy.VerifyError(
-            "no transcribed word survives on the timeline — there is nothing "
-            "for the render to be checked against"
-        )
-    expected = vfy.tokens(word.text for word in placed)
+    said, speech = _expected_speech(project, edit, transcripts, what="the render")
+    expected = vfy.tokens(said)
 
     render_path = Path(render).expanduser()
     result: dict[str, Any] = {}
@@ -18759,7 +18877,11 @@ def verify(
             "clips": sorted(transcripts),
             "expected_words": len(expected),
             "heard_words": len(heard),
-            "words_cut_from_transcript": cut,
+            "words_cut_from_transcript": speech["words_cut_from_transcript"],
+            # What sounds and insets add to the expectation, and any voice
+            # sound that could not (HISTORY.md § B7, run three).
+            "placed_audio": speech["placed_audio"],
+            "voice_sounds_untranscribed": speech["voice_sounds_untranscribed"],
             # Reported beside the diff and never folded into it: this check's
             # expectation was *shortened* by hand, and a render checked against
             # a shortened expectation has to say so or the mark becomes a way
@@ -18769,7 +18891,7 @@ def verify(
             "head_seconds": head_seconds,
             "head_words_trimmed": head_words_trimmed,
             # Expected words a retime mutes, left out of the diff and counted.
-            "retimed_words_dropped": retimed_words_dropped,
+            "retimed_words_dropped": speech["retimed_words_dropped"],
             **vfy.compare(expected, heard),
         }
     )
@@ -19062,14 +19184,8 @@ def finish_check(
     # -- 5. windowed VO diff, prepend/hold words filtered first --------------
     transcripts = _transcripts_for(project, clip_id)
     transcripts, unspoken = _spoken_transcripts(project, transcripts)
-    placed, cut = captions.place(edit, transcripts)
-    placed, retimed_words_dropped = _unmuted(_project_warp(project, edit), placed)
-    if not placed:
-        raise vfy.VerifyError(
-            "no transcribed word survives on the timeline — there is nothing "
-            "for finish_check to compare final against"
-        )
-    expected = vfy.tokens(word.text for word in placed)
+    said, speech = _expected_speech(project, edit, transcripts, what="the final file")
+    expected = vfy.tokens(said)
 
     asr_result: dict[str, Any] = {}
     if transcript_path is not None:
@@ -19186,9 +19302,8 @@ def finish_check(
         "heard_words": len(heard),
         "words_filtered": words_filtered,
         "clips": sorted(transcripts),
-        "words_cut_from_transcript": cut,
+        **speech,
         **unspoken,
-        "retimed_words_dropped": retimed_words_dropped,
         "similarity": diff["similarity"],
         "diff": diff["diff"],
         "repeated": diff["repeated"],

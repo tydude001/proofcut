@@ -1840,7 +1840,13 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         ),
     },
     "verify": {
-        "render": "The finished render to transcribe and diff against the timeline.",
+        "render": (
+            "The finished render to transcribe and diff against the timeline. The "
+            "expected words include a sound's or an inset's own when its clip has a "
+            "transcript (`placed_audio`) — a narrator take placed as a sound is the "
+            "film's voice. A voice sound (`ducks`) with no transcript is listed in "
+            "`voice_sounds_untranscribed` and not checked: transcribe it first."
+        ),
         "clip_id": "Diff against one transcript's expected words rather than all of them.",
         "transcript_path": (
             "An existing transcription of `render` — what a previous run cached and "

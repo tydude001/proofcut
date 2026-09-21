@@ -377,6 +377,13 @@ proofcut verify final.mp4 --windowed            # second opinion, in short windo
 proofcut verify final.mp4 --transcript render.json   # or re-diff without re-running it
 ```
 
+The words expected are the timeline's own and any a placed sound or inset
+plays, when that clip has a transcript: a narrator take placed as a sound over
+a silent screen recording is checked like dialogue, merged in where it plays.
+Transcribe the take first (`proofcut transcribe vo`); a voice sound (`ducks`)
+with no transcript is listed in `voice_sounds_untranscribed` and not checked,
+and `finish-check` expects the same words.
+
 Similarity around 0.97 is normal on a clean render — whisper spells its own
 output differently on a second pass — so the diff is the artifact, and a
 `repeated` entry is the retake signal. Whisper is a subprocess, not a
