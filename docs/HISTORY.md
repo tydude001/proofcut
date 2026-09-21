@@ -17879,3 +17879,38 @@ The measuring spike is archived at
 (INSTALL.md § Step 5's other half): they are the instrument a tester post
 hands out, and there is no tester post now. Judge that change, if it comes,
 by `setup-demo.yml`, never by the unit tests, which fake the OS.
+
+## The 0.38.0 Release, and the date that outlived its reason — 2026-09-20
+
+`v0.38.0 — setup on Apple silicon` was cut and holds Latest. The body was
+written to a file and posted with `--notes-file`, then diffed against that
+file: one added blank line, the trailing newline GitHub appends, and nothing
+else — the same single discrepancy § The 0.37.0 Release recorded. It carries
+no new link, so there was nothing to check against GitHub's own copy of the
+README this time.
+
+**Two things were being held on reasons that had already gone**, and both
+were found by Tyler asking why rather than by any check here.
+
+**The Release.** CLAUDE.md says a GitHub Release is a hand-written launch
+post and does not follow a bump — a rule against *generating* a note per
+version, which was read here as a reason to hesitate over one worth writing.
+0.38.0 is the version `uvx proofcut` installs and it closes the Mac
+audience's first objection, so it cleared the bar the rule actually sets.
+What the rule does still decide is the *timing*: a Release cut before more
+tags land is the same mismatch one version along, which is why § Step 5 asks
+for one written against the current version on the morning of the post.
+Nothing on the v0.37.0 page was false — "nobody has run it by hand" is still
+true of Apple silicon — so this is a page that had stopped being complete,
+not one that had started being wrong.
+
+**The date.** Show HN was set for 2026-09-24 because that was seven days
+after the tester post, the time-box on a gate that closed unmet the same
+day the date was carried forward. Step 5's real requirements — steps 1, 3
+and 4 done, a weekday morning US Eastern, six hours at a keyboard — were all
+met already, making the earliest valid slot the next morning. **A deadline
+whose reason is cancelled does not announce itself**; it reads exactly like a
+plan. The post moves to 2026-09-22, chosen for a clear day to cut the Release
+and reread the first comment rather than for anything measured about which
+weekday HN favours. LAUNCH.md § Step 5 now states the requirements without
+the dead gate, and the date lives only in the wiki row.
