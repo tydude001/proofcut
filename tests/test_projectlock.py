@@ -64,8 +64,12 @@ def _dead_pid() -> int:
     return child.pid
 
 
+# The holder prints its verdict, then its own pid: on Windows a venv's
+# python.exe is a launcher that runs the interpreter as a child, so
+# Popen.pid is not the process that takes the lock.
 _HOLDER = textwrap.dedent(
     """
+    import os
     import sys
     from proofcut import projectlock
     try:
@@ -74,6 +78,7 @@ _HOLDER = textwrap.dedent(
         print("refused", flush=True)
     else:
         print("held", flush=True)
+    print(os.getpid(), flush=True)
     sys.stdin.read()
     projectlock.release_all()
     """
@@ -116,10 +121,11 @@ def test_a_second_process_is_refused_by_name(project: Path) -> None:
     holder = _spawn_holder(project)
     try:
         assert holder.stdout.readline().strip() == "held"
+        holder_pid = int(holder.stdout.readline())
         with pytest.raises(ProjectLockedError) as refused:
             projectlock.ensure_held(project, heartbeat=False)
         message = str(refused.value)
-        assert f"pid {holder.pid}" in message
+        assert f"pid {holder_pid}" in message
         assert "Do not delete the lock" in message
     finally:
         holder.communicate("")
