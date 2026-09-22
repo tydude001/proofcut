@@ -7,9 +7,11 @@ The short answer is that four of its five model roles already run locally,
 and they have always been measured on this box's RTX 5070. The fifth is the
 agent that reads a brief and drives the tools — the *director* — and every
 scored run of it but four has been Claude. Whether a local model can direct is
-**measured on two of the three briefs, and it passed their checks** (§ The run,
-2026-09-19) — though two of its four films kept a stutter the checks cannot
-see; the third brief is unmeasured. This note says what the job
+**measured on all three briefs**: it passed the two generated ones (§ The run,
+2026-09-19), though two of its four films kept a stutter the checks cannot
+see, and it **failed the real-footage one** (§ The real-footage run,
+2026-09-21): it could not act on a retake `verify` found, and ran out of
+context. This note says what the job
 asks for, what would make it hard, what hardware it would take, and what the
 run found.
 
@@ -270,3 +272,57 @@ until then.
 The launch posts' line — *every scored run used Claude* — is no longer true as
 written. `~/proofcut-work/spikes/launch-listings/POSTS.md` is Tyler's draft and
 was not edited.
+
+## The real-footage run, 2026-09-21
+
+Run `trial-real/runs/20260922-004828` (the directory is stamped in UTC; it
+started 19:48 local on 2026-09-21), the same seat and shim as § The run,
+2026-09-19, on the Scream VO and four b-roll clips Claude's 77-turn run cut
+9/9 in 914 s (§ What the job asks of a model).
+
+| | Claude (TRIAL.md) | Qwen3.6-35B-A3B |
+|---|---|---|
+| checks | 9/9 | 7 pass, 2 fail, 1 unsettled |
+| turns / calls | 77 / 76 | 88 / 124, 8 refused |
+| wall | 914 s | 4,426 s, then **out of context** |
+| `hear` calls | 5 | **0**, never loaded |
+
+**It did not finish.** Turn 88 asked for 132,008 tokens against the seat's
+131,072, and the shim's model request failed (`error_during_execution`). The
+two failed checks are what that left behind, not verdicts on a finished
+film. `frames_agree` compared the last export with a timeline the agent had
+rebuilt since. `retake_removed` read that rebuilt timeline, whose `keep`
+with a 0.5 s pad reached back into "once in a theater". The substantive
+failure is earlier: **the last render it made still opened with a fluffed
+take**, "the best 12 minutes of horror in the 90s", before "the first 12
+minutes of Scream are still".
+
+**`verify` found it on the first try, and the model could not act on it.**
+That take is the trap CLAUDE.md puts first under whisper: the transcript
+holds one take because whisper hid the other inside a word's duration, so
+the timeline looks right and the audio is not. From 946 s to the end, about
+55 minutes, the agent read `verify`'s diff seven times, said the timeline
+was correct, and re-exported, re-verified on a larger whisper, re-seeded
+with and without silence removal, and twice undid past its own imports
+(an undo un-registers a clip) and imported everything again. Claude's run
+met the same take and **called `hear` five times** to listen to the source
+span before cutting it (TRIAL.md). This run loaded eight tool sets through
+`ToolSearch` and `hear` was never one of them.
+
+**What that points at is the map, not the model alone.**
+`server.INSTRUCTIONS` names no tool for "the render says words the
+transcript does not": `hear` is absent from its transcript line and from its
+rules. Claude found `hear` by searching; a weaker searcher did not. Adding
+`hear` and one rule ("verify hears words the timeline lacks: whisper hid a
+retake inside a word's duration; `hear` the source span") is a change to
+what every later trial measures, so it is proposed here rather than made.
+
+**Pictures stay unjudged.** All 5 images were dropped for a model with no
+vision projector, and nobody has looked at the 6 shots it hung.
+
+**The shim stays a spike.** One run on the brief that separates the two
+directors, and it failed where Claude passed. Moving the shim into
+`scripts/` would make a local director look like a supported route. The
+next run worth making is the same brief after the map names `hear`, which
+asks whether the gap was discovery or reasoning. A larger context on the
+seat would only have let the loop run longer.

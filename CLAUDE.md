@@ -97,7 +97,9 @@ a local one would need from `PROOFCUT_AGENT_BIN` and the tool surface, and
 the hardware — is [docs/plans/LOCAL.md](docs/plans/LOCAL.md), written
 2026-09-18; the director half is **measured on two briefs**, where
 Qwen3.6-35B-A3B passed all four runs' checks — and left a stutter the checks
-cannot see in two of the four films; the real-footage brief is not run.
+cannot see in two of the four films; on the real-footage brief it **failed**,
+never finding `hear` for a retake `verify` reported, and ran out of context
+(LOCAL.md § The real-footage run, 2026-09-21).
 What a check for frozen and silent spans in a render would need — measured
 on two films, where 13 of 14 frozen spans were cards, so the finding is a
 span nothing explains — is
