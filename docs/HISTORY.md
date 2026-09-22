@@ -18193,3 +18193,32 @@ button; nothing overflowed at 700px.
 Not run: the plan's live pass with two real `claude` sessions (the web panel
 beside a terminal Claude Code), which is the check that the refusal reaches a
 person through the panel and that an agent stops rather than deleting the lock.
+
+## A placed voice gets captions, and whisper's sign-off is excused — 2026-09-22
+
+Tyler's two calls from § `verify` hears a sound's words, built.
+
+**Captions draw a placed sound's words.** `_caption_cues` adds
+`_placed_audio_cue_words`: the same words `verify` expects of a sound or an
+audible inset, brought from the render's clock back into Edit seconds, so
+`caption_view` and `add_captions` place them where the check hears them. On a
+copy of B7 run three (`~/proofcut-work/spikes/lock-probe/run3copy`) all 57
+words are captioned, and the narrator's "In" burns at 10.84 s, which is where
+`verify` expects it. **A retime mutes the Edit's audio and never a sound's**, so
+`_warp_cues` now exempts those words. The first build dropped that "In" as
+"muted", measured, not assumed.
+
+**`finish_check` excuses "thank(s) you for watching" only where the edit
+places no speech.** The approved wording was "over a quiet stretch", and the
+render says level cannot do it: the three heard sign-offs sit over the
+film's own sound at the speech's level (a median of 1592 against 1582 on the
+20 ms envelope), so a quiet test excuses none of them. The rule instead is
+what "quiet" was standing for. A sign-off is excused when the expected
+words never say it, and none of them starts within `SIGNOFF_CLEARANCE`
+(0.5 s) of it. The run-three sign-offs clear the nearest expected word by
+1.16 s or more. They are taken out of `heard` before the diff and the
+repeats, and listed as `signoffs_excused`. On the run-three copy with its
+cached windowed transcript: **0 faults, similarity 1.0**. The same inputs
+with the rule switched off give the recorded 1 fault ("for watching in
+july" twice) at similarity 0.919. A sign-off the edit does say, or one heard
+over expected speech, is still checked (tests for both).

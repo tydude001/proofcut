@@ -173,3 +173,91 @@ def test_finish_check_does_not_call_a_line_the_edit_says_twice_a_repeat(
     assert result["repeats"] == []
     assert result["repeats_expected"], "the planned repeat is still reported"
     assert result["missing"] == []
+
+
+def test_a_voice_sound_is_captioned_where_it_plays(project: Project, tmp_path: Path) -> None:
+    """Tyler's call, 2026-09-22: a narrator placed as a sound gets subtitles,
+    from the same expectation `verify` checks the render against."""
+    ops.sound_add(project.root, "vo", "rec", event="words", src_out=2.0, ducks=True)
+
+    view = ops.caption_view(project.root)
+    words = [w for cue in view["cues"] for w in cue["words"]]
+
+    assert [w["text"] for w in words] == ["three", "men", "leave", "earth"]
+    assert words[0]["start"] == pytest.approx(2.2, abs=0.01)
+    assert view["placed_audio"] == [{"kind": "sound", "position": 0, "assets": ["vo"], "words": 4}]
+
+    out = ops.add_captions(project.root, tmp_path / "subs.ass")
+    assert out["words"] == 4
+    assert "earth" in (tmp_path / "subs.ass").read_text(encoding="utf-8")
+
+
+def test_a_sound_with_no_transcript_adds_no_caption(project: Project) -> None:
+    ops.sound_add(project.root, "vo2", "rec", event="words")
+
+    view = ops.caption_view(project.root)
+
+    assert view["cues"] == []
+    assert view["placed_audio"] == []
+
+
+def test_a_retime_mutes_the_edit_and_never_a_placed_voice() -> None:
+    """B7 run three's copy: the narrator's first word sat in a muted retime
+    stretch and was dropped from the burn, though the sound plays it."""
+    from proofcut import captions
+
+    class _Warp:
+        def muted_edit_spans(self) -> list[tuple[float, float]]:
+            return [(0.0, 1.0)]
+
+        def render_at(self, seconds: float) -> float:
+            return seconds
+
+    edit_word = captions.CueWord("cut", 0.2, 0.4)
+    voice_word = captions.CueWord("in", 0.5, 0.7)
+    cues = [captions.Cue(words=(edit_word, voice_word), end=0.7)]
+
+    moved, dropped = ops._warp_cues(cues, _Warp(), unmuted=frozenset({voice_word}))
+
+    assert [w.text for w in moved[0].words] == ["in"]
+    assert dropped == 1
+
+
+def _heard_words(words: list[tuple[str, float]]) -> list[tx.Word]:
+    return [tx.Word(index=i, text=t, start=s, end=s + 0.3) for i, (t, s) in enumerate(words)]
+
+
+SIGNOFF = [("Thanks", 20.0), ("for", 21.7), ("watching!", 21.7)]
+
+
+def test_a_signoff_where_the_edit_places_no_speech_is_excused() -> None:
+    """B7 run three: whisper heard "thanks for watching" over the film's own
+    sound, 1.16 s clear of any expected word, and it ran into the next line
+    as a repeat fault."""
+    heard = _heard_words([("in", 10.8), ("july", 11.4), *SIGNOFF, ("in", 30.2), ("july", 30.4)])
+    expected = [(10.84, "In"), (11.4, "July"), (30.2, "In"), (30.4, "July")]
+
+    kept, excused = ops._excuse_signoffs(heard, expected, 0.0)
+
+    assert kept == ["in", "july", "in", "july"]
+    assert excused == [{"text": "thanks for watching", "at": 20.0}]
+
+
+def test_a_spoken_signoff_is_still_checked() -> None:
+    heard = _heard_words([("in", 10.8), *SIGNOFF])
+    expected = [(10.84, "In"), (20.0, "Thanks"), (20.3, "for"), (20.6, "watching.")]
+
+    kept, excused = ops._excuse_signoffs(heard, expected, 0.0)
+
+    assert kept == ["in", "thanks", "for", "watching"]
+    assert excused == []
+
+
+def test_a_signoff_heard_over_expected_speech_is_not_excused() -> None:
+    heard = _heard_words(SIGNOFF)
+    expected = [(21.9, "July")]
+
+    kept, excused = ops._excuse_signoffs(heard, expected, 0.0)
+
+    assert kept == ["thanks", "for", "watching"]
+    assert excused == []

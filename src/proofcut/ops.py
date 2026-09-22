@@ -17268,6 +17268,8 @@ def _caption_cues(
     transcripts = _transcripts_for(project, clip_id)
     transcripts, unspoken = _spoken_transcripts(project, transcripts)
     placed, cut = captions.place(edit, transcripts)
+    voiced, placed_audio = _placed_audio_cue_words(project, edit, transcripts)
+    placed = sorted([*placed, *voiced], key=lambda w: (w.start, w.end))
     cues = captions.group(
         placed,
         max_words=style.max_words,
@@ -17275,7 +17277,35 @@ def _caption_cues(
         max_duration=style.max_duration,
         hold=style.hold,
     )
-    return cues, placed, cut, {"clips": sorted(transcripts), **unspoken}
+    return cues, placed, cut, {"clips": sorted(transcripts), **unspoken, **placed_audio}
+
+
+def _placed_audio_cue_words(
+    project: Project, edit: tl.Edit, transcripts: dict[str, tx.Transcript]
+) -> tuple[list[captions.CueWord], dict[str, Any]]:
+    """A placed sound's or audible inset's words, as caption words in Edit
+    seconds — `verify`'s own expectation (`_placed_audio_words`), so a
+    narrator placed as a sound is captioned exactly where it is checked
+    (Tyler, 2026-09-22; HISTORY.md § `verify` hears a sound's words).
+
+    Resolved on the render's clock and brought back through the warp, since
+    the caption derivation is Edit-relative and `add_captions` warps it
+    forward again. A record that cannot resolve is `placed_audio_error`,
+    never raised: `caption_view` is read on every reload of the window.
+    """
+    if not (project.read_manifest().get(SOUNDS_KEY) or project.read_manifest().get(INSETS_KEY)):
+        return [], {}
+    warp = _project_warp(project, edit)
+    try:
+        words, placed, _untranscribed = _placed_audio_words(project, edit, transcripts, warp)
+    except (ProjectError, tx.TranscriptError, media.MediaError) as exc:
+        return [], {"placed_audio_error": str(exc)}
+    edit_at = (lambda s: s) if warp is None else warp.edit_at
+    cue_words = [
+        captions.CueWord(text=text, start=edit_at(start), end=edit_at(max(end, start + captions.MIN_WORD)))
+        for start, end, text in words
+    ]
+    return cue_words, {"placed_audio": placed}
 
 
 def _project_warp(project: Project, edit: tl.Edit) -> rt.Warp | None:
@@ -17306,15 +17336,15 @@ def _unmuted(warp: rt.Warp | None, words: list[Any]) -> tuple[list[Any], int]:
 
 def _slice_words(
     transcript: tx.Transcript, src_in: float, src_out: float | None, at: float
-) -> list[tuple[float, str]]:
+) -> list[tuple[float, float, str]]:
     """A clip's words that play when `[src_in, src_out)` of it starts at
-    render second `at`: `(render start, text)`, a word kept when its middle
-    is inside the slice — `_unmuted`'s test, for the same reason."""
-    out: list[tuple[float, str]] = []
+    render second `at`: `(render start, render end, text)`, a word kept when
+    its middle is inside the slice — `_unmuted`'s test, for the same reason."""
+    out: list[tuple[float, float, str]] = []
     for word in transcript.words:
         middle = (word.start + word.end) / 2
         if middle >= src_in and (src_out is None or middle < src_out):
-            out.append((at + word.start - src_in, word.text))
+            out.append((at + word.start - src_in, at + word.end - src_in, word.text))
     return out
 
 
@@ -17323,7 +17353,7 @@ def _placed_audio_words(
     edit: tl.Edit,
     transcripts: dict[str, tx.Transcript],
     warp: rt.Warp | None,
-) -> tuple[list[tuple[float, str]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[list[tuple[float, float, str]], list[dict[str, Any]], list[dict[str, Any]]]:
     """The words the render plays off a sound's or an inset's own audio.
 
     HISTORY.md § B7, run three: a narrator take placed as a sound over a
@@ -17337,13 +17367,13 @@ def _placed_audio_words(
     Only records whose clip is in `transcripts` are resolved, so a click
     with no transcript — or a sound that no longer resolves and has none —
     can never make the check refuse. Returns `(words, placed, untranscribed)`:
-    words as `(render start, text)`; what each record contributed; and every
+    words as `(render start, render end, text)`; what each record contributed; and every
     sound marked `ducks` (the flag that says it is a voice) whose clip has
     no transcript, so the gap is named instead of passing in silence.
     """
     rate = _export_fps(_clips_by_id(project))
     clock = _Clock(rate, warp)
-    words: list[tuple[float, str]] = []
+    words: list[tuple[float, float, str]] = []
     placed: list[dict[str, Any]] = []
     untranscribed: list[dict[str, Any]] = []
 
@@ -17388,6 +17418,14 @@ def _placed_audio_words(
 def _expected_speech(
     project: Project, edit: tl.Edit, transcripts: dict[str, tx.Transcript], *, what: str
 ) -> tuple[list[str], dict[str, Any]]:
+    """`_expected_timed`'s words without their render seconds."""
+    timed, report = _expected_timed(project, edit, transcripts, what=what)
+    return [text for _, text in timed], report
+
+
+def _expected_timed(
+    project: Project, edit: tl.Edit, transcripts: dict[str, tx.Transcript], *, what: str
+) -> tuple[list[tuple[float, str]], dict[str, Any]]:
     """Every word the render should say, in the order it says them — `verify`
     and `finish_check`'s one expectation.
 
@@ -17404,7 +17442,7 @@ def _expected_speech(
     extra, placed_audio, untranscribed = _placed_audio_words(project, edit, transcripts, warp)
     # A stable sort, the timeline's words first: where a voice overlaps
     # dialogue the order is a guess either way, and whisper will make its own.
-    timed = sorted([*timed, *extra], key=lambda pair: pair[0])
+    timed = sorted([*timed, *((at, text) for at, _end, text in extra)], key=lambda pair: pair[0])
     if not timed:
         hint = ""
         if untranscribed:
@@ -17423,18 +17461,75 @@ def _expected_speech(
         "placed_audio": placed_audio,
         "voice_sounds_untranscribed": untranscribed,
     }
-    return [text for _, text in timed], report
+    return timed, report
 
 
-def _warp_cues(cues: list[captions.Cue], warp: rt.Warp) -> tuple[list[captions.Cue], int]:
-    """Caption cues moved onto the render's clock, muted words left out."""
+#: What whisper says over a stretch with nobody talking — its training data's
+#: commonest outro. Tokens as `vfy.tokens` spells them.
+SIGNOFFS = (("thank", "you", "for", "watching"), ("thanks", "for", "watching"))
+
+#: How far a heard sign-off must start from every expected word to be excused.
+#: On B7 run three's render the three heard sign-offs sat 1.16 s or more from
+#: the nearest word the edit places (HISTORY.md § `verify` hears a sound's words).
+SIGNOFF_CLEARANCE = 0.5
+
+
+def _excuse_signoffs(
+    heard: list[tx.Word], expected: list[tuple[float, str]], offset: float
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """The heard tokens with whisper's hallucinated sign-offs taken out, and
+    what was taken.
+
+    Tyler, 2026-09-22: excuse it only where nobody is talking, so a spoken
+    sign-off is still checked. **Where nobody is talking is read off the
+    edit, not the level**: on the run-three render the sign-offs sit over the
+    film's own sound at the speech's level (a median of 1592 against 1582),
+    so a quiet test excuses none of them. A sign-off is excused when the
+    expected words never say it and none of them starts within
+    `SIGNOFF_CLEARANCE` of it; `expected` is in render seconds, `offset` the
+    final file's lead-in before them.
+    """
+    flat: list[tuple[str, float]] = [
+        (token, word.start) for word in heard for token in vfy.tokens([word.text])
+    ]
+    tokens = [token for token, _ in flat]
+    said = vfy.tokens(text for _, text in expected)
+    starts = [at + offset for at, _ in expected]
+    taken: set[int] = set()
+    excused: list[dict[str, Any]] = []
+    for phrase in SIGNOFFS:
+        n = len(phrase)
+        spoken = any(tuple(said[i : i + n]) == phrase for i in range(len(said) - n + 1))
+        if spoken:
+            continue
+        for i in range(len(tokens) - n + 1):
+            if tuple(tokens[i : i + n]) != phrase or taken & set(range(i, i + n)):
+                continue
+            lo, hi = flat[i][1] - SIGNOFF_CLEARANCE, flat[i + n - 1][1] + SIGNOFF_CLEARANCE
+            if any(lo <= at <= hi for at in starts):
+                continue
+            taken.update(range(i, i + n))
+            excused.append({"text": " ".join(phrase), "at": round(flat[i][1], 3)})
+    kept = [token for k, token in enumerate(tokens) if k not in taken]
+    return kept, sorted(excused, key=lambda e: e["at"])
+
+
+def _warp_cues(
+    cues: list[captions.Cue], warp: rt.Warp, *, unmuted: frozenset[captions.CueWord] = frozenset()
+) -> tuple[list[captions.Cue], int]:
+    """Caption cues moved onto the render's clock, muted words left out.
+
+    `unmuted` is the words a placed sound or inset says: a retime mutes the
+    Edit's own audio and never theirs, so a voice over a muted stretch is
+    still heard and still captioned (measured on B7 run three's copy, where
+    the narrator's first word was dropped)."""
     spans = warp.muted_edit_spans()
     moved: list[captions.Cue] = []
     dropped = 0
     for cue in cues:
         words = []
         for word in cue.words:
-            if any(a <= (word.start + word.end) / 2 < b for a, b in spans):
+            if word not in unmuted and any(a <= (word.start + word.end) / 2 < b for a, b in spans):
                 dropped += 1
                 continue
             words.append(replace(word, start=warp.render_at(word.start), end=warp.render_at(word.end)))
@@ -18004,7 +18099,8 @@ def add_captions(
     warp = _project_warp(project, edit)
     retimed_words_dropped = 0
     if warp is not None:
-        cues, retimed_words_dropped = _warp_cues(cues, warp)
+        voiced, _ = _placed_audio_cue_words(project, edit, _spoken_transcripts(project, _transcripts_for(project, clip_id))[0])
+        cues, retimed_words_dropped = _warp_cues(cues, warp, unmuted=frozenset(voiced))
         if not cues:
             raise captions.CaptionError("every captioned word plays inside a muted retime — nothing to caption")
     ass_cues = _offset_cues(cues, head_seconds)
@@ -19184,8 +19280,8 @@ def finish_check(
     # -- 5. windowed VO diff, prepend/hold words filtered first --------------
     transcripts = _transcripts_for(project, clip_id)
     transcripts, unspoken = _spoken_transcripts(project, transcripts)
-    said, speech = _expected_speech(project, edit, transcripts, what="the final file")
-    expected = vfy.tokens(said)
+    timed_said, speech = _expected_timed(project, edit, transcripts, what="the final file")
+    expected = vfy.tokens(text for _, text in timed_said)
 
     asr_result: dict[str, Any] = {}
     if transcript_path is not None:
@@ -19223,7 +19319,7 @@ def finish_check(
         if not any(_time_overlaps(w.start, w.end, lo, hi) for lo, hi in covering)
     ]
     words_filtered = len(heard_words_all) - len(filtered_words)
-    heard = vfy.tokens(w.text for w in filtered_words)
+    heard, signoffs_excused = _excuse_signoffs(filtered_words, timed_said, prepend)
 
     diff = vfy.compare(expected, heard)
 
@@ -19313,6 +19409,9 @@ def finish_check(
         "boundary_misses": boundary_misses,
         "repeats": repeats,
         "repeats_expected": repeats_expected,
+        # Whisper's "thank you for watching" where the edit places no speech:
+        # taken out of `heard` before the diff and the repeats, and listed.
+        "signoffs_excused": signoffs_excused,
         "faults": faults,
         "ok": ok,
     }
