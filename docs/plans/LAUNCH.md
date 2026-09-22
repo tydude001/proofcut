@@ -440,6 +440,12 @@ twos, with time to fix what they find.
   to do but wait. Its `🤖🤖🤖` agent fast-track buys nothing measurable — 57%
   of that week's merges carried it against 50% of the open backlog — and would
   be untrue of a PR filed by hand.
+  **M8ven's Trust Index listed it unasked on 2026-09-22**: 74/100, C, a cap
+  it puts on every new project. Claimed the same day and verified off a
+  commit email. Its one finding, tool annotations missing, is a false
+  positive: a static read misses `server._ANNOTATIONS`, which `tools/list`
+  serves on every tool. Reported to them. Its badge stays off the README,
+  where it would print the C on the PyPI page too.
   Shipped — see HISTORY.md § The launch clip's product defects, fixed,
   § Glama takes a submission, and the probe that missed it.
 - **A Claude Code plugin.** The agent pane already spawns `claude` against a
