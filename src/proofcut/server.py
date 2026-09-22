@@ -61,7 +61,8 @@ INSTRUCTIONS = (
     "Start any project with timeline_status, finish_report and list_media.\n\n"
     "Phases, and the tools to search for in each:\n"
     "- footage in: init, import_media, list_media, footage_sheet, synopsis, events\n"
-    "- transcript: transcribe or attach_transcript; get_transcript with search=\n"
+    "- transcript: transcribe or attach_transcript; get_transcript with search=; "
+    "hear (what the source audio says between two times)\n"
     "- cut: seed_timeline, then cut_by_transcript / cut_by_time, restore, locate, retime_add\n"
     "- picture: cue_add (b-roll under a line), broll_brief, shot_sheet, canvas, "
     "reframe, reframe_sheet, inset_add (a clip inside the recording), follow "
@@ -80,6 +81,9 @@ INSTRUCTIONS = (
     "or approving framing.\n"
     "- export does not burn captions, and a render existing is not a render being "
     "right: run check_frames and verify after every export.\n"
+    "- When verify hears words the timeline does not have, whisper hid a retake "
+    "inside one word's duration: the transcript looks right and the audio is not. "
+    "hear that source span, then cut by time.\n"
 )
 
 #: Where Claude Code silently cuts both `instructions` and a tool description.
