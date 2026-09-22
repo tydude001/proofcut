@@ -18190,9 +18190,18 @@ lock: a dead holder drew "stale agent lock" with its button, which cleared it
 at both 0 and 120 ms dwell; a live holder drew "an agent is editing" and no
 button; nothing overflowed at 700px.
 
-Not run: the plan's live pass with two real `claude` sessions (the web panel
-beside a terminal Claude Code), which is the check that the refusal reaches a
-person through the panel and that an agent stops rather than deleting the lock.
+**The plan's live pass, run the same day** on a fresh `make_demo --build`
+project (`~/proofcut-work/spikes/lock-probe/demo`). The web panel's `claude`
+added a cue and held the lock. A terminal `claude -p` with proofcut's tools
+was then refused on `cue_add`. It checked with `ps` that the holder was alive,
+said `unlock` would put two writers in the project, and stopped. It never
+touched the lock. (Its `ps` ran because `--allowedTools` does not gate a
+built-in tool, CLAUDE.md's own trap.) After `kill -9` of the panel's `claude`,
+its MCP child read end-of-input and released the lock itself, and the
+terminal agent's retry went through with no `unlock`. With the lock held
+elsewhere, the panel showed "✗ Cue add" in the pane, and its reply named
+the holder and left the lock alone. `proofcut unlock` refused the live holder,
+then broke its lock once it was dead.
 
 ## A placed voice gets captions, and whisper's sign-off is excused — 2026-09-22
 
