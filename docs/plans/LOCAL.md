@@ -371,6 +371,11 @@ scorer gap a local run has found (§ The run, 2026-09-19, found the first).
 A score of 10/10 on this brief is not a clean film until the render's
 head is heard.
 
+**It also ignored the length.** The brief asks for "a finished cut of about
+45 seconds"; the render is 93.7 s, the whole VO less one 2.6 s aside.
+Claude's cut on the same brief was 45.23 s (TRIAL.md). `score()` has no
+length check, so this is the third thing a 10/10 here does not say.
+
 **Pictures stay unjudged**: 5 images dropped again for a model with no
 vision projector, and 8 shots hung off `broll_brief`, 5 of them on
 `scream1_reveal`.
