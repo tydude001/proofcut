@@ -388,3 +388,9 @@ in `_tool`, and none of it touches the manifest schema.
    If not, the cross-host path can stay "always needs `unlock`" and the
    heartbeat observation is only a backstop against pid reuse. If it is, it
    should get a live test against the NAS mount.
+
+**Answered by Tyler 2026-09-22: all four as proposed.** Idle release after 10
+minutes. CLI mutations warn and proceed. Studio shows the holder and offers an
+unlock button for a stale lock only. Two machines on one NAS project is not a
+real workflow, so the cross-host path always needs `unlock`. Build per
+§ Recommendation.

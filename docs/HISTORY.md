@@ -18071,6 +18071,12 @@ into "in July". That is a hallucination the check is right not to excuse.
 It does not count occurrences, so a third take of a line the edit already
 says twice would be excused. `compare`'s `repeated` still sees that.
 
+**Tyler's two calls, 2026-09-22, both yes, not yet built:**
+- Captions draw a placed sound's transcribed words, so a narrator placed as
+  a sound gets subtitles.
+- `finish_check` excuses whisper's "thank you for watching" only where it
+  falls over a quiet stretch. A spoken sign-off is still checked.
+
 ## The kits call setup — 2026-09-21
 
 `scripts/mac_trial.sh` and `scripts/windows_trial.ps1` each carried their own
