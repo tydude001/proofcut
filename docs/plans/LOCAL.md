@@ -326,3 +326,51 @@ directors, and it failed where Claude passed. Moving the shim into
 next run worth making is the same brief after the map names `hear`, which
 asks whether the gap was discovery or reasoning. A larger context on the
 seat would only have let the loop run longer.
+
+## The rerun with `hear` on the map, 2026-09-22
+
+Run `trial-real/runs/20260922-143625`, the same seat, shim and brief, after
+`d01f075` put `hear` in `server.INSTRUCTIONS` with the rule about a retake
+whisper hides.
+
+| | Claude (TRIAL.md) | Qwen, 2026-09-21 | Qwen, 2026-09-22 |
+|---|---|---|---|
+| checks | 9/9 | 7 pass, 2 fail, 1 unsettled | **10/10** |
+| turns / calls | 77 / 76 | 88 / 124, 8 refused | 59 / 69, 4 refused |
+| wall | 914 s | 4,426 s, then out of context | 2,014 s |
+| `hear` calls | 5 | 0 | **8** |
+
+**It found `hear`, listened to the fluffed take, and kept it.** By the
+score this run is a clean pass. By ear it is not: whisper (turbo, on the
+CPU) over the render's first 25 s hears "the first the first 12 minutes of
+Scream are still the best 12 minutes of horror in the 90s" at 0.0 to
+11.3 s and then the same sentence again at 11.3 to 19.2 s. The agent's
+first `hear` (2.8 to 12 s of the source) reported that first take in its
+own words, and its summary then said "no fluffed takes were found".
+
+**proofcut flagged it twice and the model explained both flags away.**
+Import reported word 17, "and", as a suspect duration of 8.34 s against a
+0.84 s limit: the retake hidden inside one word. Every `verify` reported a
+loud gap at 11.22 to 19.18 s holding 4.34 s of sound, peaking at -14.8 dB
+against speech at -30.5. The agent called both "a pause between takes". What
+did not flag it is `verify`'s word diff: whisper hid the repeat in the
+render the same way it hid it in the source, so 211 words were heard
+against 211 expected and `similarity` read 1.0.
+
+**So the gap was discovery yesterday and is reasoning today, and the map's
+rule has the wrong trigger.** It says "when verify hears words the timeline
+does not have", which is how yesterday's decode showed the take and not
+how today's did. A loud gap over a doubted duration is the same finding
+with no diff to read. The rule could name it; that changes what every
+later trial measures, so it is proposed here rather than made.
+
+**The score cannot see this either.** `no_stutter` and `retake_removed`
+read the timeline's transcript words, and the transcript holds one take,
+so both passed a film that says its opening line twice. That is the second
+scorer gap a local run has found (§ The run, 2026-09-19, found the first).
+A score of 10/10 on this brief is not a clean film until the render's
+head is heard.
+
+**Pictures stay unjudged**: 5 images dropped again for a model with no
+vision projector, and 8 shots hung off `broll_brief`, 5 of them on
+`scream1_reveal`.
