@@ -73,7 +73,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from proofcut import captions, media, ops, progress, renderlog
+from proofcut import captions, media, ops, progress, projectlock, renderlog
 from proofcut.asr import ASRError
 from proofcut.autoeditor import AutoEditorError
 from proofcut.energy import EnergyError
@@ -2319,6 +2319,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(view)
             elif path == "/api/session":
                 self._send_json(_session_get(str(self.project_root)))
+            elif path == "/api/lock":
+                # Who holds the project, for the truth strip: a read of
+                # `owner.json`, never the lock (docs/plans/PROJECT-LOCK.md
+                # § What the lock guards — this process never takes it).
+                held = projectlock.holder(self.project_root)
+                self._send_json({"held": held is not None, **(held or {})})
             elif path == "/api/captions":
                 query = parse_qs(url.query)
                 clip_id = (query.get("clip_id") or [None])[0]
@@ -3332,6 +3338,13 @@ def _undo(root: str, _payload: dict[str, Any]) -> dict[str, Any]:
     return ops.undo(root)
 
 
+def _unlock(root: str, _payload: dict[str, Any]) -> dict[str, Any]:
+    """`POST /api/unlock` — the truth strip's button, which clears a lock only
+    when its session is dead by same-machine evidence (Tyler, 2026-09-22). A
+    live holder refuses; breaking one is `proofcut unlock --force`, typed."""
+    return projectlock.break_stale(root)
+
+
 def _cue_add(root: str, payload: dict[str, Any]) -> dict[str, Any]:
     """`POST /api/cue` — the timeline drag gesture's landing point.
 
@@ -3573,6 +3586,7 @@ _POST_ROUTES: dict[str, Callable[[str, dict[str, Any]], dict[str, Any]]] = {
     "/api/cut-at": _cut_at,
     "/api/restore": _restore,
     "/api/undo": _undo,
+    "/api/unlock": _unlock,
     "/api/cue": _cue_add,
     "/api/music": _music,
     "/api/clip-role": _clip_role,

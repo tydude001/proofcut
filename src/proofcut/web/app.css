@@ -928,6 +928,13 @@ textarea {
   cursor: pointer;
 }
 
+/* The lock chip states a fact and is not a link; the button beside it is
+   drawn only for a dead session's lock. Both are toggled by `hidden`, so
+   both need the companion rule (CLAUDE.md § An author `display:` rule). */
+#truth-lock { cursor: default; }
+#truth-lock[hidden],
+#truth-unlock[hidden] { display: none; }
+
 /* F8: export's progress used to be reported a whole pane away, in the agent
    feed, one column over from the button that started it — the feed keeps
    the full record (it should, it is the one honest log) but the button had

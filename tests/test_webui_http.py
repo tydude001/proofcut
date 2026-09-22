@@ -5318,3 +5318,46 @@ def test_the_cookie_is_not_stamped_onto_a_later_request_on_the_same_connection(
         assert second.getheader("Set-Cookie") is None
     finally:
         conn.close()
+
+
+def test_the_truth_strip_reads_the_lock_and_clears_only_a_dead_one(
+    server: str, project: Path
+) -> None:
+    """docs/plans/PROJECT-LOCK.md, Tyler's third answer: Studio shows the
+    holder and its button clears a stale lock only. The window never takes
+    the lock itself — a read of the route leaves none behind."""
+    import os
+    import subprocess
+    import sys
+
+    from proofcut import projectlock
+
+    status, free = _json(f"{server}/api/lock")
+    assert status == 200 and free == {"held": False}
+    assert not projectlock.lock_dir(project).exists()
+
+    def plant(pid: int) -> None:
+        directory = projectlock.lock_dir(project)
+        directory.mkdir(parents=True)
+        owner = {"token": "t", "pid": pid, **projectlock.machine(),
+                 "started": "2026-09-22T00:00:00", "command": "proofcut mcp (stdio)"}
+        (directory / "owner.json").write_text(json.dumps(owner))
+        (directory / "heartbeat").write_text("0")
+
+    plant(os.getpid())
+    status, live = _json(f"{server}/api/lock")
+    assert live["held"] is True and live["stale"] is False and live["pid"] == os.getpid()
+    status, refused = _post(f"{server}/api/unlock", {})
+    assert status == 400 and "not stale" in refused["error"]
+    assert projectlock.lock_dir(project).exists()
+
+    import shutil
+
+    shutil.rmtree(projectlock.lock_dir(project))
+    child = subprocess.Popen([sys.executable, "-c", "pass"])
+    child.wait()
+    plant(child.pid)
+    assert _json(f"{server}/api/lock")[1]["stale"] is True
+    status, cleared = _post(f"{server}/api/unlock", {})
+    assert status == 200 and cleared["broken"] is True
+    assert _json(f"{server}/api/lock")[1] == {"held": False}

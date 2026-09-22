@@ -651,6 +651,41 @@ on("finish-report", (bundle) => {
   );
 });
 
+// Who holds the project lock — another agent session, or this window's own
+// panel agent through its MCP server (docs/plans/PROJECT-LOCK.md). Read on
+// every reload, since a session takes the lock at its first write, and on a
+// slow timer, since a session that dies writes nothing to reload on. A live
+// holder is a fact (no colour); a dead one's lock is the one state with a
+// button, and the server clears only that (`projectlock.break_stale`).
+async function drawLock() {
+  let held;
+  try {
+    held = await api("/api/lock");
+  } catch {
+    return;
+  }
+  const chip = $("truth-lock");
+  chip.hidden = !held.held;
+  $("truth-unlock").hidden = !(held.held && held.stale);
+  if (!held.held) return;
+  const where = held.foreign ? ` on ${held.host}` : "";
+  setChip(
+    chip,
+    held.stale ? "stale agent lock" : "an agent is editing",
+    held.stale ? "warn" : null,
+    `${held.command || "proofcut mcp"} · pid ${held.pid}${where} · since ${held.started}`,
+  );
+}
+
+$("truth-unlock").addEventListener("click", () => {
+  api("/api/unlock", {})
+    .then(drawLock)
+    .catch((err) => toast(err.message));
+});
+on("reload", drawLock);
+setInterval(drawLock, 30000);
+drawLock();
+
 /* -- session restore and save (docs/plans/STUDIO.md Step 04, contract § E) -----------
  *
  * `cache/session.json` — playhead, zoom, timeline scroll, pane collapse,

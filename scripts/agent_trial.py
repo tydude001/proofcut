@@ -93,7 +93,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import make_demo
 import trial_check
 
-from proofcut import briefs, finish, ops, webui
+from proofcut import briefs, finish, ops, projectlock, webui
 from proofcut import media as proofcut_media
 from proofcut.project import LEGACY_MANIFEST_NAME, MANIFEST_NAME, TIMELINE_NAME, Project
 
@@ -201,16 +201,11 @@ def hold_lock(work: Path) -> Path:
         except (json.JSONDecodeError, KeyError, ValueError, OSError):
             pid = -1
             held = {}
-        alive = False
-        if pid > 0:
-            try:
-                os.kill(pid, 0)
-                alive = True
-            except ProcessLookupError:
-                alive = False
-            except PermissionError:  # someone else's pid, reused — not ours
-                alive = False
-        if alive:
+        # The product lock's probe, never `os.kill`: on Windows that call
+        # terminates the process it asks about (docs/plans/PROJECT-LOCK.md
+        # § The gap). The orphaned agent this file misses — the harness's pid
+        # is dead while its `claude` edits on — is `prepare`'s refusal below.
+        if pid > 0 and projectlock.pid_alive(pid):
             raise TrialError(
                 f"another trial is live in {work}: pid {pid}, started "
                 f"{held.get('started')}, run {held.get('run_dir')}. Two agents in "
@@ -300,6 +295,17 @@ def prepare(
             make_demo.make_music(media / "music.wav")
 
     project = work / "proj"
+    # An orphaned agent from a killed run still holds the project through its
+    # MCP server, whose pid is alive when the harness's is not — so this, and
+    # not `hold_lock`, is what catches TRIAL.md § 4. The product's own check,
+    # imported rather than restated.
+    held = projectlock.holder(project) if project.exists() else None
+    if held is not None and not held["stale"]:
+        raise TrialError(
+            f"an agent session still holds {project} (pid {held['pid']}, "
+            f"{held['command']}, since {held['started']}) — a previous run's agent is "
+            "still editing. Kill it, or run `proofcut -C <project> unlock` if it is dead."
+        )
     if project.exists() and fresh:
         shutil.rmtree(project)
     if not project.exists():

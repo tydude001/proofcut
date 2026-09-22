@@ -778,6 +778,8 @@ CLI_ONLY = {
     "ping",  # a tool, but takes no project and needs no mapping
     "setup",  # downloads GBs and changes PATH; never an agent's call
     # (docs/plans/INSTALL.md § Step 3)
+    "unlock",  # breaks another session's lock; an agent able to is two writers again
+    # (docs/plans/PROJECT-LOCK.md § Breaking a stale lock)
     "info",  # prints the manifest, which MCP clients get from other tools —
     # and stands its descriptions down to a count, because describe_ls is
     # where the text is meant to be read
@@ -8365,6 +8367,35 @@ def test_a_bound_server_serves_its_own_project(tmp_path: Path) -> None:
         return await Client(session).call("cue_ls", path=str(project))
 
     assert anyio.run(_with_server, body, _bound(project))["count"] == 0
+
+
+def test_a_second_session_is_refused_the_project_and_the_first_releases_it(
+    tmp_path: Path,
+) -> None:
+    """docs/plans/PROJECT-LOCK.md: the lock is held by the server that writes,
+    taken at its first write, never by a read, and given up when its client
+    goes. Two real servers at once, because the holder is a process and the
+    refusal has to survive the transport intact."""
+    project, _ = _two_projects(tmp_path)
+    lock = project / "cache" / "agent.lock"
+
+    async def body(first: ClientSession) -> Any:
+        await Client(first).call("migrate_project", plan=True)
+        held = lock.is_dir()
+
+        async def second(session: ClientSession) -> Any:
+            read = await Client(session).call("cue_ls")
+            return read, await _refused(session, "migrate_project", plan=True)
+
+        read, refused = await _with_server(second, _bound(project))
+        return held, read, refused
+
+    held, read, refused = anyio.run(_with_server, body, _bound(project))
+    assert held
+    assert read["count"] == 0
+    assert "Another proofcut session holds this project" in refused
+    assert "Do not delete the lock" in refused
+    assert not lock.exists()
 
 
 def test_a_bound_server_refuses_another_project(tmp_path: Path) -> None:

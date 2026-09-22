@@ -252,6 +252,21 @@ class ProjectConflictError(ProjectError):
     from every other reason a project call can fail."""
 
 
+def _holder_suffix(root: Path) -> str:
+    """Name the session holding the project, when one does and it is not this
+    process — the stamp can say who, which it could not before the lock
+    (docs/plans/PROJECT-LOCK.md § How it fits with `_manifest_stamp`)."""
+    from proofcut import projectlock
+
+    try:
+        held = projectlock.holder(root)
+    except OSError:
+        return ""
+    if held is None or held["mine"] or held["stale"]:
+        return ""
+    return f" It is held by pid {held['pid']} ({held['command']})."
+
+
 def _manifest_digest(path: Path) -> str:
     """The stamp `_manifest_stamp` holds: a hash of the file's bytes as they
     are on disk, read back after every write rather than computed from what
@@ -659,6 +674,7 @@ class Project:
                         "read here — another writer touched this project after "
                         "the state being undone was read; restoring now would "
                         "silently discard their write. Re-read the project first."
+                        + _holder_suffix(self.root)
                     )
 
         if latest.timeline is not None:
@@ -998,6 +1014,7 @@ class Project:
                     "CLI command running beside this one) touched this project in "
                     "between. Re-read the project and re-apply this change; "
                     "writing now would silently discard theirs."
+                    + _holder_suffix(self.root)
                 )
         if snapshot:
             self.snapshot()

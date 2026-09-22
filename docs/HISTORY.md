@@ -18143,3 +18143,53 @@ or Windows download was exercised. `windows_trial.ps1` and
 `windows_probe.ps1` parse without error under PowerShell 7.6 and stay ASCII,
 but neither has run under 5.1. The first `mac-demo` and `windows-demo` runs
 after this commit are the evidence.
+
+## The project lock, built — 2026-09-22
+
+docs/plans/PROJECT-LOCK.md, built as its § Recommendation says, after Tyler
+took all four of its answers as proposed. **One agent session per project is
+now enforced by the product, not only by the trial harness.**
+
+- `projectlock.py` holds it: `<project>/cache/agent.lock/`, written in full
+  under a staging name and renamed into place, so the rename is the exclusive
+  create and no reader sees a lock without its `owner.json`. A daemon thread
+  advances a heartbeat counter every 15 s; a fencing token is checked before
+  every write.
+- `server._tool` takes it lazily, at a session's first call to any tool not
+  classed `_READ` (`plan=True` included), and only once `serve()` has run: a
+  process that imports the server (the tests, `briefs`) is not a session.
+  `init`, and `reel`'s `dest`, take it after the body has made the project.
+- Staleness is decided only by same-machine evidence (dead pid, a different
+  `boot_id`) or by a counter that does not move while watched, and the watch
+  runs only when the heartbeat file's age already looks wrong. A holder on
+  another machine always needs `proofcut unlock` (Tyler: two machines on one
+  NAS project is not a real workflow).
+- A holder idle for 10 minutes releases its own lock and takes it back at its
+  next write; if another session wrote in between, that write's reply carries
+  `lock_notice`.
+- `proofcut unlock` (CLI only, like `setup`) breaks a dead session's lock, and a
+  live one only with `--force`. Studio's truth strip shows the holder and a
+  "clear stale lock" button for a dead one only (`GET /api/lock`,
+  `POST /api/unlock`). A one-shot CLI command that changes a held project
+  warns on stderr and proceeds, judged by the project's bytes before and after.
+- `ProjectConflictError` names the holder when one exists. `agent_trial.py`'s
+  `prepare` refuses a project an orphaned agent still holds, which is TRIAL.md
+  § 4 caught by the product, and `hold_lock` uses `projectlock.pid_alive`
+  instead of `os.kill`, which terminates the process it probes on Windows.
+
+**One defect found live, not by the tests.** The first SIGTERM handler called
+`sys.exit`, and a stdio server then hung instead of dying: its loop waits on a
+thread blocked reading stdin. It now releases the lock and re-delivers the
+signal to its default action. Measured with two real `proofcut -C … mcp`
+processes (`~/proofcut-work/spikes/lock-probe/kill9.py`): B refused while A
+lived; after `kill -9` of A, B's next write took the lock with no `unlock`;
+SIGTERM of B exited -15 and left no lock.
+
+Studio's chip was driven in headless Chrome (verify-live) against a planted
+lock: a dead holder drew "stale agent lock" with its button, which cleared it
+at both 0 and 120 ms dwell; a live holder drew "an agent is editing" and no
+button; nothing overflowed at 700px.
+
+Not run: the plan's live pass with two real `claude` sessions (the web panel
+beside a terminal Claude Code), which is the check that the refusal reaches a
+person through the panel and that an agent stops rather than deleting the lock.

@@ -141,6 +141,10 @@
         <a id="truth-captions" class="chip truth-chip" href="#" data-mode-link="finish"></a>
         <a id="truth-framing" class="chip truth-chip" href="#" data-mode-link="frame"></a>
         <a id="truth-flags" class="chip truth-chip" href="#" data-mode-link="finish"></a>
+        <!-- Who holds the project lock (projectlock.holder), when anyone does;
+             the button clears only a dead session's (docs/plans/PROJECT-LOCK.md). -->
+        <span id="truth-lock" class="chip" hidden></span>
+        <button id="truth-unlock" class="chip warn" type="button" hidden>clear stale lock</button>
       </div>
     </div>
 

@@ -228,6 +228,17 @@ not a gate:
   refused until the caller passes `confirm_suspect`;
 - a write against a manifest that changed under it is refused
   (`ProjectConflictError`) rather than clobbering the other writer.
+- one agent session per project: a server takes the project's lock at its
+  first write, and a second session's writes are refused until the first
+  exits or sits idle for 10 minutes.
+
+If a session died without releasing its lock (a crash on another machine,
+say), `proofcut -C myproject unlock` clears it: it breaks a dead session's
+lock and refuses a live one unless given `--force`. Studio shows who holds the
+project and offers the same clearing for a dead session. Deleting
+`cache/agent.lock/` by hand is safe too; a live holder then refuses its next
+write rather than writing blind. A one-shot CLI command that changes a held
+project warns and goes ahead.
 
 If you want a gate, it belongs in the client: leave the destructive tools off
 its allow-list and it will ask before each one. The agent panel and

@@ -19,11 +19,16 @@ route to the port.
 
 from __future__ import annotations
 
+import atexit
 import base64
 import functools
 import inspect
+import os
 import re
+import signal
 import socket
+import sys
+import threading
 from collections.abc import Callable, Sequence
 from importlib import resources
 from pathlib import Path
@@ -40,7 +45,7 @@ from starlette.datastructures import Headers
 from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from proofcut import __version__, asr, briefs, energy, ops, progress, webui
+from proofcut import __version__, asr, briefs, energy, ops, progress, projectlock, webui
 from proofcut.project import MANIFEST_NAME, ProjectError, refusing_path_too_long
 
 #: The one text about proofcut a client loads before it decides which tool to
@@ -2169,6 +2174,7 @@ def _tool(
         context_param = _context_param(fn)
         if not present and context_param is None:
             return register(fn)
+        writes = _ANNOTATIONS[fn.__name__] is not _READ
 
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -2195,13 +2201,41 @@ def _tool(
             # the few that address none (`ping`, `fonts`' default) write
             # nothing under one.
             with refusing_path_too_long(), progress.reporting(reporter):
+                roots = _lock_roots(bound, present) if writes and _LOCKING else []
+                notices = [_hold(root) for root in roots if _is_project(root)]
                 if reporter is not None:
                     progress.report(0, None, fn.__name__)
-                return fn(*bound.args, **bound.kwargs)
+                result = fn(*bound.args, **bound.kwargs)
+                # `init`, and `reel`'s `dest`, make the project they address:
+                # there was nothing to hold until the body ran.
+                notices += [_hold(root) for root in roots if root not in projectlock.held_roots() and _is_project(root)]
+                notice = next((n for n in notices if n), None)
+                if notice is not None and isinstance(result, dict):
+                    result = {**result, "lock_notice": notice}
+                return result
 
         return register(wrapper)
 
     return decorator
+
+
+#: Whether tools take the project lock. Only `serve()` turns it on: the lock
+#: is held by the MCP server process, which is what an agent session is
+#: (docs/plans/PROJECT-LOCK.md § What the lock guards), and a process that
+#: merely imports this module — a test, `briefs` — is not one.
+_LOCKING = False
+
+
+def _lock_roots(bound: inspect.BoundArguments, present: list[str]) -> list[Path]:
+    return [Path(bound.arguments[name]).resolve() for name in present if bound.arguments[name]]
+
+
+def _is_project(root: Path) -> bool:
+    return (root / MANIFEST_NAME).is_file()
+
+
+def _hold(root: Path) -> str | None:
+    return projectlock.ensure_held(root)
 
 
 #: What `path` means, stated once and attached to the parameter itself rather
@@ -5800,6 +5834,39 @@ def serve(
     `"http"`. `host`, `port`, `allow_remote` and `allow_remote_hosts` are
     ignored for stdio.
     """
+    global _LOCKING
+    _LOCKING = True
+    projectlock.configure(command=f"proofcut mcp ({transport})")
+    atexit.register(projectlock.release_all)
+    if sys.platform != "win32" and threading.current_thread() is threading.main_thread():
+        # Python's default SIGTERM handler skips `atexit`, so the lock is
+        # released here and the signal then re-delivered to its default
+        # action. Never `sys.exit` from the handler: a stdio server's loop
+        # waits on a thread blocked reading stdin, and a SystemExit left it
+        # hung rather than dead — measured.
+        signal.signal(signal.SIGTERM, _release_and_terminate)
+    try:
+        _serve(root, transport=transport, host=host, port=port, allow_remote=allow_remote,
+               allow_remote_hosts=allow_remote_hosts)
+    finally:
+        projectlock.release_all()
+
+
+def _release_and_terminate(signum: int, _frame: Any) -> None:
+    projectlock.release_all()
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+
+
+def _serve(
+    root: str | Path | None,
+    *,
+    transport: str,
+    host: str,
+    port: int,
+    allow_remote: bool,
+    allow_remote_hosts: Sequence[str] | None,
+) -> None:
     global _BOUND_ROOT, _BOUND_BY
     if root is not None:
         resolved = Path(root).resolve()

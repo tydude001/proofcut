@@ -10,6 +10,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from proofcut import (
@@ -19,6 +21,7 @@ from proofcut import (
     describe,
     energy,
     ops,
+    projectlock,
     reviewserver,
     tts,
     webui,
@@ -33,7 +36,7 @@ from proofcut.media import MediaError
 from proofcut.mlt import EASINGS, OVERLAY_MOTIONS, MLTError
 from proofcut.pack import PackError
 from proofcut.picture import PictureError
-from proofcut.project import ProjectError, path_too_long
+from proofcut.project import MANIFEST_NAME, TIMELINE_NAME, ProjectError, path_too_long
 from proofcut.timeline import TimelineError
 from proofcut.transcript import TranscriptError
 from proofcut.verify import VerifyError
@@ -235,6 +238,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "--uninstall", action="store_true", help="remove everything setup installed, and nothing else"
     )
     p_setup.add_argument("--json", action="store_true", help="emit JSON instead of prose")
+
+    p_unlock = sub.add_parser(
+        "unlock",
+        help="clear the project lock a dead agent session left behind (-C DIR)",
+    )
+    # CLI-only on purpose, like setup: an agent able to break another agent's
+    # lock is two writers again (docs/plans/PROJECT-LOCK.md § Breaking a stale lock).
+    p_unlock.add_argument(
+        "--force", action="store_true", help="break the lock even though its session is alive"
+    )
 
     p_init = sub.add_parser("init", help="create a project directory")
     # `default=None`, not `"."`, so the handler can tell "not given" from
@@ -3563,6 +3576,10 @@ def _cmd_ping(_args: argparse.Namespace) -> int:
     return _emit(ping())
 
 
+def _cmd_unlock(args: argparse.Namespace) -> int:
+    return _emit(projectlock.unlock(Path(args.project).resolve(), force=args.force))
+
+
 def _cmd_mcp(args: argparse.Namespace) -> int:
     from proofcut.server import DEFAULT_HTTP_HOST, DEFAULT_HTTP_PORT, serve
 
@@ -3674,7 +3691,47 @@ _COMMANDS = {
     "ping": _cmd_ping,
     "brief": _cmd_brief,
     "mcp": _cmd_mcp,
+    "unlock": _cmd_unlock,
 }
+
+#: Commands the lock warning skips: the server that takes the lock, the
+#: window whose own edits a person makes knowingly, and `unlock` itself.
+_NO_LOCK_WARNING = frozenset({"mcp", "web", "unlock", "review", "setup", "doctor"})
+
+
+def _project_bytes(root: Path) -> tuple[bytes | None, ...]:
+    out: list[bytes | None] = []
+    for name in (MANIFEST_NAME, TIMELINE_NAME):
+        try:
+            out.append((root / name).read_bytes())
+        except OSError:
+            out.append(None)
+    return tuple(out)
+
+
+def _warn_if_held(args: argparse.Namespace) -> Callable[[], None]:
+    """Warn, and proceed, when a one-shot command changes a project another
+    live session holds (Tyler, 2026-09-22). Judged by the project's own bytes
+    before and after, so a read never warns and no list of mutating commands
+    has to be kept in step with the parser."""
+    if args.command in _NO_LOCK_WARNING:
+        return lambda: None
+    root = Path(args.project).resolve()
+    held = projectlock.holder(root) if projectlock.lock_dir(root).is_dir() else None
+    if held is None or held["stale"] or held["mine"]:
+        return lambda: None
+    before = _project_bytes(root)
+
+    def after() -> None:
+        if _project_bytes(root) != before:
+            print(
+                f"proofcut: warning: an agent session holds this project (pid "
+                f"{held['pid']}, {held['command']}, since {held['started']}); this "
+                "command changed it underneath that session.",
+                file=sys.stderr,
+            )
+
+    return after
 
 #: Every failure proofcut raises deliberately. Anything else is a bug and should
 #: keep its traceback rather than be flattened into a one-line message.
@@ -3740,7 +3797,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.project is None:
         args.project = "."
     try:
-        return _COMMANDS[args.command](args)
+        warn = _warn_if_held(args)
+        try:
+            return _COMMANDS[args.command](args)
+        finally:
+            warn()
     except _EXPECTED as exc:
         print(f"proofcut: {exc}", file=sys.stderr)
         return 1

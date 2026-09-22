@@ -77,7 +77,10 @@ How one agent per project would be enforced — a directory lock taken at the
 first write-capable MCP call, a heartbeat counter, auto-break only on a dead
 pid or a new boot, `proofcut unlock` for the rest, `_manifest_stamp` kept as
 the backstop — is [docs/plans/PROJECT-LOCK.md](docs/plans/PROJECT-LOCK.md),
-written 2026-09-21 and unbuilt; four questions for Tyler close it.
+written 2026-09-21 and built 2026-09-22 (`projectlock.py`; HISTORY.md § The
+project lock, built). **Only `serve()` turns it on**, so an in-process call
+to a tool function takes no lock, and a SIGTERM handler must never
+`sys.exit`: the stdio server then hangs rather than dies.
 How the 13-minute suite became two — measured, then xdist against a serial
 control — is [docs/plans/SUITE-SPEED.md](docs/plans/SUITE-SPEED.md), built
 2026-09-17: **run it as `QT_QPA_PLATFORM=offscreen pytest -n auto`, about
