@@ -108,8 +108,9 @@ proofcut's own export doing it, so it counts.
 ### A4. The two cuts, rebuilt and posted
 
 Both rebuilt and measured — HISTORY.md § The Scream native rebuild. Scream's
-duck followed the same day (HISTORY.md § The duck). What remains of this step
-is the posting.
+duck followed the same day (HISTORY.md § The duck), and Lambs/Longlegs's on
+2026-09-21, as `longlegs-native-8.mp4` (§ Lambs/Longlegs v10's duck,
+measured). What remains of this step is the posting.
 
 - **Lambs/Longlegs:** re-run the native build on A1–A3, A/B it against v10 on
   the review page, then Tyler's two open calls (synth VO vs a re-record; *"It's

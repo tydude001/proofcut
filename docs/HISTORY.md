@@ -15211,6 +15211,7 @@ That was a prediction, and only the "louder under a line" half was right.
   ducks** (`--duck` defaults to 9). Its rebuild has no duck and nobody has
   measured the difference. Measuring it means recovering v10's bed from under
   its holds' film audio, the part of that film's mix Scream never had.
+  *Measured 2026-09-21: it ducked, ~9 dB; § Lambs/Longlegs v10's duck, below.*
 - **Nobody has listened to `-5`.** The numbers say it is closer to v8; the
   wiki row `proofcut-native` holds the watch.
 
@@ -15219,6 +15220,66 @@ first 20 s of `longlegs-native-7` beside v10, on matched clips: no music in the
 voice's way in either Scream, no difference between them, and no music audible
 in either Longlegs opening. The loudness change that the numbers put in that
 cold open did not register as a difference.
+
+### Lambs/Longlegs v10's duck, measured — 2026-09-21
+
+**v10's bed ducked about 9 dB under the voice, and the rebuild's did not
+duck at all**, so the rebuild now carries `music --duck 11` and
+`longlegs-native-8.mp4` is its render.
+
+**No recovery by subtraction was needed.** v10's intermediate files are on
+the NAS, so the bed was rebuilt exactly: `music_bed.py`'s own
+`bed_filtergraph` over the cues `mix_longlegs_v10.sh` recorded gives the
+un-ducked bed. Its gain in a mix is then read by projection, `<mix, bed> /
+<bed, bed>` per 0.5 s window, with each 31 s passage at its own measured lag.
+The VO, the holds and the fairy tale do not correlate with the music, so they
+add noise and no bias, and the holds' film audio never had to be taken out.
+Windows are classed by `longlegs-v10-body.mp4`'s own level, which is what the
+sidechain keyed off, with crossfades and holds left out. Two numbers vouch
+for the method:
+- **v10's measured bed sits where its design says.** The same compressor
+  (`threshold=0.03`, ratio 4.5, 15/380 ms) regenerated over the body predicts
+  every band median within 0.5 dB, after one constant offset: the bed's
+  −18.64 dB level plus the +3.55 dB make-up.
+- **v10-mixed runs 5 ms late on every passage.** That is `alimiter` without
+  `latency=true`, the defect § The duck found in proofcut's own master.
+
+**What the windows read**, in dB against the un-levelled bed (median per
+band of the body's level):
+
+| VO level, dBFS | v10 | `-7`, no duck | `-8`, `--duck 11` |
+|---|---|---|---|
+| −60…−50 (pause) | −15.3 | −15.1 | −17.6 |
+| −40…−30 | −16.7 | −15.2 | −20.3 |
+| −30…−25 | −20.0 | −15.1 | −22.5 |
+| −25…−20 | −23.4 | −15.5 | −25.0 |
+| −20…−10 | −26.2 | −15.1 | −24.6 |
+
+- **`-7` was flat at exactly v10's pause level**, so under speech its bed
+  was 9–11 dB louder than v10's.
+- **Depth 11 was fitted offline before rendering.** `duck.gate`, at
+  proofcut's own threshold (VO −2 LU), was applied to the body's level and
+  scored against the regenerated compressor:
+
+  | depth | 8 | 10 | **11** | 12 | 14 | none |
+  |---|---|---|---|---|---|---|
+  | error, dB | 2.88 | 1.81 | **1.55** | 1.60 | 2.44 | 8.51 |
+
+  Scream fit 12 against the same compressor settings, over a VO recorded
+  2.3 LU quieter.
+- **`-8` against v10:** within ~1 dB overall. In long pauses it is 0.8 dB
+  under v10, because a gate recovers from its full depth where a compressor
+  recovers from what the word pushed. Under the loudest speech it is 1.6 dB
+  over v10, because a gate stops at its depth where a compressor keeps going.
+  That is the gate-against-compressor remainder Scream left too.
+- **The render:** −16.1 LUFS / −1.5 dBTP (`limited`, +3.4 dB), 2561 keys,
+  261 s ducked, heard off the Edit alone. The fairy tale is `under_vo` and is
+  not heard, as it was not in v10.
+
+**Nobody has listened to `-8`.** The measuring scripts are
+`~/proofcut-work/spikes/lambs-duck/` (`measure.py`, `fit.py`). The project's
+manifest from before the duck is kept there too. `assemble_longlegs_native.py`
+still builds without `--duck`, so a rebuild from nothing would lose it.
 
 ## Glama takes a submission, and the probe that missed it — 2026-09-15
 
