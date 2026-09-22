@@ -397,12 +397,13 @@ git clone https://github.com/tydude001/proofcut
 bash proofcut/scripts/mac_trial.sh
 ```
 
-On Apple silicon it installs `uv`, `ffmpeg-full`, `espeak-ng` and
-`auto-editor` with Homebrew (and Homebrew itself if you have none), plus the
-Shotcut app for its renderer and whisper. Homebrew no longer installs on
-Intel Macs, so on one the script downloads the same tools into
-`~/proofcut-mac-trial` instead, and needs only Apple's Command Line Tools.
-`bash proofcut/scripts/mac_trial.sh --uninstall` removes what it added.
+It downloads `uv` into `~/proofcut-mac-trial` and uses it to run
+`proofcut setup`, which fetches whatever of ffmpeg, auto-editor, Shotcut's
+renderer and whisper your Mac is missing ([§ What it puts on your
+machine](#what-it-puts-on-your-machine)). It asks for no password; an Intel
+Mac needs Apple's Command Line Tools, and the script says so if they are
+missing. `bash proofcut/scripts/mac_trial.sh --uninstall` runs `proofcut
+setup --uninstall` and deletes that folder.
 Then [file the report](https://github.com/tydude001/proofcut/issues/new?template=mac-test.yml).
 
 On Windows, from PowerShell:
@@ -412,10 +413,11 @@ git clone https://github.com/tydude001/proofcut
 powershell -ExecutionPolicy Bypass -File proofcut\scripts\windows_trial.ps1
 ```
 
-It downloads `uv`, `ffmpeg`, `auto-editor`, `espeak-ng`, Shotcut's renderer
-and whisper into one folder under `%LOCALAPPDATA%`. Nothing is installed
-system-wide and it needs no administrator rights. The same command with
-`-Uninstall` deletes that folder. It puts `proofcut-windows-report.zip` on
+It downloads `uv` into one folder under `%LOCALAPPDATA%` and uses it to run
+`proofcut setup`, which fetches whatever of ffmpeg, auto-editor, Shotcut's
+renderer and whisper your PC is missing. Nothing is installed system-wide
+and it needs no administrator rights. The same command with `-Uninstall`
+runs `proofcut setup --uninstall` and deletes that folder. It puts `proofcut-windows-report.zip` on
 your Desktop with your home folder's name taken out; [file the report](https://github.com/tydude001/proofcut/issues/new?template=windows-test.yml).
 
 ## Requirements

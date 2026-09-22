@@ -69,7 +69,7 @@ GAP = 0.6
 #: The espeak-ng library as a wheel, for a machine whose package manager has no
 #: espeak-ng — or whose owner would rather not be asked for a sudo password in
 #: the middle of a two-minute demo. Pinned to the version
-#: `scripts/mac_trial.sh` already pins, which carries the same library version
+#: `scripts/setup_trial.py`'s shim pins, which carries the same library version
 #: as the program (1.52.0), and that is the whole point: through
 #: `scripts/espeak_ng_lib.py` the two render a **byte-identical** voiceover
 #: (measured 2026-09-20 on Linux against system espeak-ng 1.52.0: the whole
@@ -131,8 +131,8 @@ def _espeak_command() -> list[str]:
     two-minute demo is the wrong first impression for a tool whose claim is
     that it installs for you alone and reverses exactly. So the program is
     preferred where it exists, and the wheel's copy of the same library stands
-    in where it does not — the route `scripts/mac_trial.sh` already takes for
-    Intel Macs, which no package manager will serve.
+    in where it does not — the route the Intel Mac kit took before it called
+    setup, since no package manager will serve an Intel Mac.
 
     `--no-project` keeps the wheel out of proofcut's own environment, which is
     `scripts/espeak_ng_lib.py`'s own rule: nothing under `src/` imports it, and

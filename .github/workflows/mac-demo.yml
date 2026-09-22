@@ -2,11 +2,17 @@
 #
 # ci.yml's macOS job has ffmpeg and nothing else, so every render and
 # transcription test skips there. This job runs scripts/mac_trial.sh the way a
-# tester does — Homebrew formulae, the Shotcut app's melt, whisper from uv,
-# then docs/DEMO.md to a render — and scripts/trial_check.py judges what
+# tester does — a pinned uv, then scripts/setup_trial.py: `proofcut setup`,
+# doctor, docs/DEMO.md to a render — and scripts/trial_check.py judges what
 # the run printed and rendered. The kit exits 0 on a render that disagrees
 # with the timeline, because it was written for a person who reads the report,
 # so its exit code is never the verdict here.
+#
+# Since 2026-09-21 the kit installs with `proofcut setup` and carries no install
+# code of its own (HISTORY.md § The kits call setup), so this job and
+# setup-demo.yml run the same install and the same demo. What this one adds is
+# the kit around them: its pinned uv on each CPU, uv's folders redirected into
+# the kit's, the report zip, and a run of the file README.md hands a person.
 #
 # It is not a person on a Mac: the runner already carries Homebrew and much
 # else, nothing prompts, and nobody reads the instructions. Those stay the Mac
@@ -16,9 +22,9 @@
 # macOS minutes bill at 10x while the repo is private, so this runs only when
 # something the demo exercises changes, and by hand.
 #
-# The Intel runner takes the kit's other route — pinned downloads into one
-# folder, no Homebrew — because Homebrew refuses Intel Macs now (issue #4).
-# It is the only Intel Mac this repo can reach before a person's.
+# The Intel runner (macos-15-intel) is the only Intel Mac this repo can reach
+# before a person's; there the kit's uv is the x86_64 build and setup takes its
+# Intel route, whisper held to numpy 1.x.
 
 name: mac-demo
 
@@ -28,6 +34,7 @@ on:
     paths:
       - "src/**"
       - "scripts/mac_trial.sh"
+      - "scripts/setup_trial.py"
       - "scripts/trial_check.py"
       - "scripts/make_demo.py"
       - "scripts/espeak_ng_lib.py"
@@ -56,7 +63,8 @@ jobs:
         env:
           PROOFCUT_TRIAL_REPORT: ${{ runner.temp }}/proofcut-mac-report.zip
         run: bash scripts/mac_trial.sh < /dev/null
-      # On Intel, uv lives in the kit's folder, and its Python there is the one to reuse.
+      # uv lives in the kit's folder, and its Python there is the one to reuse;
+      # setup's ffmpeg is in ~/.local/bin, and the check reads the frames with it.
       - name: judge the run
         if: always()
         run: |
@@ -64,6 +72,7 @@ jobs:
             export PATH=~/proofcut-mac-trial/tools/bin:$PATH
             export UV_PYTHON_INSTALL_DIR=~/proofcut-mac-trial/uv/python UV_CACHE_DIR=~/proofcut-mac-trial/uv/cache
           fi
+          export PATH="$HOME/.local/bin:$PATH"
           uv run python scripts/trial_check.py ~/proofcut-mac-trial
       # The runner has Rust, OpenSSL and pkg-config and a tester's Mac has none of them,
       # so a package with no wheel for this Mac compiles here and fails there (issue #5,
@@ -71,7 +80,7 @@ jobs:
       - name: uv sync compiled nothing unexpected
         if: always()
         run: |
-          built=$(sed -n '/^── uv sync$/,/^── /p' ~/proofcut-mac-trial/report.txt |
+          built=$(sed -n '/^── uv sync$/,/^── /p' ~/proofcut-mac-trial/kit.txt |
             sed -n 's/^ *Building \([^ =@]*\).*/\1/p' | grep -v -x -e proofcut -e opentimelineio || true)
           if [ -n "$built" ]; then
             echo "uv sync compiled a package a tester's Mac may not be able to: $built"
@@ -84,4 +93,5 @@ jobs:
           path: |
             ${{ runner.temp }}/proofcut-mac-report.zip
             ~/proofcut-mac-trial/report.txt
+            ~/proofcut-mac-trial/kit.txt
           if-no-files-found: warn

@@ -3,12 +3,13 @@
 docs/plans/INSTALL.md is the design. This module holds to its rules:
 
 - **Doctor's report is the input.** A piece is installed only when its row is
-  ✗, so a working system ffmpeg or melt is never touched. A trial kit may
-  install everything, because its tester agreed to that; a real installer
-  that replaces a tool the user already had breaks something of theirs.
-- **Every download is pinned by URL and SHA-256** (`PINS`), the way
-  `scripts/windows_trial.ps1` pins its own, and a mismatch leaves nothing
-  behind. The pins are bumped on purpose, never resolved from a `latest` tag:
+  ✗, so a working system ffmpeg or melt is never touched: an installer that
+  replaces a tool the user already had breaks something of theirs. The trial
+  kits install through this too (`scripts/setup_trial.py`), so they hold to
+  the same rule.
+- **Every download is pinned by URL and SHA-256** (`PINS`), and a mismatch
+  leaves nothing behind. This is the only copy of each pin: the kits fetch
+  uv and call setup (HISTORY.md § The kits call setup). The pins are bumped on purpose, never resolved from a `latest` tag:
   BtbN's `latest` moves daily, and its dated daily builds are deleted after a
   few weeks, so the ffmpeg pin is a month-end build, which BtbN keeps.
 - **One folder** (`deps.root()`), plus symlinks in `~/.local/bin` for the
@@ -21,9 +22,9 @@ docs/plans/INSTALL.md is the design. This module holds to its rules:
   libraries Shotcut's melt links against is told which ones, and nothing of
   that piece is left installed.
 - **Linux, Windows and both Macs** (`deps.setup_installs_here`). Each
-  non-Linux route is its test kit's install half, pins included, because a
-  person ran each kit to a checked render (INSTALL.md § Step 5) — except
-  Apple silicon, whose evidence is CI's own arm64 runner rather than a
+  non-Linux route grew out of its test kit's install half, pins included,
+  because a person ran each kit to a checked render (INSTALL.md § Step 5) —
+  except Apple silicon, whose evidence is CI's own arm64 runner rather than a
   person, and whose pieces are the Intel route's with arm64 downloads
   swapped in. HISTORY.md § `proofcut setup` on Apple silicon.
 - **CLI only, never an MCP tool.** An agent must not start a 2 GB download
@@ -92,10 +93,11 @@ _SHOTCUT_MACOS = Pin(
 #: on 2026-09-16 (INSTALL.md § What was measured). Shotcut builds Linux for
 #: x86_64 only, so an aarch64 box gets melt from its distribution.
 #:
-#: Windows and the Intel Mac are their test kits' pins
+#: Windows and the Intel Mac are the pins their test kits carried
 #: (`scripts/windows_trial.ps1`, `scripts/mac_trial.sh`), each run by a
 #: person to a checked render — except that Windows takes auto-editor 31.6.0,
-#: the version the other two pin, where its kit still pins 31.4.2. Apple
+#: the version the other two pin, where its kit had 31.4.2. The kits now
+#: install through setup and carry no pins but uv's. Apple
 #: silicon is the Intel route with each download's arm64 build in its place,
 #: measured rather than run by a person (`macos-aarch64`, 2026-09-20). The
 #: Macs' ffmpeg is the one piece not on GitHub: no Intel Mac ffmpeg
@@ -219,7 +221,8 @@ WHISPER_PYTHON = "3.12"
 
 #: What an Intel Mac's whisper needs besides: torch's last Intel build, 2.2.2,
 #: cannot read a numpy 2 array, and the newest numba has no Intel wheel and
-#: would compile. mac_trial.sh's arguments, and doctor's whisper fix.
+#: would compile. The Intel kit's arguments before it called setup, and
+#: doctor's whisper fix.
 #: **Apple silicon takes none of it**: torch still ships arm64 wheels, so
 #: pinning numpy back there would install an old stack to route around a
 #: constraint that Mac has not got.
@@ -400,8 +403,7 @@ def plan(report: dict[str, Any] | None = None) -> dict[str, Any]:
         raise InstallError(
             f"`proofcut setup` does not install on {where}: it installs on Linux, "
             "Windows, and Macs on Intel or Apple silicon. `proofcut doctor` prints the "
-            "fix under each ✗, and on a Mac scripts/mac_trial.sh installs everything "
-            "for a test run (README.md § Help wanted)."
+            "fix under each ✗."
         )
     report = report if report is not None else doctor.report()
     rows = _rows(report)
@@ -679,7 +681,7 @@ def _install_auto_editor(pins: tuple[Pin, ...], entry: dict[str, Any], record: d
 def _copy_app_off_dmg(dmg: Path, into: Path) -> None:
     """Copy `Shotcut.app` off a dmg into `into`, leaving nothing mounted.
 
-    mac_trial.sh's way: mounted read-only at a private mountpoint, copied with
+    The Intel kit's way before it called setup: mounted read-only at a private mountpoint, copied with
     `cp -R` (the bundle's frameworks are symlinks), then detached. A download
     through urllib carries no quarantine flag, so macOS has no first-launch
     check to make of it.
@@ -751,7 +753,8 @@ def _install_whisper(entry: dict[str, Any], record: dict[str, Any], say: Say, no
 
     `--python 3.12` can download a Python into uv's own folder, and a first
     tool install creates uv's tool folder. Both are setup's doing, so both
-    are recorded, the way scripts/mac_trial.sh records `uv-python`. uv's
+    are recorded, the way the Mac kit recorded `uv-python` when it installed
+    on its own. uv's
     download cache is uv's, and is left to `uv cache clean`.
     """
     uv = _uv()

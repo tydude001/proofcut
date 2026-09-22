@@ -2,29 +2,33 @@
 """`proofcut setup` from nothing to a checked render, then back — for CI.
 
 docs/plans/INSTALL.md § Step 5 says an install is judged by a checked render,
-never by exit codes. The test kits (`scripts/mac_trial.sh`,
-`scripts/windows_trial.ps1`) install with their own code, so a green kit run
-says nothing about `proofcut setup`. This runs setup on a runner that has
-none of proofcut's tools, then docs/DEMO.md's commands, and writes the same
-`report.txt` the kits write, so `scripts/trial_check.py` judges it the same
-way. A second run, after the judging (which needs setup's ffmpeg), uninstalls
-and compares what setup touched against how the first run found it
-(setup-demo.yml).
+never by exit codes. This runs setup on a machine that has none of
+proofcut's tools, then docs/DEMO.md's commands, and writes `report.txt`, which
+`scripts/trial_check.py` judges. A second run, after the judging (which needs
+setup's ffmpeg), uninstalls and compares what setup touched against how the
+first run found it.
 
     uv run python scripts/setup_trial.py WORKDIR               install, demo
     uv run python scripts/setup_trial.py WORKDIR --uninstall   remove, compare
 
-The kits stay as they are until the tester posts have been answered: they
-are the instrument those people run.
+**It is the one install-and-demo path.** setup-demo.yml runs it directly on
+a runner that already has uv. The test kits (`scripts/mac_trial.sh`,
+`scripts/windows_trial.ps1`) run it too, after fetching a pinned uv, so a
+person's kit run exercises `proofcut setup` itself and the kits carry no
+install code or pins of their own (HISTORY.md § The kits call setup).
+Each step's output is streamed as it arrives, because a person is watching
+the 2 GB whisper install.
 
 What stands in for a person:
 - `~/.local/bin` goes first on PATH, as uv's installer leaves it on a
   person's machine. The runner's uv came from an action instead.
 - espeak-ng, which only the demo's footage needs, is `espeak_ng_lib.py` over
-  the `espeakng-loader` wheel, the Intel Mac kit's stand-in, on every OS.
+  the `espeakng-loader` wheel, on every OS.
 
-Exit 1 when setup, doctor or the uninstall comparison fails; the demo's own
-verdict is trial_check's.
+Exit 1 when any step fails — setup, doctor, a DEMO command — or the
+uninstall comparison does. A DEMO command exiting 0 is not a good render,
+which is trial_check's verdict to give; but a person running a kit reads the
+kit's last line, and a demo that stopped must not end on ALL STEPS RAN.
 """
 
 from __future__ import annotations
@@ -64,13 +68,14 @@ class Log:
         self.say("$ " + " ".join(argv))
         started = time.monotonic()
         try:
-            done = subprocess.run(
+            with subprocess.Popen(
                 argv, env=env, cwd=REPO, stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
-            )
-            for line in done.stdout.decode("utf-8", "replace").splitlines():
-                self.say(line)
-            code: int | None = done.returncode
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            ) as proc:
+                assert proc.stdout is not None
+                for raw in proc.stdout:
+                    self.say(raw.decode("utf-8", "replace").rstrip("\r\n"))
+                code: int | None = proc.wait()
         except OSError as exc:
             self.say(str(exc))
             code = None
@@ -97,7 +102,9 @@ class Log:
 
 
 def espeak_shim(folder: Path) -> None:
-    """An `espeak-ng` on PATH that is the library, as mac_trial.sh's Intel route has."""
+    """An `espeak-ng` on PATH that is the library: no Intel Mac program exists
+    outside a package manager, and the wheel's output is byte-identical to the
+    1.52.0 program's (`espeak_ng_lib.py`)."""
     folder.mkdir(parents=True, exist_ok=True)
     command = ["uv", "run", "--no-project", "--python", "3.12", "--with", ESPEAK_WHEEL,
                "python", str(REPO / "scripts" / "espeak_ng_lib.py")]
@@ -182,9 +189,13 @@ def main() -> int:
         ("DEMO 2 import rust", [*project, "import", str(demo / "broll-rust.mp4"), "--clip-id", "rust"]),
         ("DEMO 2 transcribe", [*project, "transcribe", "vo"]),
         ("DEMO 2 seed", [*project, "seed", "vo"]),
+        ("DEMO 3 find the retake", [*project, "transcript", "vo", "--search", "let me try that again"]),
+        ("DEMO 3 read around it", [*project, "transcript", "vo", "--first", "8", "--last", "26"]),
+        ("DEMO 4 cut --plan", [*project, "cut", "vo", "11:23", "--plan"]),
         ("DEMO 4 cut", [*project, "cut", "vo", "11:23", "--pad", "0.1"]),
         ("DEMO 5 cue blue", [*project, "cue", "add", "vo", "--phrase", "Every cut you make names a word", "blue"]),
         ("DEMO 5 cue rust", [*project, "cue", "add", "vo", "--phrase", "the render can be checked", "rust"]),
+        ("DEMO 5 shots", [*project, "shots"]),
         ("DEMO 6 import the score", [*project, "import", str(demo / "music.wav"), "--clip-id", "score"]),
         ("DEMO 6 score it", [*project, "music", "--asset", "score", "--clip-id", "vo", "--start-word", "0",
                              "--fade-in", "1", "--fade-out", "2", "--under", "18"]),
@@ -208,7 +219,7 @@ def main() -> int:
                 env=env, check=False,
             )
     log.summary()
-    return 0 if ok else 1
+    return 0 if ok and not log.failed else 1
 
 
 if __name__ == "__main__":

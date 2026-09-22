@@ -18070,3 +18070,70 @@ for watching" three times over quiet stretches, and one of those runs
 into "in July". That is a hallucination the check is right not to excuse.
 It does not count occurrences, so a third take of a line the edit already
 says twice would be excused. `compare`'s `repeated` still sees that.
+
+## The kits call setup — 2026-09-21
+
+`scripts/mac_trial.sh` and `scripts/windows_trial.ps1` each carried their own
+install half, pins included, beside `proofcut setup`, whose Mac and Windows
+routes had grown out of those halves (§ `proofcut setup` on Windows and an
+Intel Mac). **Now each kit downloads one thing, a pinned uv, and runs
+`scripts/setup_trial.py`**, which is setup, doctor and DEMO.md, the same
+script `setup-demo.yml` runs. `PINS` is now the only copy of a pin. The Windows
+kit's auto-editor had already drifted: it pinned 31.4.2 where setup pinned
+31.6.0.
+
+**What a person's run exercises changed with it.** On Apple silicon the kit
+had installed with Homebrew, which is a route no user of `proofcut setup`
+takes. On every Mac and on Windows a kit run is now a run of the installer
+itself. It installs only what doctor marks ✗, so a tester's existing ffmpeg
+is left alone the way anyone's is.
+- **The kit's shape is unchanged**: the start prompt, one folder that
+  `--uninstall`/`-Uninstall` deletes, the home-stripped report zip, `--pack`,
+  and the closing offer to open the editor.
+- **uv's caches, Pythons and tools, and whisper's model, still go in the
+  kit's folder.** What setup installs goes where setup puts it and is in
+  setup's own record, so uninstall runs `setup_trial.py --uninstall` (setup's
+  uninstall plus the before/after comparison) before deleting the folder.
+- **The Apple silicon kit needed an arm64 uv pin**, `7e6ddb93…64ed`, hashed
+  here and matching astral's `.sha256` file. The x86_64 pin hashed the same
+  as the one the Intel route already carried, which served as the control.
+- **Rosetta is still refused**, reworded: under it the kit would now install
+  Intel software rather than fail at Homebrew.
+- **`report.txt` is `setup_trial.py`'s and `kit.txt` is the kit's console.**
+  They are two files because the kit tees its console and `setup_trial.py`
+  writes its own log, so one file would hold every line twice. `trial_check`
+  reads `report.txt` as before.
+
+**`setup_trial.py` changed in three ways, so setup-demo changes with it:**
+- It streams each step's output as it arrives rather than when the step ends,
+  because a person is watching a 2 GB whisper install.
+- It runs the four DEMO.md commands only the kits had run: the transcript
+  search, reading around the retake, `cut --plan` and `shots`.
+- **It exits 1 when any step fails, a DEMO command included.** Before, a demo
+  that stopped at its render exited 0. The first dry run below did stop
+  there, under `/tmp`, which the flatpak melt cannot see, and it ended the
+  kit on `ALL STEPS RAN` above a `report.txt` that said `STOPPED AT: DEMO 7
+  render`.
+  Nothing in CI read that exit, since `trial_check` gives the verdict, but a
+  person reads the kit's last line and the issue form asks for it. The kits
+  now name the inner step that stopped.
+
+**INSTALL.md § Step 5 said to judge this by `setup-demo.yml`. That job never
+runs a kit**, so it could not have seen the change. The jobs that judge it
+are `mac-demo.yml` and `windows-demo.yml`, whose judge steps now find
+setup's ffmpeg in `~/.local/bin`. `windows_probe.ps1` borrows setup's tools
+the same way, where it had dug the kit's own ffmpeg and melt out of the
+folder.
+
+**Measured here, on Linux only.** The Mac kit ran in a sandboxed home with
+`uname`, `sw_vers`, `sysctl`, `shasum` and `curl` shimmed; the curl shim
+handed it this box's uv under the arm64 name. It got through the uv
+download, `uv sync`, setup, doctor and the demo to 7 of 7 `trial_check`
+passes: −16.1 LUFS, 289 of 289 frames, similarity 0.971. The zip held
+`report.txt` and `kit.txt` with the home folder stripped. `--uninstall` then
+ran setup's uninstall, compared equal, and removed the folder. **Setup
+installed nothing on that run**, because this box's doctor passes, so no Mac
+or Windows download was exercised. `windows_trial.ps1` and
+`windows_probe.ps1` parse without error under PowerShell 7.6 and stay ASCII,
+but neither has run under 5.1. The first `mac-demo` and `windows-demo` runs
+after this commit are the evidence.

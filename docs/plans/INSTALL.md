@@ -246,8 +246,9 @@ says `uvx proofcut setup`. Claim the name sooner only if a squatter shows up.
 
 Windows and Intel Mac built — see HISTORY.md § `proofcut setup` on Windows
 and an Intel Mac. **Apple silicon built 2026-09-20** — HISTORY.md
-§ `proofcut setup` on Apple silicon. One half is left: rewiring the kits to
-call setup, so there is one install code path.
+§ `proofcut setup` on Apple silicon. **The kits call setup since
+2026-09-21** — HISTORY.md § The kits call setup — so there is one install
+code path, and this step is built.
 
 `proofcut setup` grows the other two OSes out of the kits' install halves.
 On Windows that is the portable folder under `%LOCALAPPDATA%`, and on an
@@ -264,10 +265,14 @@ pinned here. **A route was inherited from the instrument that measured it**,
 which is the wiki `practice.md` mistake in its own shape — the blocker was
 never measured, only assumed from the kit beside it.
 
-The kits are still the half that waits, and now for a different reason:
-there is no tester post to hand one to (LAUNCH.md § Step 2, closed unmet).
-Judge that change by `setup-demo.yml`, never by the unit tests, which fake
-the OS.
+The kits waited a week after that for a reason that had also gone — they
+were the instrument a tester post hands out, and there was no tester post
+(LAUNCH.md § Step 2, closed unmet). **This step said to judge the rewire by
+`setup-demo.yml`, which was wrong too**: that job runs
+`scripts/setup_trial.py` directly and never runs a kit, so it could not see
+the change. `mac-demo.yml` and `windows-demo.yml` run the kits and are the
+jobs that judge it; all three judge by `trial_check`, never by the unit
+tests, which fake the OS.
 
 ## Decisions for Tyler
 

@@ -15,39 +15,20 @@
 # The report is written to be attached to a public issue: the Mac's home folder is replaced by
 # `~` in every text file in it, and the rest is footage the demo generated.
 #
-# The Mac half runs DEMO.md's commands as written, into ~/proofcut-mac-trial/demo instead of
-# ~/proofcut-demo, and stops at the first one that fails, since that is the finding.
+# **It installs with `proofcut setup`, never with code of its own** (HISTORY.md § The kits call
+# setup). This script fetches one thing, uv, pinned by URL and SHA-256 for the Mac's CPU, then
+# runs scripts/setup_trial.py: `proofcut setup --yes` (which installs only what doctor marks ✗,
+# from setup's own pins), `proofcut doctor`, and docs/DEMO.md's commands into
+# ~/proofcut-mac-trial/demo, stopping at the first one that fails, since that is the finding. So a
+# person's run is a run of the installer every Mac user gets, and the pins live in one place,
+# src/proofcut/install.py. Until 2026-09-21 this kit carried its own install half — Homebrew on
+# Apple silicon, a pinned-download folder on an Intel Mac — which setup's Mac routes grew out of.
 #
-# What it installs, and why each is the light option:
-#   - Homebrew formulae uv, ffmpeg-full, espeak-ng, auto-editor. Not `mlt`, which pulls 135
-#     (OpenCV, VTK, OpenVINO, GCC). ffmpeg-full rather than ffmpeg, which Homebrew builds without
-#     freetype or libass: no drawtext, so the demo's footage stops at its first command, and no
-#     subtitles filter for a caption burn — the first mac-demo run, 2026-09-13. ffmpeg-full is
-#     keg-only, so it goes first on PATH below; auto-editor still pulls the plain one in.
-#   - melt comes from the Shotcut app instead, which bundles one and which picture.melt_bundles()
-#     already finds, and which proofcut doctor's own fix names. Its modules are unmeasured
-#     (PORTABILITY.md step 4), so the two frames in the report are the check, not melt's exit code.
-#   - whisper from `uv tool`, since Homebrew's openai-whisper pulls llvm and pytorch as formulae.
-#   - no ImageMagick: only cards need it and the demo draws none; doctor reports it unavailable.
-#
-# An Intel Mac takes none of that, because Homebrew refuses one (issue #4). It downloads instead,
-# windows_trial.ps1's way: every tool pinned by URL and SHA-256 into $W/tools, uv's caches,
-# Pythons and tools and whisper's model pointed into $W too, so --uninstall is deleting $W.
-#   - uv's standalone build; ffmpeg and ffprobe from evermeet.cx, whose Intel build has libx264,
-#     freetype, fontconfig and libass; auto-editor's macos-x86_64 release binary.
-#   - melt from Shotcut's dmg (a universal build, macOS 12 or later), copied out of the mounted
-#     image and named by PROOFCUT_MELT, since $W/tools is not where proofcut looks for one.
-#   - espeak-ng as scripts/espeak_ng_lib.py over the espeakng-loader wheel's library: no Intel Mac
-#     program exists outside a package manager, and the wheel's output is byte-identical to the
-#     1.52.0 program's.
-#   - whisper, held to numpy 1.x and to wheels for numba/llvmlite: PyTorch's last Intel Mac build
-#     is 2.2.2, compiled against numpy 1.x, and the newest numba has no Intel Mac wheel.
-#   - OpenTimelineIO has no Intel Mac wheel either, so `uv sync` compiles it, which needs Apple's
-#     Command Line Tools; the kit checks for them before it starts.
-#
-# Everything added is written to installed.txt as it happens, and --uninstall reads that, so it
-# never removes a thing the tester already had. Written for the macOS system bash (3.2): no
-# associative arrays, no ${x,,}.
+# uv's caches, Pythons and tools, and whisper's speech model, are pointed into ~/proofcut-mac-trial,
+# so they go when it goes. What setup installs goes where setup puts it — its folder under
+# ~/.local/share/proofcut and links in ~/.local/bin — and setup records it, so --uninstall runs
+# `proofcut setup --uninstall` first and then deletes the folder. Written for the macOS system
+# bash (3.2): no associative arrays, no ${x,,}.
 
 set -u
 
@@ -71,36 +52,20 @@ ISSUE_URL="https://github.com/tydude001/proofcut/issues/new?template=mac-test.ym
 # The PROOFCUT_TRIAL_* overrides exist for a dry run off the Mac, and REPORT for the CI job
 # (.github/workflows/mac-demo.yml), which uploads the report rather than leaving it on a Desktop.
 W="${PROOFCUT_TRIAL_DIR:-$HOME/proofcut-mac-trial}"
-DEMO="$W/demo"
 REPORT="${PROOFCUT_TRIAL_REPORT:-$HOME/Desktop/proofcut-mac-report.zip}"
-MANIFEST="$W/installed.txt"   # what this test added; survives a re-run, read by --uninstall
-BREW_PATHS="${PROOFCUT_TRIAL_BREW:-/opt/homebrew/bin/brew /usr/local/bin/brew}"
-APPS="${PROOFCUT_TRIAL_APPS:-/Applications}"
-UVPY="${UV_PYTHON_INSTALL_DIR:-$HOME/.local/share/uv/python}"
-WHISPER_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/whisper"
-FORMULAE="uv ffmpeg-full espeak-ng auto-editor"
+MARKER="$W/.proofcut-mac-trial"
 TOOLS="$W/tools"
 
-# The Intel route's downloads: url, sha256, file name.
-PIN_UV="https://github.com/astral-sh/uv/releases/download/0.12.13/uv-x86_64-apple-darwin.tar.gz 5e287ef61cb6a9b61b3a83fef124fd143e400468a7dac794230147a810e17119 uv.tar.gz"
-PIN_FFMPEG="https://evermeet.cx/ffmpeg/ffmpeg-9.0.1.zip 8a8c9e549983409fe6604b9aa665648b7a5def9407fe814c39c8b2ea7f64a48f ffmpeg.zip"
-PIN_FFPROBE="https://evermeet.cx/ffmpeg/ffprobe-9.0.1.zip d13f35db03456b7f65b7edb6437c86e23810fbfe91795e571f5b77211343b4f1 ffprobe.zip"
-PIN_AUTO_EDITOR="https://github.com/WyattBlue/auto-editor/releases/download/31.6.0/auto-editor-macos-x86_64 824405f9e2d28c3bbf30ff27c08dbe631d7137b0fe7c27e1ed647cc3affadf32 auto-editor"
-PIN_SHOTCUT="https://github.com/mltframework/shotcut/releases/download/v26.8.1/shotcut-macos-26.8.1.dmg 7bab10bd96fe3590bb3ba0461d21d3022681574b324bb1c21366d5432cac5657 shotcut.dmg"
-ESPEAK_WHEEL="espeakng-loader==0.2.4"
+# uv, the one download this script makes: url, sha256, CPU. The x86_64 pin is the one the Intel
+# route has carried since 2026-09-17; the arm64 one is the same release, hashed 2026-09-21 and
+# matching astral's own .sha256 file.
+PIN_UV_X86_64="https://github.com/astral-sh/uv/releases/download/0.12.13/uv-x86_64-apple-darwin.tar.gz 5e287ef61cb6a9b61b3a83fef124fd143e400468a7dac794230147a810e17119 x86_64"
+PIN_UV_ARM64="https://github.com/astral-sh/uv/releases/download/0.12.13/uv-aarch64-apple-darwin.tar.gz 7e6ddb9316acc00f2296c82ff4d99977870ee34b2f0ddcae9444d714db9364ed aarch64"
 
 if [ "$(uname -s)" != "Darwin" ]; then
     echo "This is the Mac test. Run it on a Mac." >&2
     exit 1
 fi
-
-find_brew() {
-    brew_bin=""
-    for b in $BREW_PATHS; do
-        [ -x "$b" ] && brew_bin="$b" && break
-    done
-    [ -n "$brew_bin" ] && eval "$("$brew_bin" shellenv)"
-}
 
 ask() {  # ask "question" -> 0 on y
     local ans
@@ -109,124 +74,62 @@ ask() {  # ask "question" -> 0 on y
     [ "$ans" = "y" ] || [ "$ans" = "Y" ]
 }
 
+# Packed, proofcut is unpacked into $W; otherwise this script must be sitting in a proofcut checkout.
+if grep -q '^__PAYLOAD__$' "$0"; then
+    REPO="$W/proofcut"
+else
+    REPO="$(cd "$(dirname "$0")/.." && pwd)"
+fi
+
+# Everything uv and whisper would otherwise put under the home folder goes in $W. Only-managed,
+# or `uv sync` takes a Python the Mac already has and the .venv depends on something outside.
+uv_env() {
+    export UV_CACHE_DIR="$W/uv/cache" UV_PYTHON_INSTALL_DIR="$W/uv/python"
+    export UV_TOOL_DIR="$W/uv/tools" UV_TOOL_BIN_DIR="$W/uv/bin" UV_PYTHON_PREFERENCE=only-managed
+    export XDG_CACHE_HOME="$W/cache"   # whisper keeps its speech model under here
+    # setup's ffmpeg links go in ~/.local/bin, as they do for anyone who runs it.
+    export PATH="$HOME/.local/bin:$UV_TOOL_BIN_DIR:$TOOLS/bin:$PATH"
+}
+
 # ---- --uninstall --------------------------------------------------------------------------
 if [ "${1:-}" = "--uninstall" ]; then
-    if [ ! -f "$MANIFEST" ]; then
-        echo "No record of a proofcut test on this Mac ($MANIFEST is missing), so nothing to remove."
+    if [ ! -f "$MARKER" ]; then
+        echo "No record of a proofcut test on this Mac ($MARKER is missing), so nothing to remove."
         exit 0
     fi
-    find_brew
-    export PATH="$HOME/.local/bin:$PATH"
-    # brew uninstall also autoremoves every orphaned dependency, the tester's own included — 8 on
-    # the dev box's Linuxbrew, none of them the test's. Only what installed.txt names goes.
-    export HOMEBREW_NO_AUTOREMOVE=1
-    entries() { grep "^$1 " "$MANIFEST" | cut -d' ' -f2- | sort -u; }
-    formulae="$(entries brew | tr '\n' ' ')"
-    brew_itself=$(grep -c '^homebrew-itself$' "$MANIFEST")
-
     echo
     echo "  This removes what the proofcut test added to this Mac, and nothing else:"
-    [ -n "$(entries cask)" ] && echo "    - the Shotcut app"
-    [ -n "$(entries uv-tool)" ] && echo "    - whisper (speech-to-text)"
-    [ -n "$(entries whisper-model)" ] && echo "    - the speech model it downloaded"
-    grep -q '^uv-cache$' "$MANIFEST" && echo "    - uv's download cache"
-    [ -n "$(entries uv-python)" ] && echo "    - the Python versions uv downloaded for the test"
-    [ -n "$formulae" ] && echo "    - $(echo "$formulae" | wc -w | tr -d ' ') Homebrew packages: $formulae"
-    [ "$brew_itself" -gt 0 ] && echo "    - Homebrew itself (you will be asked separately)"
-    downloads="$(entries downloaded)"   # read now: the manifest goes with the folder
-    [ -n "$downloads" ] && echo "$downloads" | while read -r d; do echo "    - $d, downloaded into the folder below"; done
-    echo "    - the proofcut-mac-trial folder"
+    echo "    - what 'proofcut setup' installed, from setup's own record"
+    echo "    - the proofcut-mac-trial folder: uv, the Pythons and whisper it downloaded, the speech"
+    echo "      model, and the test video"
+    # A kit from before 2026-09-21 installed with Homebrew on Apple silicon; that is not undone here.
+    if [ -f "$W/installed.txt" ] && grep -q '^brew ' "$W/installed.txt"; then
+        echo "    - NOT the Homebrew packages an older version of this script installed:"
+        echo "      $(grep '^brew ' "$W/installed.txt" | cut -d' ' -f2 | sort -u | tr '\n' ' ')"
+    fi
     echo
     ask "  Go ahead?" || exit 0
 
-    if [ -n "$(entries uv-tool)" ] && command -v uv >/dev/null; then
-        uv tool uninstall openai-whisper
+    if [ -x "$TOOLS/bin/uv" ] && [ -f "$W/before-setup.json" ] && [ -f "$REPO/scripts/setup_trial.py" ]; then
+        uv_env
+        (cd "$REPO" && uv run python scripts/setup_trial.py "$W" --uninstall) ||
+            echo "  setup's uninstall reported a difference (above); the folder is removed regardless."
     fi
-    if grep -q '^uv-cache$' "$MANIFEST" && command -v uv >/dev/null; then
-        uv cache clean
-    fi
-    entries uv-python | while read -r p; do
-        case "$p" in "$HOME"/*) rm -rf "$p" ;; esac
-    done
-    entries whisper-model | while read -r p; do
-        case "$p" in "$HOME"/*) rm -f "$p" ;; esac
-    done
-    # rmdir removes a folder only when it is empty, so a folder holding anything of theirs stays.
-    rmdir "$WHISPER_CACHE" "$UVPY" "$HOME/.local/share/uv/tools" "$HOME/.local/share/uv" \
-        "$HOME/.local/share" "$HOME/.local/bin" "$HOME/.local" 2>/dev/null
-
-    if [ -n "$brew_bin" ]; then
-        # Plain uninstall, never --zap: the test runs melt, never Shotcut itself, so it wrote no
-        # Shotcut settings, and any that exist are from the tester's own earlier use.
-        for c in $(entries cask); do
-            brew uninstall --cask "$c"
-        done
-        removed_brew=0
-        if [ "$brew_itself" -gt 0 ]; then
-            echo
-            echo "  Homebrew was installed by this test. If you don't use it for anything else,"
-            if ask "  remove Homebrew completely too?"; then
-                /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/uninstall.sh)"
-                removed_brew=1
-            fi
-        fi
-        if [ "$removed_brew" -eq 0 ] && [ -n "$formulae" ]; then
-            # One command first, so Homebrew weighs the set as a whole. If it refuses — something
-            # installed since depends on one of these — go one at a time, dependents before their
-            # dependencies, and leave whatever is still needed.
-            # shellcheck disable=SC2086
-            if ! brew uninstall $formulae 2>/dev/null; then
-                left="${formulae% }"
-                while [ -n "$left" ]; do
-                    next=""
-                    for f in $left; do
-                        brew list --formula "$f" >/dev/null 2>&1 || continue
-                        brew uninstall "$f" >/dev/null 2>&1 || next="${next:+$next }$f"
-                    done
-                    [ "$next" = "$left" ] && break
-                    left="$next"
-                done
-                [ -n "$left" ] && echo "  Kept (something else on this Mac needs them): $left"
-            fi
-        fi
-        if [ "$removed_brew" -eq 0 ]; then
-            # A package of theirs the test upgraded goes back to the version they had. Plain
-            # `brew uninstall` removes only the newest keg of several ("xz 5.8.3 is still installed")
-            # and leaves the older one unlinked, with no opt/ link, which is what their own formulae
-            # load it through — so link it again. Only when the newest is still the test's: a later
-            # upgrade of their own is theirs.
-            prefix="$(brew --prefix)"
-            grep '^brew-upgraded ' "$MANIFEST" | sort -u | while read -r _ f v; do
-                newest="$(ls "$prefix/Cellar/$f" 2>/dev/null | sort -V | tail -1)"
-                [ "$newest" = "$v" ] && [ "$(ls "$prefix/Cellar/$f" | wc -l)" -gt 1 ] || continue
-                brew uninstall --ignore-dependencies "$f" || continue
-                old="$(ls "$prefix/Cellar/$f" | sort -V | tail -1)"
-                brew link "$f" >/dev/null 2>&1   # refuses a keg-only formula, which has only opt/
-                [ -e "$prefix/opt/$f" ] || ln -s "../Cellar/$f/$old" "$prefix/opt/$f"
-                echo "  $f is back at $old, the version you had"
-            done
-        fi
-    fi
-
     rm -rf "$W"
     echo
     echo "  Done. The report on your Desktop (proofcut-mac-report.zip) is yours to delete once sent."
-    grep -q '^__PAYLOAD__$' "$0" || echo "  The proofcut folder you cloned is yours too: delete it when you are finished with it."
-    [ -n "$downloads" ] &&
+    if ! grep -q '^__PAYLOAD__$' "$0"; then
+        echo "  The proofcut folder you cloned is yours too: delete it when you are finished with it."
         echo "  Its .venv folder used a Python from the removed folder, so run 'uv sync' again if you keep using it."
-    [ "$brew_itself" -gt 0 ] && echo "  Apple's Command Line Tools, which Homebrew set up, stay installed; other apps use them."
+    fi
     exit 0
 fi
 
 # ---- the test -----------------------------------------------------------------------------
-# Packed, proofcut is unpacked into $W; otherwise this script must be sitting in a proofcut checkout,
-# and the run uses that checkout as it is.
 if grep -q '^__PAYLOAD__$' "$0"; then
-    REPO="$W/proofcut"
     SEND_TO="send it to whoever gave you this file"
 else
-    REPO="$(cd "$(dirname "$0")/.." && pwd)"
-    if [ ! -f "$REPO/scripts/make_demo.py" ] || ! grep -q '^name = "proofcut"' "$REPO/pyproject.toml" 2>/dev/null; then
+    if [ ! -f "$REPO/scripts/setup_trial.py" ] || ! grep -q '^name = "proofcut"' "$REPO/pyproject.toml" 2>/dev/null; then
         echo "This copy is not inside a proofcut checkout and has no proofcut packed into it." >&2
         echo "Clone the repo and run it from there:  git clone https://github.com/tydude001/proofcut" >&2
         exit 1
@@ -239,20 +142,18 @@ else
     esac
 fi
 
-# Homebrew's installer aborts on anything but arm64 ("Homebrew on macOS is only supported on Apple
-# Silicon processors!"), with no override — the first Intel run, issue #4, 2026-09-17. So an Intel
-# Mac takes the download route whether or not it has a Homebrew: one from before the refusal is
-# unsupported, and may compile ffmpeg-full for hours where Apple silicon pours a bottle.
-# A Terminal under Rosetta reports x86_64 on Apple silicon too, and is sent back to arm64.
-INTEL=0
+# A Terminal under Rosetta reports x86_64 on Apple silicon, and would install the Intel build of
+# everything — whisper on torch 2.2.2 and numpy 1.x, run translated. Sent back to arm64 instead.
+PIN_UV="$PIN_UV_ARM64"
 if [ "$(uname -m)" != "arm64" ]; then
     if [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ]; then
-        echo "  This Mac has Apple silicon, but Terminal is running under Rosetta, as an Intel app."
-        echo "  Homebrew will not install that way. Turn off \"Open using Rosetta\" in Terminal's"
-        echo "  Get Info window, open a new Terminal, and run this again."
+        echo "  This Mac has Apple silicon, but Terminal is running under Rosetta, as an Intel app,"
+        echo "  so everything would install as Intel software. Turn off \"Open using Rosetta\" in"
+        echo "  Terminal's Get Info window, open a new Terminal, and run this again."
         exit 1
     fi
-    INTEL=1
+    PIN_UV="$PIN_UV_X86_64"
+    # OpenTimelineIO has no Intel Mac wheel, so `uv sync` compiles it, which needs Apple's compiler.
     if ! xcode-select -p >/dev/null 2>&1; then
         echo "  This Intel Mac needs Apple's Command Line Tools first: one of proofcut's parts is"
         echo "  compiled on the spot. A window is opening to install them. When it has finished,"
@@ -262,15 +163,14 @@ if [ "$(uname -m)" != "arm64" ]; then
     fi
 fi
 
-if [ "$INTEL" -eq 1 ]; then
-    cat <<EOF
+cat <<EOF
 
-  proofcut — Mac test (Intel)
-  ---------------------------
+  proofcut — Mac test
+  -------------------
   This will:
-    1. download the tools proofcut needs (uv, ffmpeg, auto-editor, espeak-ng, Shotcut's
-       renderer, whisper) into one folder, $(echo "$W" | sed "s#^$HOME#~#")
-       Nothing is installed anywhere else, and it asks for no password.
+    1. download uv into one folder, $(echo "$W" | sed "s#^$HOME#~#"), and use it to run
+       'proofcut setup', proofcut's own installer, which fetches what this Mac is missing
+       of ffmpeg, auto-editor, Shotcut's renderer and whisper. It asks for no password.
     2. make a short test video and let proofcut edit it
     3. put proofcut-mac-report.zip on your Desktop, with your home folder's name taken out
 
@@ -278,44 +178,17 @@ if [ "$INTEL" -eq 1 ]; then
   To remove everything it added afterwards, run this same file with --uninstall.
 
 EOF
-else
-    cat <<'EOF'
-
-  proofcut — Mac test
-  -------------------
-  This will:
-    1. install the tools proofcut needs (Homebrew packages, the Shotcut app, whisper)
-    2. make a short test video and let proofcut edit it
-    3. put proofcut-mac-report.zip on your Desktop, with your home folder's name taken out
-
-  It takes 15–30 minutes, mostly downloading. You can leave it running.
-  To remove everything it added afterwards, run this same file with --uninstall.
-
-EOF
-fi
 printf "  Press Enter to start, or Ctrl-C to stop. "
 read -r _
 
-if [ -f "$W/.proofcut-mac-trial" ]; then
-    [ -f "$MANIFEST" ] && cp "$MANIFEST" "$HOME/.proofcut-mac-trial-installed"
-    rm -rf "$W"
-fi
+# A re-run starts clean. What setup installed last time stays in setup's own record, and setup
+# leaves it alone this time (doctor reads it ✓), so --uninstall still finds it.
+[ -f "$MARKER" ] && rm -rf "$W"
 mkdir -p "$W"
-touch "$W/.proofcut-mac-trial"
-if [ -f "$HOME/.proofcut-mac-trial-installed" ]; then
-    mv "$HOME/.proofcut-mac-trial-installed" "$MANIFEST"
-fi
-touch "$MANIFEST"
-LOG="$W/report.txt"
+touch "$MARKER"
+# The console, whole. report.txt is setup_trial.py's, and is what trial_check.py reads.
+LOG="$W/kit.txt"
 exec > >(tee -a "$LOG") 2>&1
-
-record() { echo "$*" >> "$MANIFEST"; }
-listing() { [ -d "$1" ] && find "$1" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort; }
-whisper_before="$(listing "$WHISPER_CACHE")"
-uvpy_before="$(listing "$UVPY")"
-[ "$INTEL" -eq 1 ] || [ -d "${XDG_CACHE_HOME:-$HOME/.cache}/uv" ] || grep -q '^uv-cache$' "$MANIFEST" || record uv-cache
-# Never upgrade, reinstall or clean up a package the tester already had.
-export HOMEBREW_NO_INSTALL_UPGRADE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1
 
 STEPS=()
 fail=""
@@ -339,34 +212,7 @@ step() {  # step "what this is" command args...
     return $rc
 }
 
-record_new_formulae() {  # anything in `brew list` now that was not there before the install
-    [ -n "${formulae_before+x}" ] || return 0
-    # A formula the tester had can gain a newer version as a dependency of these, and
-    # HOMEBREW_NO_INSTALL_UPGRADE does not stop that (xz on the dev box's dry run). The old keg stays,
-    # since cleanup is off, so --uninstall can remove the new one and put the old one back.
-    comm -13 <(echo "$versions_before") <(brew list --formula --versions | sort) | while read -r f vs; do
-        echo "$formulae_before" | grep -qx "$f" || continue
-        had=" $(echo "$versions_before" | grep "^$f " | cut -d' ' -f2-) "
-        for v in $vs; do
-            case "$had" in *" $v "*) continue ;; esac
-            grep -qx "brew-upgraded $f $v" "$MANIFEST" || record "brew-upgraded $f $v"
-        done
-    done
-    comm -13 <(echo "$formulae_before") <(brew list --formula -1 | sort) | while read -r f; do
-        [ -n "$f" ] && ! grep -qx "brew $f" "$MANIFEST" && record "brew $f"
-    done
-}
-
 finish() {
-    record_new_formulae
-    # Whatever arrived during the run — a speech model, a uv-managed Python — is the test's.
-    comm -13 <(echo "$whisper_before") <(listing "$WHISPER_CACHE") | while read -r f; do
-        [ -n "$f" ] && record "whisper-model $WHISPER_CACHE/$f"
-    done
-    comm -13 <(echo "$uvpy_before") <(listing "$UVPY") | while read -r f; do
-        [ -n "$f" ] && record "uv-python $UVPY/$f"
-    done
-
     echo
     echo "════ summary"
     echo "proofcut $PACKED_REV · macOS $(sw_vers -productVersion) · $(uname -m)"
@@ -384,8 +230,7 @@ finish() {
     sleep 1
     rm -rf "$W/report" "$REPORT"
     mkdir -p "$W/report"
-    sed "s#$HOME#~#g" "$LOG" > "$W/report/report.txt"
-    for f in demo/proj/proofcut.json demo/proj/project.otio; do
+    for f in kit.txt report.txt demo/proj/proofcut.json demo/proj/project.otio; do
         [ -e "$W/$f" ] && sed "s#$HOME#~#g" "$W/$f" > "$W/report/$(basename "$f")"
     done
     for f in frame-3s.png frame-10s.png demo/demo.mp4; do
@@ -400,7 +245,6 @@ finish() {
     open -R "$REPORT" 2>/dev/null
 }
 
-# Ctrl-C mid-install still records what had landed, so --uninstall can find it.
 trap 'echo; echo "!! stopped by Ctrl-C"; fail="stopped by Ctrl-C"; finish; exit 130' INT
 
 echo "proofcut Mac test · proofcut $PACKED_REV · $(date '+%Y-%m-%d %H:%M %Z')"
@@ -414,177 +258,38 @@ else
     echo "proofcut checkout: $(echo "$REPO" | sed "s#$HOME#~#")"
 fi
 
-pinned() {  # pinned "URL SHA256 NAME" -> $TOOLS/dl/NAME, checked
+download_uv() {
     # shellcheck disable=SC2086  # the three fields, split on purpose
-    set -- $1
-    local file="$TOOLS/dl/$3" got try
+    set -- $PIN_UV
+    local url="$1" sha="$2" dl="$TOOLS/dl" file="$TOOLS/dl/uv.tar.gz" got try
+    mkdir -p "$TOOLS/bin" "$dl" || return 1
     for try in 1 2 3; do
-        curl -fsSL -o "$file" "$1" && break
+        curl -fsSL -o "$file" "$url" && break
         rm -f "$file"
-        [ "$try" -eq 3 ] && { echo "could not download $1"; return 1; }
+        [ "$try" -eq 3 ] && { echo "could not download $url"; return 1; }
         echo "try $try failed, trying again in $((10 * try))s"
         sleep $((10 * try))
     done
     got="$(shasum -a 256 "$file" | cut -d' ' -f1)"
-    if [ "$got" != "$2" ]; then
+    if [ "$got" != "$sha" ]; then
         rm -f "$file"
-        echo "$3: SHA-256 is $got, expected $2. Not using it."
+        echo "uv: SHA-256 is $got, expected $sha. Not using it."
         return 1
     fi
-    echo "sha256 ok: $got  $3"
-}
-
-download_tools() {
-    local dl="$TOOLS/dl" mnt="$TOOLS/dl/mnt"
-    mkdir -p "$TOOLS/bin" "$dl" || return 1
-    pinned "$PIN_UV" && tar -xzf "$dl/uv.tar.gz" -C "$dl" &&
-        mv "$dl"/uv-x86_64-apple-darwin/uv "$TOOLS/bin/" || return 1
-    record "downloaded uv 0.12.13"
-    pinned "$PIN_FFMPEG" && unzip -q -o "$dl/ffmpeg.zip" -d "$TOOLS/bin" &&
-        pinned "$PIN_FFPROBE" && unzip -q -o "$dl/ffprobe.zip" -d "$TOOLS/bin" || return 1
-    record "downloaded ffmpeg 9.0.1 (evermeet.cx)"
-    pinned "$PIN_AUTO_EDITOR" && mv "$dl/auto-editor" "$TOOLS/bin/" &&
-        chmod +x "$TOOLS/bin/auto-editor" "$TOOLS/bin/ffmpeg" "$TOOLS/bin/ffprobe" || return 1
-    record "downloaded auto-editor 31.6.0"
-    # Copied out of the image, so nothing stays mounted and nothing goes in /Applications. curl sets
-    # no quarantine flag, so macOS has no first-launch check to make of it.
-    pinned "$PIN_SHOTCUT" &&
-        hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$mnt" "$dl/shotcut.dmg" >/dev/null || return 1
-    cp -R "$mnt/Shotcut.app" "$TOOLS/"
-    local rc=$?
-    hdiutil detach "$mnt" >/dev/null || hdiutil detach -force "$mnt" >/dev/null
-    [ $rc -eq 0 ] || return 1
-    record "downloaded Shotcut 26.8.1 (for its melt renderer)"
-    # make_demo.py calls `espeak-ng -w OUT -s RATE TEXT`, and this answers exactly that.
-    cat > "$TOOLS/bin/espeak-ng" <<EOF
-#!/bin/sh
-exec "$TOOLS/bin/uv" run --no-project --python 3.12 --with $ESPEAK_WHEEL python "$REPO/scripts/espeak_ng_lib.py" "\$@"
-EOF
-    chmod +x "$TOOLS/bin/espeak-ng"
-    record "downloaded espeak-ng 1.52.0 (the espeakng-loader library, to build the demo voice)"
+    echo "sha256 ok: $got  uv ($3)"
+    tar -xzf "$file" -C "$dl" && mv "$dl"/uv-*-apple-darwin/uv "$TOOLS/bin/" || return 1
     rm -rf "$dl"
+    "$TOOLS/bin/uv" --version
 }
 
-install_by_download() {
-    # Everything uv and whisper would otherwise put under the home folder goes in $W. Only-managed,
-    # or `uv sync` takes a Python the Mac already has and the .venv depends on something outside.
-    export UV_CACHE_DIR="$W/uv/cache" UV_PYTHON_INSTALL_DIR="$W/uv/python"
-    export UV_TOOL_DIR="$W/uv/tools" UV_TOOL_BIN_DIR="$W/uv/bin" UV_PYTHON_PREFERENCE=only-managed
-    export XDG_CACHE_HOME="$W/cache"   # whisper keeps its speech model under here
-    export PATH="$UV_TOOL_BIN_DIR:$TOOLS/bin:$PATH"
-    export PROOFCUT_MELT="$TOOLS/Shotcut.app/Contents/MacOS/melt"
-
-    if ! step "download tools (pinned, checked by SHA-256)" download_tools; then finish; exit 1; fi
-    if ! step "espeak-ng runs from the library" espeak-ng -w "$W/espeak-check.wav" -s 150 "one two three"; then
-        finish; exit 1
-    fi
-    # PyTorch's last Intel Mac wheel is 2.2.2, built against numpy 1.x: under numpy 2 it cannot hand
-    # whisper an array. numba's and llvmlite's newest have no Intel Mac wheel, and would compile.
-    if ! step "install whisper (uv tool)" uv tool install --python 3.12 --with "numpy<2" \
-        --no-build-package numba --no-build-package llvmlite openai-whisper; then
-        finish; exit 1
-    fi
-    record "downloaded whisper (speech-to-text), and the speech model it downloads"
-    echo
-    echo "melt: $PROOFCUT_MELT"
-    echo "whisper: $(command -v whisper)"
-    echo "ffmpeg: $(command -v ffmpeg)"
-    echo "auto-editor: $(auto-editor --version)"
-    "$UV_TOOL_DIR/openai-whisper/bin/python" -c "import torch, numpy; print('torch', torch.__version__, '· numpy', numpy.__version__)"
-}
-
-install_with_homebrew() {
-    # Homebrew. Its installer asks for the Mac's password and may install Apple's command line tools.
-    find_brew
-    if [ -z "$brew_bin" ]; then
-        echo
-        echo "Homebrew is not installed. Installing it now — it will ask for your Mac password."
-        # A function, so step's `$ ...` line names it rather than printing the installer's whole source.
-        install_homebrew() { /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; }
-        step "install Homebrew" install_homebrew
-        find_brew
-        if [ -z "$brew_bin" ]; then fail="install Homebrew"; finish; exit 1; fi
-        record homebrew-itself
-    fi
-    export PATH="$HOME/.local/bin:$PATH"
-
-    versions_before="$(brew list --formula --versions | sort)"
-    formulae_before="$(brew list --formula -1 | sort)"
-    # shellcheck disable=SC2086
-    step "install tools (Homebrew)" brew install $FORMULAE
-    brew_rc=$?
-    record_new_formulae
-    [ $brew_rc -eq 0 ] || { finish; exit 1; }
-    # Keg-only: installed but not linked, so without this every `ffmpeg` below is auto-editor's plain one.
-    ffmpeg_full="$(brew --prefix ffmpeg-full)"
-    export PATH="$ffmpeg_full/bin:$PATH"
-
-    if [ -d "$APPS/Shotcut.app" ]; then
-        echo
-        echo "── Shotcut is already installed; using it"
-    else
-        if ! step "install Shotcut (for its melt renderer)" brew install --cask shotcut; then finish; exit 1; fi
-        record "cask shotcut"
-        # proofcut runs melt from inside the app, never the app itself, so macOS's first-launch prompt has
-        # nowhere to appear. Homebrew has already checked the download against its checksum.
-        xattr -dr com.apple.quarantine "$APPS/Shotcut.app" 2>/dev/null
-    fi
-
-    # A whisper already on PATH is used, never replaced: uv refuses to overwrite one it did not
-    # install ("Executable already exists", measured on the dry run), and it is the tester's anyway.
-    if command -v whisper >/dev/null; then
-        echo
-        echo "── whisper is already installed ($(command -v whisper)); using it"
-    else
-        step "install whisper (uv tool)" uv tool install --python 3.12 openai-whisper
-        whisper_rc=$?
-        uv tool list 2>/dev/null | grep -q '^openai-whisper ' && record "uv-tool openai-whisper"
-        [ $whisper_rc -eq 0 ] || { finish; exit 1; }
-    fi
-    echo
-    # shellcheck disable=SC2086
-    brew list --versions $FORMULAE
-    echo "shotcut: $(brew list --cask --versions shotcut 2>/dev/null || echo "not from Homebrew")"
-    echo "whisper: $(command -v whisper)"
-    echo "ffmpeg: $(command -v ffmpeg)"
-}
-
-if [ "$INTEL" -eq 1 ]; then
-    install_by_download
-else
-    install_with_homebrew
-fi
-
+uv_env
+if ! step "download uv (pinned, checked by SHA-256)" download_uv; then finish; exit 1; fi
 cd "$REPO" || { fail="enter repo"; finish; exit 1; }
 if ! step "uv sync" uv sync; then finish; exit 1; fi
-step "proofcut doctor (informational)" uv run proofcut doctor || fail=""   # the demo below is the verdict
-
-L() { uv run proofcut -C "$DEMO/proj" "$@"; }
-
-step "DEMO 1 make the footage" uv run python scripts/make_demo.py "$DEMO" &&
-step "DEMO 2 init" uv run proofcut init "$DEMO/proj" &&
-step "DEMO 2 import vo" L import "$DEMO/vo.wav" --clip-id vo &&
-step "DEMO 2 import blue" L import "$DEMO/broll-blue.mp4" --clip-id blue &&
-step "DEMO 2 import rust" L import "$DEMO/broll-rust.mp4" --clip-id rust &&
-step "DEMO 2 transcribe (first run downloads a 1.5 GB speech model)" L transcribe vo &&
-step "DEMO 2 seed" L seed vo &&
-step "DEMO 3 find the retake" L transcript vo --search "let me try that again" &&
-step "DEMO 3 read around it" L transcript vo --first 8 --last 26 &&
-step "DEMO 4 cut --plan" L cut vo 11:23 --plan &&
-step "DEMO 4 cut" L cut vo 11:23 --pad 0.1 &&
-step "DEMO 5 cue blue" L cue add vo --phrase "Every cut you make names a word" blue &&
-step "DEMO 5 cue rust" L cue add vo --phrase "the render can be checked" rust &&
-step "DEMO 5 shots" L shots &&
-step "DEMO 6 import the score" L import "$DEMO/music.wav" --clip-id score &&
-step "DEMO 6 score it" L music --asset score --clip-id vo --start-word 0 --fade-in 1 --fade-out 2 --under 18 &&
-step "DEMO 7 render and master (melt)" L export "$DEMO/demo.mp4" --render --loudness -16 &&
-step "DEMO 7 verify" L verify "$DEMO/demo.mp4" &&
-step "DEMO 7 frames" L frames "$DEMO/demo.mp4"
-
-# DEMO.md § 9: at ~3s the frame should read "BLUE 3s", at ~10s "RUST 0s". A person reads these.
-if [ -f "$DEMO/demo.mp4" ]; then
-    ffmpeg -v error -y -ss 3 -i "$DEMO/demo.mp4" -frames:v 1 "$W/frame-3s.png"
-    ffmpeg -v error -y -ss 10 -i "$DEMO/demo.mp4" -frames:v 1 "$W/frame-10s.png"
+# setup, doctor and DEMO.md, logged step by step into report.txt, then the frames at 3 s and 10 s.
+if ! step "proofcut setup, doctor and the demo (scripts/setup_trial.py)" uv run python scripts/setup_trial.py "$W"; then
+    inner="$(sed -n 's/^STOPPED AT: //p' "$W/report.txt" 2>/dev/null | tail -1)"
+    [ -n "$inner" ] && fail="$inner"   # name the step that stopped, as the issue form asks
 fi
 
 finish
@@ -594,7 +299,7 @@ if [ -z "$fail" ]; then
     printf "  Want to see proofcut's editor window with the result? Type y and Enter (Ctrl-C closes it): "
     read -r ans
     if [ "$ans" = "y" ] || [ "$ans" = "Y" ]; then
-        uv run proofcut -C "$DEMO/proj" open
+        uv run proofcut -C "$W/demo/proj" open
     fi
 fi
 exit 0

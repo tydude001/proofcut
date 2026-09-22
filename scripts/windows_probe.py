@@ -14,7 +14,7 @@ does: the render's frame count, and the colour of the frame at 3 s and 10 s.
 nothing unusual about it; if it fails, every other case's failure is about
 this PC, not about the path, and the summary says so.
 
-It reuses the kit's folder — the tools, the demo footage and the demo's own
+It reuses the kit's folder — setup's tools, the demo footage and the demo's own
 transcript — so it transcribes nothing and downloads nothing, and
 `windows_trial.ps1 -Uninstall` removes what it writes there. Run it through
 `scripts/windows_probe.ps1`, which sets the kit's environment up first:

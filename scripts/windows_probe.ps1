@@ -10,8 +10,9 @@
 # is read back. With -Footage it also imports one of your own clips and renders a cut of it; the
 # report carries that clip's numbers, never its name or a frame of it.
 #
-# The work is scripts/windows_probe.py; this file only borrows the test kit's tools and settings,
-# so nothing is downloaded and nothing is transcribed. It takes about five minutes. Everything it
+# The work is scripts/windows_probe.py; this file only borrows the test kit's settings and the
+# tools `proofcut setup` installed for it (ffmpeg in ~\.local\bin, melt in setup's own folder,
+# which proofcut finds by itself), so nothing is downloaded and nothing is transcribed. It takes about five minutes. Everything it
 # writes goes in the kit's folder, so windows_trial.ps1 -Uninstall removes it too; a -SecondDrive
 # folder is deleted when the probe finishes.
 #
@@ -65,11 +66,11 @@ $env:XDG_CACHE_HOME = Join-Path $W 'cache'
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
 try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
-$ffmpegExe = Get-ChildItem -LiteralPath (Join-Path $TOOLS 'ffmpeg') -Recurse -Filter 'ffmpeg.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-$meltExe = Get-ChildItem -LiteralPath (Join-Path $TOOLS 'shotcut') -Recurse -Filter 'melt.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $ffmpegExe -or -not $meltExe) { Write-Host "The kit's ffmpeg or melt is missing under $TOOLS. Run windows_trial.ps1 again."; exit 1 }
-$env:PATH = (@($env:UV_TOOL_BIN_DIR, $bin, $ffmpegExe.DirectoryName) -join ';') + ';' + $env:PATH
-$env:PROOFCUT_MELT = $meltExe.FullName
+# setup's ffmpeg, where the kit's PATH put it first; melt is whatever proofcut itself resolves,
+# setup's own copy included, so the probe measures the melt a person's proofcut would run.
+$localBin = Join-Path $env:USERPROFILE '.local\bin'
+$env:PATH = (@($localBin, $env:UV_TOOL_BIN_DIR, $bin) -join ';') + ';' + $env:PATH
+if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { Write-Host "No ffmpeg on PATH or in $localBin. Run windows_trial.ps1 again."; exit 1 }
 
 Set-Location -LiteralPath $REPO
 & $uv @args_

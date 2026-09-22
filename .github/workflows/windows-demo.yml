@@ -3,12 +3,17 @@
 #
 # ci.yml's Windows job has ffmpeg and nothing else, so every render and
 # transcription test skips there. This job runs scripts/windows_trial.ps1 the
-# way a tester does — portable uv, ffmpeg, auto-editor, espeak-ng and Shotcut's
-# melt into one folder, whisper from uv, then docs/DEMO.md to a render — under
-# Windows PowerShell 5.1, which is what a stock Windows runs it with. Then
-# scripts/trial_check.py judges what the run printed and rendered. The kit
-# exits 0 on a render that disagrees with the timeline, because it was written
-# for a person who reads the report, so its exit code is never the verdict here.
+# way a tester does — a portable uv into one folder, then scripts/setup_trial.py:
+# `proofcut setup`, doctor, docs/DEMO.md to a render — under Windows PowerShell
+# 5.1, which is what a stock Windows runs it with. Then scripts/trial_check.py
+# judges what the run printed and rendered. The kit exits 0 on a render that
+# disagrees with the timeline, because it was written for a person who reads
+# the report, so its exit code is never the verdict here.
+#
+# Since 2026-09-21 the kit installs with `proofcut setup` and carries no install
+# code of its own (HISTORY.md § The kits call setup), so this job and
+# setup-demo.yml run the same install and demo; this one adds the kit around
+# them, under 5.1, and the probe below.
 #
 # It is not a person on a PC: the runner is Windows Server, nothing prompts,
 # and nobody reads the instructions. Those stay the Windows test issue form's
@@ -26,6 +31,7 @@ on:
     paths:
       - "src/**"
       - "scripts/windows_trial.ps1"
+      - "scripts/setup_trial.py"
       - "scripts/windows_probe.ps1"
       - "scripts/windows_probe.py"
       - "scripts/trial_check.py"
@@ -54,11 +60,11 @@ jobs:
           PROOFCUT_TRIAL_REPORT: ${{ runner.temp }}\proofcut-windows-report.zip
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows_trial.ps1 -Unattended
       # The runner's own Python, since the check is stdlib-only and the kit may
-      # have stopped before uv arrived; the kit's ffmpeg, since the check reads
-      # the frames with it and the runner has none on PATH. report.txt is
-      # copied beside the zip first: the kit's folder is on C: and runner.temp
-      # on D:, and upload-artifact refuses paths with no common parent (the
-      # first windows-demo run uploaded nothing).
+      # have stopped before uv arrived; setup's ffmpeg in ~\.local\bin, since
+      # the check reads the frames with it and the runner has none on PATH.
+      # report.txt and kit.txt are copied beside the zip first: the kit's folder
+      # is on C: and runner.temp on D:, and upload-artifact refuses paths with
+      # no common parent (the first windows-demo run uploaded nothing).
       - name: judge the run
         if: always()
         shell: pwsh
@@ -66,9 +72,10 @@ jobs:
           PYTHONUTF8: "1"
         run: |
           $trial = Join-Path $env:LOCALAPPDATA 'proofcut-windows-trial'
-          Copy-Item -LiteralPath (Join-Path $trial 'report.txt') -Destination $env:RUNNER_TEMP -ErrorAction SilentlyContinue
-          $ffmpeg = Get-ChildItem -LiteralPath (Join-Path $trial 'tools\ffmpeg') -Recurse -Filter ffmpeg.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($ffmpeg) { $env:PATH = "$($ffmpeg.DirectoryName);$env:PATH" }
+          foreach ($f in 'report.txt', 'kit.txt') {
+            Copy-Item -LiteralPath (Join-Path $trial $f) -Destination $env:RUNNER_TEMP -ErrorAction SilentlyContinue
+          }
+          $env:PATH = "$(Join-Path $env:USERPROFILE '.local\bin');$env:PATH"
           python scripts\trial_check.py $trial
           exit $LASTEXITCODE
       # scripts/windows_probe.ps1 against the kit's folder: PORTABILITY.md 5e's
@@ -93,5 +100,6 @@ jobs:
           path: |
             ${{ runner.temp }}\proofcut-windows-report.zip
             ${{ runner.temp }}\report.txt
+            ${{ runner.temp }}\kit.txt
             ${{ runner.temp }}\proofcut-windows-probe.zip
           if-no-files-found: warn

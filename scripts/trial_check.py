@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Judge a test-kit run, for the CI jobs that run one unattended.
 
-Both kits, `scripts/mac_trial.sh` and `scripts/windows_trial.ps1`, print the
-same step headers and summary lines and leave the same files in their working
-folder, so one check reads either (mac-demo.yml, windows-demo.yml).
+Every run it judges is `scripts/setup_trial.py`'s, which writes `report.txt`,
+the demo and the frames into its working folder — run directly
+(setup-demo.yml) or by either kit, `scripts/mac_trial.sh` and
+`scripts/windows_trial.ps1`, which call it (mac-demo.yml, windows-demo.yml).
+A kit's own console log is `kit.txt` beside it.
 
 The kit was written for a person, who reads its report. Nothing in it fails:
 `verify` and `frames` print their findings and exit 0 whether the render

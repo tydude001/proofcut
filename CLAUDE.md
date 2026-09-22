@@ -161,16 +161,19 @@ built; docs/plans/INSTALL.md):
 - **Everything added is recorded — links, folders, the uv tool, the Python uv
   downloaded for it — and `--uninstall` removes exactly that**; a test
   compares the home's listing before and after.
-- **Off Linux, each route is its test kit's install half, pins included, and
-  the kits are not yet rewired to call setup** — they were the instrument the
-  tester posts handed out, and there are no tester posts now (LAUNCH.md
-  § Step 2, closed unmet 2026-09-20). Windows cannot symlink without Developer Mode, so
+- **Off Linux, each route grew out of its test kit's install half, and the
+  kits now call setup instead of carrying one** — `mac_trial.sh` and
+  `windows_trial.ps1` fetch a pinned uv and run `scripts/setup_trial.py`,
+  the one install-and-demo path, so `PINS` is the only copy of a pin. A kit
+  that grows its own download again is two code paths. Windows cannot
+  symlink without Developer Mode, so
   its ffmpeg/ffprobe `.exe`s are *moved* into `~/.local/bin` and recorded by
   SHA-256; uninstall removes one only while it still hashes the same.
-  `setup-demo.yml` (`scripts/setup_trial.py`) is the only thing that runs
-  either route: judge a change there by that job's `trial_check`, never by
-  the unit tests, which fake the OS. HISTORY.md § `proofcut setup` on
-  Windows and an Intel Mac.
+  **Three CI jobs run the routes: `setup-demo.yml` directly, and
+  `mac-demo.yml`/`windows-demo.yml` through the kits.** Judge a change by
+  their `trial_check`, never by the unit tests, which fake the OS; only
+  setup-demo also checks the uninstall. HISTORY.md § `proofcut setup` on
+  Windows and an Intel Mac, § The kits call setup.
   - **Apple silicon is the Intel route with arm64 downloads, and its only
     evidence is CI's own runner** — no person has run it, which README.md
     still says. Two traps, both read off the files rather than a download

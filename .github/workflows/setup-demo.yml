@@ -1,13 +1,14 @@
 # `proofcut setup` on Windows and both Macs, judged by a checked render —
 # docs/plans/INSTALL.md § Step 5.
 #
-# windows-demo.yml and mac-demo.yml run the test kits, which install with
-# their own code, so neither says anything about setup. This job starts from a
-# runner with uv and none of proofcut's tools, runs `proofcut setup --yes`,
-# requires `proofcut doctor` to pass, runs docs/DEMO.md through
-# scripts/setup_trial.py (which writes the kits' report shape), and judges the
-# render with scripts/trial_check.py. Then it uninstalls and requires setup's
-# folder, ~/.local/bin and uv's tools and Pythons to be as setup found them.
+# This job starts from a runner with uv and none of proofcut's tools, runs
+# scripts/setup_trial.py — `proofcut setup --yes`, `proofcut doctor`, which must
+# pass, and docs/DEMO.md — and judges the render with scripts/trial_check.py.
+# Then it uninstalls and requires setup's folder, ~/.local/bin and uv's tools
+# and Pythons to be as setup found them. windows-demo.yml and mac-demo.yml run
+# the test kits, which since 2026-09-21 fetch a pinned uv and then run this
+# same script (HISTORY.md § The kits call setup), so there is one install path;
+# this job is the one that also checks the uninstall.
 #
 # What a runner already has, setup leaves alone — that is its rule — so read
 # the `proofcut setup --plan` step in report.txt for which pieces this run
