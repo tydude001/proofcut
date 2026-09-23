@@ -24,7 +24,9 @@
 #
 # The Intel runner (macos-15-intel) is the only Intel Mac this repo can reach
 # before a person's; there the kit's uv is the x86_64 build and setup takes its
-# Intel route, whisper held to numpy 1.x.
+# Intel route, whisper held to numpy 1.x. Its melt render has flaked once with
+# "moov atom not found" and passed on a plain re-run (2026-09-22, 2211403), so
+# re-run that failure once before reading it as a regression.
 
 name: mac-demo
 
