@@ -444,7 +444,11 @@ twos, with time to fix what they find.
   it puts on every new project. Claimed the same day and verified off a
   commit email. Its one finding, tool annotations missing, is a false
   positive: a static read misses `server._ANNOTATIONS`, which `tools/list`
-  serves on every tool. Reported to them. Its badge stays off the README,
+  serves on every tool. Reported to them, and cleared the same evening:
+  their analyzer now follows a lookup table and a registration wrapper, and
+  the rescored listing shows all four hints on every tool. Its read-only
+  GitHub App is not installed; it changes how fresh their copy is, not the
+  score. Its badge stays off the README,
   where it would print the C on the PyPI page too.
   Shipped — see HISTORY.md § The launch clip's product defects, fixed,
   § Glama takes a submission, and the probe that missed it.
