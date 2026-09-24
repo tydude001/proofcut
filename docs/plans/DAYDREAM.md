@@ -754,9 +754,10 @@ feature list.
 All seven plus the homepage's `product_motiongraphics.mp4` were downloaded
 and tiled with burnt-in timestamps, at 1 to 4 frames a second. The work is at
 `~/proofcut-work/spikes/daydream-gallery/`. None of it goes in the repo: the
-footage is not proofcut's. **Every file is served with its audio stripped**,
-so sound design, music and voice are unobservable, and nothing below is a
-claim about them.
+footage is not proofcut's. **The site serves every file with its audio
+stripped**, so this table says nothing about sound. That is not the whole
+record: the airplane-windows film is on Daydream's YouTube channel with its
+narration, and the channel is read with sound in § The channel, watched.
 
 ### What the films are made of
 
@@ -820,9 +821,10 @@ The airplane-windows essay was read and not rebuilt: it needs real footage,
 and its gaps are the same rows as the table (stickers, the photo card, drawn
 annotations, highlighter emphasis, transitions).
 
-### The gaps, ranked
+### The gaps, ranked (first pass)
 
-Each with the recommendation, most value per cost first.
+**Replaced the same day by § The channel, watched, § The gaps, re-ranked**,
+which read 40 more videos. Kept because the rebuild's findings still stand.
 
 1. **Caption reveal, as a preset.** Transparent-until-spoken, a per-word
    fade (`\alpha`, optionally `\blur`) and the single-large-word style,
@@ -853,4 +855,212 @@ Each with the recommendation, most value per cost first.
 6. **The `overlay add card:NAME` refusal**, fixed to accept the prefix or
    name the real fault. Minutes.
 
-**Nothing here is built.** The order above waits on Tyler's review.
+**Nothing here is built.**
+
+---
+
+## The channel, watched: 2026-09-23
+
+The gallery pass above read only the eight files the site hosts. The site also
+links two YouTube videos and the channel they sit on
+(`youtube.com/@daydream_video`), and those are the videos that show the app
+working. All 40 were downloaded with their captions (6 long, 33 shorts, one
+unlisted demo: 56.7 minutes, every one with sound), and the eight site films
+were sampled again at the same density. That is 260 contact sheets at 2 frames
+a second (4 under a minute), read by six agents, one batch each, with every
+transcript. Their notes, one section per video, are
+`~/proofcut-work/spikes/daydream-gallery/NOTES.md`.
+
+**How far those notes can be trusted was measured, not assumed.** A claim from
+each batch was read back off a full-size frame (`notes/spot-checks.md`).
+Prompts typed large held every time. Small text did not: one agent invented
+Daydream's whole model picker (it reads Fable 5.1, Opus 5, Sonnet 5, Haiku 4.5,
+GPT-6 Astra and three GPT-5.6 models, not the "Opus 6 / GPT-6.5 Turbo" the
+notes gave), and "corrected" a transcript that had the names right. Others put
+a feed at the wrong minute, got placement times wrong, or quoted a narration
+caption as a typed prompt. **Every quotation below was read off a frame in
+this pass**; anything else in NOTES.md is a lead.
+
+### What the channel showed that the gallery could not
+
+1. **A Daydream graphic is a web page, rendered by frame capture.** Its agent,
+   on screen, flagging a bug in a fast-cut montage: *"at 1.5s the Anton page is
+   still rendering in Helvetica ... The Google Fonts download is losing the
+   race against frame capture, so those cuts intermittently show a fallback
+   face ... It may resolve in a real export since the page stays loaded longer
+   than a preview"* (`tkQXxa2Czqs`, 0:26). The agent writes the page; preview
+   and export both capture it. That settles which renderer § The gallery,
+   watched left open, at least as Daydream's answer: a browser.
+2. **The agent checks its own graphic by looking at a rendered frame.** The
+   feed for *"add a graphic of a dog walking in a park"* runs "Loading design
+   guidance", "Planning graphic" (a committed concept), "Creating graphic"
+   (*"Started 'Dog walking in the park' on V2 at 0.0s (duration 6.0s"*), a
+   series of "Editing graphics" steps that build it in layers, and, after the
+   user said the legs looked wrong, "Inspecting graphic" and "Capturing
+   preview": *"I'm checking a rendered frame to confirm the mouth and leg
+   placement"* (`mePPNdZ9lP0`, 11:24 to 11:36). **A graphic is a clip with a
+   fixed length**, placed on V2 at a time: the build § Animation is a length
+   problem refuses.
+3. **Graphics and caption styles are saved to a library that crosses
+   projects.** *"save that graphic"* answers *"Saved as 'Recipe Sidebar —
+   Lemon Pasta' in Templates → Your graphics"*, *"available in every
+   proj[ect]"* (`mePPNdZ9lP0`, 12:01). The Templates tab has three sub-tabs,
+   Built-in, Your graphics and Your captions; the built-ins include Basic
+   Title, Aurora Text, Typing Text and Spinning Text (`LF_AC7Cckak`, 0:21).
+   Named caption looks ("Blue Highlight", "Magazine Cut Out", "Confetti",
+   "Blur In", a mascot bouncing on the active word) are saved the same way.
+4. **Standing corrections, as memory.** After *"remember to check the captions
+   chatgpt often gets mistranscribed to tratchy pt"*, the agent files
+   "Suggesting a memory" and says *"Sent that as a 'Remember this?' card in
+   the app — approve it and I'll apply it across all your projects"*
+   (`LMZezzaS9Tc`, 2:30). This is the rebuild's "rough" for "ruff", solved as
+   a user preference rather than a per-word edit.
+5. **The agent reports what it did in numbers and asks before a judgment
+   call.** *"now 1 second instead of 3 seconds with easeOut easing"*
+   (`site_editwithdaydream`); *"Nine attempts at the same line here — I'll
+   keep the last clean take (112.2s–116.9s)"* and *"What I left: the ~11s of
+   post-take chatter ... Want me to cut that too?"* (`LMZezzaS9Tc`). This is
+   the model's behaviour as much as Daydream's, and proofcut's agent panel
+   runs the same models.
+6. **A transcript selection or an asset rides the prompt as a chip.** A
+   selected word shows as `"So" ×` above *"add a typing sound"*
+   (`yrnxIjre2VQ`); image files attach as chips and are named with `@` in the
+   prompt (`qgwj16ai8mE`, *"Then I want @cursor-transparent.png to slide in
+   from off screen and press the button"*).
+
+### Each video, in one line
+
+Longest first. The id is the YouTube id; `site_` is a file the site hosts.
+
+| id | s | what it shows |
+|---|---|---|
+| `mePPNdZ9lP0` | 988 | The full workflow on GPT-6 Astra: bad takes, breaths, trim to a minute, b-roll by description, pasted and web-found images, generated graphics refined by frame, the graphics and captions libraries, a zoom, a pop synced to an icon |
+| `7QfZdeKQn-c` | 525 | The three-part method (clean the talking head, match b-roll, add graphics); a brief read from a Google Doc; a 16-clip house montage; XML into Resolve |
+| `gqDcHJWRNjA` | 217 | The site's own demo: import by role, cut pauses and takes, Show cuts, b-roll matched to a selected span, the "fade reveal" template as a CTA, XML into Resolve |
+| `LMZezzaS9Tc` | 192 | Cut report ("What I cut"), a doubled transcript found and rebuilt, the memory card, a brief turned into a picture-in-picture layout |
+| `LhYoOtG3a0o` | 186 | A Vox-style article graphic from screenshots: staggered entrance, zoom, a focus-hunt blur, a paper texture, a hand-drawn highlight |
+| `u0kmyctcVzg` | 156 | An animated bar chart from pasted data, then a second layer and a restyle by prompt |
+| `HBXUYaOPppI` | 72 | One footage dump split into four shorts, each its own project, each cleaned |
+| `tvkJF_0GOR0` | 72 | One long prompt: cut takes, add b-roll, captions and a graphic |
+| `NqxepHkM-F0` | 60 | Easing vocabulary (linear, ease-in, ease-out, ease-in-out) for asking an agent for keyframes |
+| `zOC-JgBy2DI` | 49 | The Claude desktop app driving Daydream over MCP: import, transcribe, name projects |
+| `CdnzkSSYDE0` | 44 | One product demo into several vertical shorts, screen reframed with a webcam bubble |
+| `M5-YtBIehKg` | 43 | Breath removal: the agent finds breaths in the waveform and dips them with volume keyframes; a before/after toggle |
+| `58t0JCPaTsU` | 41 | The launch video (same as `site_daydreamlaunch`): typing graphic from a prompt, voiceover as a document, b-roll from a popup |
+| `site_daydreamlaunch` | 41 | The silent site copy of `58t0JCPaTsU` |
+| `Oa55Y8FSFdo` | 37 | A brief pasted as a Google Doc link; the export menu (MP4, Premiere, Resolve, Final Cut) |
+| `hHKO_bJgawQ` | 37 | The one-word fast-cut montage ("Opus") and its prompts: vignette, blur, a scale punch per cut |
+| `yrnxIjre2VQ` | 37 | A sound effect placed at a selected transcript word |
+| `cM-vA5q_eQM` | 36 | A quick zoom with a hold and a whoosh, from one prompt |
+| `lGDSIOTuLhA` | 36 | The Vox article graphic, short version, with the agent's frame-by-frame timing |
+| `WBlKeiq8fQc` | 34 | The pitch against editing "in a GitHub page" or in the desktop chat app |
+| `site_airplanewindows` | 34 | The silent site copy of `TIdG_LZ4K20` |
+| `5q0AFI4n9N4` | 33 | Images three ways: pasted into chat, found on the web ("a logo for google docs"), from an image library |
+| `CbHDaqvrumQ` | 33 | Breath removal again, on GPT-6 Astra |
+| `TIdG_LZ4K20` | 33 | The airplane-windows explainer with its narration: footage, stickers, a photo card, highlighter and underline sweeps |
+| `PhjoiWlrXlk` | 31 | B-roll matched by the footage's own labels, no source reused back to back |
+| `hnnlzFcOeHY` | 31 | Captions restyled with an asset (`@claudecodemascot.png`) bouncing on the active word |
+| `tkQXxa2Czqs` | 31 | The "Opus" montage again, with the agent's font warning that shows graphics are web pages |
+| `Am8s09xpVfg` | 28 | A title on graph paper with a plane cut-out flying under it, then a two-frame hold for a stop-motion feel |
+| `ODNnwNLpjFM` | 28 | Five flower images sliding in from four edges to frame a title |
+| `hSz2cw9lf5w` | 28 | Find a clip by description in a 13-minute walkthrough |
+| `oAfgw58QN_E` | 28 | Trim a five-minute take to a one-minute short |
+| `r2WJmK9_tYA` | 28 | Remove pauses and duplicate takes, and the transcript view of the cuts |
+| `LF_AC7Cckak` | 26 | Save a graphic; the Templates tab with Built-in, Your graphics, Your captions |
+| `HiI6yLKJ2QQ` | 24 | Generated graphics as editable templates: a map route, a recipe card, a poster |
+| `gr6eBj_5Kfs` | 24 | Caption styles by prompt: karaoke, boxed, a character bouncing on the word |
+| `36R-Twe6ZFs` | 22 | Import by role, clean up, find a clip by description |
+| `qgwj16ai8mE` | 22 | A subscribe button with a cursor pressing it, a laser show and a dancing mascot, from one prompt |
+| `2d2liLTw3qI` | 21 | Why editing inside a chat app spends its time writing tools (an animated checklist and bar) |
+| `2g4eS1t2D2E` | 21 | Blur-in text, word by word, then slower and blurrier by prompt |
+| `zEtgEH2IO2M` | 21 | Tabs: two projects, two agents running at once |
+| `site_desktopdemo` | 18 | A webcam window with floating image cards and a search box typing, over a gradient |
+| `qR4mvf-9kxM` | 18 | "Dynamic tracks": lanes for clips, music, sound effects and graphics |
+| `site_editwithdaydream` | 14 | A typing prompt pill, the airplane project in a laptop, the easing reply, a spinning "try for free" badge |
+| `site_nova` | 11 | Kinetic type, flower stickers, an organic colour wipe, staggered chips |
+| `site_airbnbfordogs` | 10 | Kinetic type, stickers, a letter-by-letter logo build (the rebuild above) |
+| `fa3KuL5aOn4` | 10 | Finished graphics rated out of ten, no UI |
+| `site_product_motiongraphics` | 6 | A search field typing a URL, then a pull-back |
+| `site_skincare` | 5 | A strip of photos sliding across, then a weight sweep across a word |
+
+### Every feature shown, against proofcut
+
+| Daydream feature | videos, about | proofcut |
+|---|---|---|
+| Remove pauses and duplicate takes, with a cut report | 9 | **yes**: `cut`, `verify`, the transcript's cut view |
+| Show cuts, restore a cut word | 3 | **yes** |
+| Import by role (talking head vs footage) | 5 | **yes**: `role` |
+| Find a clip by description; b-roll matched to narration | 8 | **yes**: `describe`, `broll_brief`, `cue_add` |
+| Fast montage of many short clips | 1 | **yes**, as cues |
+| Trim to a target length | 2 | **yes**, the agent cuts by transcript; `reel` for a derived cut |
+| Breath removal | 3 | **yes**: `attenuate` pulls down short non-speech sounds between words |
+| Zoom or push-in with easing | 3 | **yes**: `reframe` windows with an easing |
+| Picture-in-picture camera over a screen recording | 3 | **yes**: `inset` |
+| Vertical short from a horizontal recording | 2 | **yes**: `canvas`, `reframe` |
+| Sound effect at a word or an on-screen moment | 4 | **yes**: `sound add` at a word or event |
+| Model picker in the agent panel | 8 | **yes** |
+| Agent looks at its own rendered frame | 2 | **yes** for the edit (the four sheets); no graphic to look at |
+| A second agent driving the same project from a terminal (MCP) | 3 | **yes**: `proofcut mcp` |
+| Words appear as spoken, fading or blurring in | 12 | **partly**: transparent karaoke (§ The gallery, watched), no per-word fade |
+| Named, saved caption styles; a character bouncing on the active word | 4 | **partly**: three presets and `caption-style`; no library, no character |
+| Caption spelling corrections kept as a standing preference | 2 | **no** |
+| Captions off for a span | 1 | **no** |
+| Paste or `@` an image; find one on the web | 5 | **no**: import refuses a still |
+| Stickers, textures and photo cards over the picture | 8 | **no** |
+| Generated animated graphics (typing, charts, illustration, highlight sweeps, montages of fake pages) | 17 | **no**: static cards only |
+| Saved graphics library across projects; built-in animated templates | 3 | **no**: eight static templates in the package |
+| Per-cut effects: vignette, blur, scale punch, frame-hold | 3 | **no** |
+| A brief read from a Google Doc | 3 | **no in the panel**, which has no web or connectors; a person's own Claude Code has them |
+| Split one footage dump into several projects | 2 | **no**: a server is bound to one project |
+| Tabs, two projects' agents at once | 1 | **partly**: two `proofcut web` processes |
+| Memory card for any preference | 1 | **no** (a person's own Claude Code has its own memory) |
+| XML to Premiere, Resolve, Final Cut | 4 | **declined** (§ What parity does not import) |
+
+**Everything in the top half is already proofcut's.** (The video counts are tallied off NOTES.md by
+hand, so read them as sizes, not measurements.) The cutting and
+b-roll half of these videos is the half proofcut was built on. What it lacks
+is the look: the graphics, images over the picture, and captions with
+character. About a third of the 48 videos are about generated animated
+graphics.
+
+One recorded reason needs a second look. § What parity does not import drops
+the XML exports because *"No such apps exist on a Linux box"*, but DaVinci
+Resolve, the NLE four of these videos export into, ships for Linux. That is
+a question for Tyler, not a ranked gap: the handoff is Kdenlive MLT today.
+
+### The gaps, re-ranked
+
+Most value per cost first, each with a recommendation. This replaces
+§ The gaps, ranked (first pass).
+
+1. **Caption reveal, and captions that can be corrected.** A per-word fade or
+   blur-in, the single-large-word style, captions off for a span, and a
+   standing correction list (the project's `lexicon.json` folds, applied to
+   captions as well as synthesis). **Recommend: build first.** It is in about a
+   dozen videos, the text layout was measured in August, and the correction list
+   reuses a file proofcut already reads.
+2. **Animated graphics: a design note and a spike, not yet a build.** The
+   channel answers the renderer question the first pass left open: Daydream
+   captures a web page frame by frame, and its own font bug shows the cost
+   (remote fonts racing the capture, which proofcut's vendored fonts would
+   not have). The spike should measure headless-browser frame capture on
+   this box (speed, determinism, fonts, alpha) against per-frame SVG through
+   `magick`. The note must answer the length question too: Daydream's
+   graphics are fixed-length clips, the shape § Animation is a length problem
+   refuses, so proofcut either keeps intro-then-hold or says why not.
+   **Recommend: start the note and spike now, since everything in 3 and 4
+   builds on its answer.**
+3. **Images in: stills at import, `@` an asset in the prompt, and image
+   overlays** (stickers, textures, photo cards) with pop and slide
+   entrances. **Recommend: build after 1.** The writer already composites
+   alpha PNGs with eased keys; the route in is what is missing, and the
+   graphics in 2 need it anyway.
+4. **Saved libraries across projects**, for graphics and caption styles.
+   **Recommend: design with 2**, since a saved graphic is the thing 2 makes.
+5. **Per-cut effects and transitions**: a crossfade between cues, vignette,
+   scale punch. Small once 2 exists.
+6. **Small and independent**: the `overlay add card:NAME` refusal (minutes);
+   whether a server may open a second project for a footage split (a
+   question, since `-C` binding is deliberate); the Resolve question above.
+
+**Nothing here is built.** The order waits on Tyler's review.
