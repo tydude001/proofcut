@@ -1282,6 +1282,162 @@ wants the big word as an occasional beat, which is what a span is.
 
 ---
 
+## Animated graphics, designed and spiked: 2026-09-24
+
+Item 2 of § The gaps, re-ranked, written after reading it, § The channel,
+watched, and PLAN.md § Motion graphics and templates (with its § Animation is
+a length problem, not a rendering one). **Nothing here is built; this note
+stops for Tyler's review.** The spike is `~/proofcut-work/spikes/animated-graphics/`.
+
+### The spike
+
+One test graphic, drawn both ways at 1920x1080, 30 fps, 3 s (91 frames): a
+white search field rises in with a drop shadow, `proofcut.dev/animate` types
+into it with a blinking caret, a highlighter sweeps under "animate", and
+"PupBnB" builds letter by letter with an overshoot. That is four of the
+channel's techniques in one frame (the typing field, the highlighter sweep,
+the letter build, a soft shadow over alpha).
+
+- **Route A, a web page captured by a headless browser.** `graphic.html` is
+  40 lines of plain CSS animations with no timing code, as an agent would
+  write it. The harness (`capture.mjs`, CDP against the Playwright headless
+  shell) pauses every animation, seeks it with `document.getAnimations()`,
+  waits two animation frames, and screenshots with a transparent
+  background. The vendored Outfit loads from a local `@font-face`.
+- **Route B, one SVG per frame through `magick`.** `svgframes.py` computes
+  every moving value itself: the three CSS easing curves (a cubic-bezier
+  solver), the typing, the sweep, and each letter's position from the font's
+  own advance widths, because librsvg draws no animation and a `<tspan>`
+  cannot carry a transform, so a letter that pops has to be its own
+  `<text>`. About 110 lines for this one graphic.
+
+The two draw the same picture (`ab-last.png`).
+
+| | A: browser capture | B: SVG per frame through `magick` |
+|---|---|---|
+| Serial speed | 110 ms/frame | 151 ms/frame |
+| 8 in parallel | 1.4 s for 91 frames (8 pages, one browser) | 2.1 s for 91 frames (8 processes) |
+| Deterministic | **only with flags**: default flags differed run to run on 62 of 91 frames, up to 255/255 where letters were mid-pop; with the flag set below, 0 of 91 differ across two runs and against the 8-page run | yes, 0 of 91 across serial, serial, and 8-way |
+| Alpha | straight RGBA PNG, soft shadows intact | the same |
+| Fonts | `document.fonts` reports each face `loaded`, a check the renderer answers itself | fontconfig resolves the family, so the silent substitution PLAN.md § Motion graphics and templates finding 2 measured still applies |
+| Frame accuracy | exact: at 1.5 s, 13 characters typed and the caret in its off phase, as the CSS says | exact by construction |
+| What proofcut must own | nothing about motion: CSS, easing, text layout and wrapping come with the browser | every effect: a tween engine, easing, glyph layout, and a vocabulary that grows by one feature per technique |
+| New dependency | yes: the headless shell, 262 MB on disk here | none |
+
+**The determinism flags are the load-bearing half of route A**:
+`--disable-gpu --disable-threaded-animation
+--run-all-compositor-stages-before-draw --disable-lcd-text
+--font-render-hinting=none --disable-partial-raster
+--disable-checker-imaging`. Without them there were two failures. Typed text
+antialiased differently from run to run (max 36/255), and the letter pops
+were captured at different moments of the seek (max 255/255). Which flag
+fixes which was not isolated; the set is what was measured. This is the
+Daydream bug's cousin: their agent reported fonts losing *"the race against
+frame capture"*, and the race here was the compositor.
+
+**Into melt, with a hold.** The frames were placed over flat green as an
+intro followed by a hold, where the hold is the last frame as an ordinary
+`qimage` still, the mechanism every card already uses (`hold_probe.py`,
+rendered by the Kdenlive flatpak's melt, read back frame by frame with
+`readback.py`). Three ways to hand melt the intro:
+
+| intro as | frames | right source frame at every output frame | intro's last frame against the hold's first |
+|---|---|---|---|
+| PNG sequence, `qimage` with `ttl=1` | 151 of 151 | yes | **identical (max 0)** |
+| one `qtrle` .mov | 151 of 151 | yes | **identical (max 0)** |
+| one ProRes 4444 .mov | 151 of 151 | 149: two near-identical frames at the end of the rise read closer to a neighbour | 10 levels off (lossy) |
+
+The composite itself is as faithful as today's cards: pixel error is
+concentrated at hard colour edges, where melt's internal YUV subsamples the
+chroma, and the hold (the existing still route) shows the same numbers. So
+the handoff from animation to hold is seamless, and **the PNG sequence needs
+no new producer type**, only `qimage` pointed at a pattern.
+
+### The design
+
+1. **The renderer is a headless browser, and `magick` keeps the static
+   cards.** Route B would work, and it would make proofcut an animation
+   engine: every technique the channel shows (typing, a sweep, a chart, a
+   wipe, staggered chips) becomes proofcut code, while route A gets them all
+   from CSS, which is what a model already writes and what Daydream's own
+   agent writes. The speed difference is small either way. The cost of A is
+   the dependency, and it is paid the way whisper's is: an optional
+   capability that doctor reports as "unavailable" rather than a failure,
+   resolved by `PROOFCUT_CHROME` then PATH then setup's folder, and a
+   Chrome for Testing headless-shell build pinned by URL and SHA-256 in
+   `PINS` under `proofcut setup`'s rules. The flag set above is fixed in the
+   code, never left to the caller.
+
+2. **A graphic is a page proofcut captures, never a clip it is handed.** The
+   agent writes `assets/graphics/<name>/index.html` (plus local files beside
+   it); proofcut captures it to `cache/graphics/<name>/` as PNG frames. The
+   page is the source, like a card's SVG, and the frames are the raster, like
+   its PNG. **The page loads nothing from the network**: vendored fonts and
+   local files only, with requests outside the directory refused. That closes
+   Daydream's font race by construction, and it is what keeps a capture
+   reproducible.
+
+3. **The length answer: intro, hold, outro, and never a fixed length.**
+   Daydream's graphic is *"a 6s graphic"*, a clip placed at a time. proofcut
+   keeps § Animation is a length problem's rule, because the reason has not
+   changed: a span here is addressed by words and moves with every cut, and a
+   baked length is the music-bed failure again. So a graphic declares up to
+   three phases in seconds of its own timeline: an **intro** (captured once,
+   played from the span's start), a **hold** (one frame, stretched by melt to
+   whatever the span leaves, which is the spike's bit-identical handoff), and
+   an optional **outro** (captured once, anchored to the span's end). The span
+   decides the length and the graphic never does. That is how proofcut can
+   have in-and-out animation without a fixed length, and it is the answer to
+   why its answer differs from Daydream's.
+   - **A hold that moves is a loop, and the capture checks which it is.** The
+     test graphic's caret blinks forever, so its hold is not one frame. A
+     graphic declares `hold: "still"` or `hold: {"loop": seconds}`, and the
+     capture compares the frames that must agree (the hold frame against the
+     outro's first; a loop's first frame against the frame one period on) and
+     refuses a graphic whose declared hold is not what it draws. A
+     comparison at capture time is the authoring-time refusal the PLAN.md
+     note asked for.
+   - **A span shorter than intro plus outro** is reported, never silently
+     truncated: the timeline view names it the way `shots_error` does, and
+     export refuses it, since cutting the intro mid-motion is a different
+     graphic.
+
+4. **It rides the tracks that already exist.** Full-frame, a graphic is a
+   cue's asset; over the picture, it is an overlay (§ Overlays, built). The
+   writer change is one more entry shape, a `qimage` sequence node plus the
+   still, in the node namespaces `mlt.py` already keeps per role. Nothing in
+   the cue table or overlay records changes shape: `asset` names a graphic as
+   it names a card.
+
+5. **The agent checks a graphic by looking at it**, the channel's "Capturing
+   preview": a sheet of the captured frames at the phase boundaries returns
+   as an image through the existing sheet machinery. As with every sheet, a
+   reading is an opinion and gates nothing.
+
+6. **The window previews the frames, never the live page.** Playing the page
+   in an iframe would be a second renderer beside the capture, the same
+   split PLAN.md finding 5 refused for melt reading SVG directly. The preview
+   draws the captured frames at the playhead.
+
+### What is left open, and the recommendation on each
+
+- **The dependency.** 262 MB for the headless shell. **Recommend: accept it,
+  as an optional capability behind `proofcut setup`.** It is the only route
+  that does not make proofcut an animation engine, and a proofcut without it
+  still cuts, captions and renders cards.
+- **Templates and the saved library (gap 4).** A built-in animated template
+  is a page with slots, filled the way card templates are filled. A saved
+  graphic is its directory copied into a library outside the project.
+  **Recommend: build them together with the capture**, since they are the
+  same files.
+- **Transitions (gap 5).** A wipe is a full-frame graphic with a transparent
+  hole, over a cut. **Recommend: after this, not in it.**
+- **The determinism flags off Linux.** They were measured only on this box.
+  **Recommend: the macOS and Windows CI jobs capture the spike's page twice
+  and compare, before any public claim.**
+
+---
+
 ## Copyright, the DMCA, and this work: 2026-09-23
 
 Tyler asked that everything planned here stay within the DMCA. These are the
