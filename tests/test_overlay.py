@@ -304,6 +304,15 @@ def test_an_opaque_or_unrecorded_card_is_refused(cards: Project) -> None:
 
 
 @needs_magick
+def test_a_source_named_by_its_asset_key_is_the_same_source(cards: Project) -> None:
+    """`card:head` is the card `head`, the way the `@` popover writes it."""
+    ops.overlay_add(cards.root, "card:head", "vo", 0, seconds=2.0)
+    assert cards.read_manifest()[ops.OVERLAYS_KEY][0]["card"] == "head"
+    with pytest.raises(ProjectError, match="is an image, so it goes in image"):
+        ops.overlay_add(cards.root, "image:dog", "vo", 0, seconds=2.0)
+
+
+@needs_magick
 def test_an_overlay_card_is_refused_as_a_picture_cue(cards: Project) -> None:
     with pytest.raises(ProjectError, match="overlay_add"):
         ops._resolve_asset(cards, "card:head")

@@ -1059,7 +1059,9 @@ Most value per cost first, each with a recommendation. This replaces
    **Recommend: design with 2**, since a saved graphic is the thing 2 makes.
 5. **Per-cut effects and transitions**: a crossfade between cues, vignette,
    scale punch. Small once 2 exists.
-6. **Small and independent**: the `overlay add card:NAME` refusal (minutes);
+6. **Small and independent**: the `overlay add card:NAME` refusal (fixed
+   2026-09-24: each of card, graphic and image takes its own prefix, and a
+   wrong one is refused by name);
    whether a server may open a second project for a footage split (a
    question, since `-C` binding is deliberate); the Resolve question above.
 

@@ -15017,6 +15017,22 @@ def _edit_frames(edit: tl.Edit, rate: float) -> int:
     return sum(frames for _, frames in autoeditor.frame_layout(edit, rate))
 
 
+def _overlay_source_name(kind: str, value: str) -> str:
+    """`value` without its `card:`/`graphic:`/`image:` prefix, refused under the wrong kind.
+
+    The `@` popover and every cue name an overlay's source by its asset key,
+    so an agent hands over `card:lower`. Taken literally that is a card named
+    `card:lower`, which has no record, and the refusal said so — true, and no
+    help to anyone.
+    """
+    for other in ("card", "graphic", "image"):
+        if value.startswith(f"{other}:"):
+            if other != kind:
+                raise ProjectError(f"{value!r} is {'an' if other == 'image' else 'a'} {other}, so it goes in {other}, not {kind}")
+            return value.removeprefix(f"{other}:")
+    return value
+
+
 def overlay_add(
     path: Path | str,
     card: str | None,
@@ -15070,6 +15086,10 @@ def overlay_add(
     project = Project.open(path)
     if sum(v is not None for v in (card, graphic, image)) != 1:
         raise ProjectError("an overlay draws exactly one of a card, a graphic or an image")
+    card, graphic, image = (
+        None if value is None else _overlay_source_name(kind, str(value))
+        for kind, value in (("card", card), ("graphic", graphic), ("image", image))
+    )
     placement = {"x": x, "y": y, "width": width, "rotate": rotate, "style": style}
     if image is None and any(v is not None for v in placement.values()):
         raise ProjectError("x, y, width, rotate and style place an image; a card or graphic is the whole frame")

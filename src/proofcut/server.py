@@ -1780,8 +1780,8 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
     "overlay_add": {
         "card": (
             "The overlay card to place: one made by card_new from an overlay template "
-            "(`lowerthird`, `scrim`). An ordinary card is opaque and is refused. One of "
-            "card or graphic."
+            "(`lowerthird`, `scrim`), by name or as `card:NAME`. An ordinary card is opaque "
+            "and is refused. One of card, graphic or image; each takes its own prefix."
         ),
         "graphic": (
             "An animated graphic (graphic_new) to place instead of a card. Its intro plays "

@@ -1570,7 +1570,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_overlay_add.add_argument(
         "card",
-        help="a card made from an overlay template (card new … lowerthird), graphic:NAME (graphic new) "
+        help="a card made from an overlay template (card new … lowerthird; NAME or card:NAME), graphic:NAME (graphic new) "
         "or image:NAME (image add), which places the still as a sticker",
     )
     p_overlay_add.add_argument("clip_id", help="the clip whose words or events address the span")
