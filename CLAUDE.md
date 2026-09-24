@@ -1634,6 +1634,10 @@ built; docs/plans/INSTALL.md):
   - **`browser.DETERMINISTIC_FLAGS` are the capture, not tuning**: without
     them two captures of one page differed on 62 of 91 frames. Never let a
     caller drop them.
+  - **Ubuntu 23.10+ refuses Chrome for Testing its sandbox** (SIGTRAP before
+    DevTools; every 24.04 desktop, and CI). `browser.launch` retries once with
+    `--no-sandbox` only on Chrome's own `No usable sandbox`, and the capture
+    records `sandboxed`; any other death is reported, never retried.
   - **The page is served, never opened**: every request answered from its
     folder or the vendored fonts at `browser.ORIGIN`, the rest refused. A
     `file://` page would read the disk, and a web font would race the capture.
