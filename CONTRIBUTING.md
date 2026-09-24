@@ -14,9 +14,10 @@ turned down however good the code is.
 
 ## The rules a pull request is checked against
 
-[CLAUDE.md](CLAUDE.md) is the full list of traps. It is written for coding
-agents and reads that way, but every entry in it is a real failure this repo
-has already hit. These are the ones outside changes break most often:
+[CLAUDE.md](CLAUDE.md) lists every trap in a line, and
+[docs/TRAPS.md](docs/TRAPS.md) explains each one. Both are written for coding
+agents and read that way, but every entry is a real failure this repo has
+already hit. These are the ones outside changes break most often:
 
 - **Every MCP tool gets a matching `proofcut` CLI subcommand.** The CLI is how an
   operation gets scripted and debugged without an agent in the loop, and the
