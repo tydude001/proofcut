@@ -8,11 +8,11 @@ So these start the real `ThreadingHTTPServer` and speak HTTP to it.
 
 from __future__ import annotations
 
+import base64
 import http.client
 import json
 import math
 import re
-import base64
 import shutil
 import struct
 import subprocess
