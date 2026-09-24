@@ -18,7 +18,8 @@ of those seven marked "to watch", was then read in full the same day, both the
 rewrite and the classic app — § OpenCut, read in full. What is worth
 harvesting from classic's UI, and the three measured reasons its tree cannot be
 vendored into a Python wheel, are § What is worth taking, and what a copy would
-cost.
+cost. OpenCut was re-checked **2026-09-24**, when `main` moved for the first
+time in seven weeks: § OpenCut's first commit in seven weeks.
 
 ## Why this survey happened
 
@@ -924,6 +925,68 @@ memory limits are issue reports); the audio-fade absence beyond a grep; the
 Whisper weights' licences; issue counts, which are title-keyword matches over a
 repo that mixes both eras; and the rewrite-era commit count, since only the 30
 most recent commits were listed.
+
+## OpenCut's first commit in seven weeks — 2026-09-24
+
+Checked because `main` moved: `e668010` (2026-09-24), "ci(media): add the
+workflow that builds FFmpeg for every platform". The commit before it was
+`400f097` on 2026-08-01, the head § OpenCut, read in full recorded. **One
+re-check trigger fired, on plumbing alone: a `crates/` directory is on `main`,
+and it holds no Rust.** Its whole content is `crates/media/setup/ffmpeg.json`
+and `setup.ts`. The `build.rs` that `setup.ts` says will find the build, and
+the `pin.ts` that the workflow and release notes tell you to run, are not in
+the tree.
+
+What the commit adds:
+
+- **A pinned FFmpeg for a `media` crate to decode with, not to shell out
+  to.** Shared LGPL-2.1 builds of 8.1.3 (a licence-clean library to link from
+  an MIT app), unpacked into `.cache/media/`. `setup.ts` downloads the
+  prebuilt for the host and checks its SHA-256, or builds the pinned source
+  tarball with `--from-source`. It cross-compiles Windows from Linux with
+  llvm-mingw.
+- **A hand-run workflow (`media-deps.yml`, `workflow_dispatch`) that builds
+  all six OS/arch pairs from source and publishes them as a prerelease.** The
+  first run is `ffmpeg-8.1.3-1`, published the same day. That tag is the
+  "new release" the repo showed today. It is FFmpeg archives and a checksum
+  file, and the app's latest release is still v0.3.0 (2026-04-15). Linux is
+  built on Ubuntu 22.04, so the libraries need glibc 2.35 or newer.
+- **As committed, `ffmpeg.json` still points four platforms at a BtbN *daily*
+  build (`autobuild-2026-09-23-14-55`) and has no macOS entry.**
+  `install.py`'s header records that BtbN deletes its dated dailies after a
+  few weeks, which is why proofcut pins a month-end build. The self-built
+  release looks like OpenCut's answer to the same problem: once `pin.ts` runs,
+  its pins point at files OpenCut hosts. proofcut has no need to follow while
+  BtbN keeps its month-end builds. Self-hosting is the fallback if that stops.
+
+**The other triggers have not fired.** `apps/web/src/routes/editor.tsx` is
+238 bytes. The desktop panels are placeholders: `timeline.rs` is 502 bytes
+and `preview.rs` 479, and `apps/desktop/README.md` says "Very early. Right
+now this is just a window that opens." The README still lists the Editor API,
+MCP server and headless mode as "what's coming", with no code behind them,
+and it has not changed since 2026-07-23. It still declines outside
+contributions. new.opencut.app now serves a real HTML shell titled "OpenCut
+rewrite — beta.opencut.app" with one route, and `/editor` is still a 404.
+beta.opencut.app does not resolve. opencut-classic has not moved since
+`cf5e79e` (2026-05-17), so the two READMEs disagree just as before. The
+feature branches `desktop`, `frames` and `dev` last moved in March and April.
+
+**Reading.** The rewrite has chosen its media layer (FFmpeg linked in-process,
+behind a Rust crate) and has nothing yet that edits, plays, exports or takes
+an agent's call. Nothing in the tree dates a release, but the distance from
+here to a working editor is months of work, not weeks. Stars that day:
+`OpenCut-app/OpenCut` 90,596 (+602 since 2026-09-20), 276 open issues and
+102 open PRs; opencut-classic 260.
+
+**Re-check triggers carry forward** from § OpenCut, read in full, with the
+`crates/` one moved on to "`crates/media` gains Rust (a `build.rs` or a
+`src/`)", and one added: `ffmpeg.json` gains a macOS entry or is repointed at
+OpenCut's own release, which would mean `pin.ts` landed.
+
+**Not confirmed.** That the self-built release is meant to replace the BtbN
+pins. That is inferred from the workflow's comment and the release notes,
+because `pin.ts` is absent. Also unconfirmed: whether `crates/media` will do
+the export as well as the decode. Only "decodes with" is written anywhere.
 
 ## Stateless-ffmpeg MCP servers
 
