@@ -1064,3 +1064,65 @@ Most value per cost first, each with a recommendation. This replaces
    question, since `-C` binding is deliberate); the Resolve question above.
 
 **Nothing here is built.** The order waits on Tyler's review.
+
+---
+
+## Copyright, the DMCA, and this work: 2026-09-23
+
+Tyler asked that everything planned here stay within the DMCA. These are the
+working rules, and every step of § The gaps, re-ranked is built under them.
+They are a careful reading, not legal advice; anything with real money or a
+real notice behind it goes to a lawyer.
+
+**What the DMCA reaches here, in two parts.**
+
+- **§ 512, notice and takedown**, reaches what proofcut *publishes*: the
+  public repo, the PyPI package, the registry listing. A rights holder's
+  notice to GitHub removes the file that infringes. Audited 2026-09-23: the
+  repo holds no Daydream media, code, screenshot or frame. Its only material
+  from Daydream is this document's description of the product, short
+  quotations of its on-screen text for commentary, and the palette's HSL
+  values in § Tokens (colours are not protected expression). Daydream's name
+  appears in code comments that cite this file, never in the README, the
+  manual, the demo, the listings or the window.
+- **§ 1201, circumvention**, reaches *how material was obtained*. The eight
+  site films were plain files the site serves to every browser. The 40
+  YouTube videos were fetched with `yt-dlp`, which YouTube's terms forbid and
+  whose status under § 1201 has been argued both ways (the 2020 takedown of
+  youtube-dl on GitHub, reversed; a 2021 German lower-court ruling against the host of its website).
+  That copy is private research that nobody receives, and it is the one
+  exposure this work has.
+
+**The rules.**
+
+1. **Never download a streaming site's videos for research again.** Watch in
+   a browser and take notes, or use files a site serves in the open. The
+   2026-09-23 downloads are deleted once Tyler has reviewed the notes;
+   `NOTES.md` (our words, short quotations) is what is kept.
+2. **Nothing of Daydream's goes into the repo or a release**: no frame,
+   screenshot, video, audio, template file, graphic, prompt text, "design
+   guidance", code from its app bundle, or its marketing copy. CLAUDE.md
+   already bars committing a frame of footage proofcut does not own.
+3. **Copy the idea, never the expression.** A feature, a workflow, a UI
+   layout convention and a technique (a word fading in, a highlighter sweep)
+   are free to build. A specific template's artwork, a specific ad's script
+   or animation, or a mascot are not. Our templates are drawn from scratch,
+   and the PupBnB rebuild stays a private measurement, never a published
+   render or demo.
+4. **Say "Daydream" only to compare, never to borrow.** No use of its name or
+   mark in proofcut's UI, listings or marketing, and nothing that suggests
+   a connection. A factual comparison in docs is fine.
+5. **Features that fetch other people's work leave the licence with the
+   user, on the record.** proofcut does not scrape or download images from
+   the web, and ships no third-party stickers, textures or clips unless
+   their licence allows it and says so beside the file (the vendored fonts'
+   `LICENSE-*.txt` precedent). An image a person adds keeps its provenance
+   (where it came from and under what licence) the way a font keeps
+   `font_provenance`, and nothing hides that record.
+6. **The graphics renderer loads nothing remote.** A browser-rendered graphic
+   draws only vendored fonts and project assets. That is the licence rule,
+   and it is also the fix for Daydream's own font race (§ The channel,
+   watched).
+7. **proofcut never grows a downloader.** Import reads files a person
+   already has; nothing in `src/` fetches media from YouTube or any
+   streaming site, and nothing strips DRM.
