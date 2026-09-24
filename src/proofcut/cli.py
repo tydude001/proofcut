@@ -895,8 +895,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "rate to see the frames the export will actually cut at)",
     )
 
-    p_seed = sub.add_parser("seed", help="lay a clip down as the timeline")
-    p_seed.add_argument("clip_id")
+    p_seed = sub.add_parser("seed", help="lay one clip, or several end to end, down as the timeline")
+    p_seed.add_argument(
+        "clip_id", nargs="+", help="one clip, or several recordings laid end to end in this order"
+    )
     p_seed.add_argument(
         "--keep-silences", action="store_true", help="do not run auto-editor's silence pass"
     )
@@ -1877,6 +1879,30 @@ def _build_parser() -> argparse.ArgumentParser:
         help="resolve the spans and the clips it would link, and create nothing",
     )
 
+    p_split = sub.add_parser(
+        "split", help="cut this timeline into shorts, each a new project beside this one"
+    )
+    p_split.add_argument(
+        "shorts",
+        nargs="+",
+        type=_split_short,
+        metavar="NAME=CLIP:WORD..CLIP:WORD|NAME=START-END",
+        help="one per short: its first and last word (an index, or a phrase), or the "
+        "render seconds to keep. NAME is a directory created beside the project",
+    )
+    p_split.add_argument("--into", help="create the shorts here instead of beside the project")
+    p_split.add_argument(
+        "--canvas", metavar="WIDTHxHEIGHT", help="the shape of every short, e.g. 1080x1920"
+    )
+    p_split.add_argument(
+        "--confirm-suspect",
+        action="store_true",
+        help="allow a short's edge on a word with a suspect duration",
+    )
+    p_split.add_argument(
+        "--plan", action="store_true", help="resolve every short and create nothing"
+    )
+
     p_review = sub.add_parser("review", help="serve a review round: named renders, sheets, A/B pairs")
     review_sub = p_review.add_subparsers(dest="review_command", required=True)
 
@@ -2839,7 +2865,7 @@ def _cmd_seed(args: argparse.Namespace) -> int:
     return _emit(
         ops.seed_timeline(
             args.project,
-            args.clip_id,
+            args.clip_id[0] if len(args.clip_id) == 1 else args.clip_id,
             remove_silences=not args.keep_silences,
             threshold=args.threshold,
             margin=args.margin,
@@ -3486,6 +3512,42 @@ def _cmd_hold(args: argparse.Namespace) -> int:
     return _emit(ops.hold_check(args.project, args.render))
 
 
+def _split_edge(text: str) -> dict[str, Any]:
+    clip_id, sep, word = text.rpartition(":")
+    if not sep or not clip_id or not word:
+        raise argparse.ArgumentTypeError(f"{text!r} is not CLIP:WORD")
+    try:
+        return {"clip_id": clip_id, "word_index": int(word)}
+    except ValueError:
+        return {"clip_id": clip_id, "phrase": word}
+
+
+def _split_short(text: str) -> dict[str, Any]:
+    name, sep, bounds = text.partition("=")
+    if not sep or not name or not bounds:
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is not NAME=CLIP:WORD..CLIP:WORD or NAME=START-END"
+        )
+    first, dots, last = bounds.partition("..")
+    if dots:
+        return {"name": name, "from": _split_edge(first), "to": _split_edge(last)}
+    start, end = _time_span(bounds)
+    return {"name": name, "start": start, "end": end}
+
+
+def _cmd_split(args: argparse.Namespace) -> int:
+    return _emit(
+        ops.split(
+            args.project,
+            args.shorts,
+            into=args.into,
+            canvas=args.canvas,
+            confirm_suspect=args.confirm_suspect,
+            plan=args.plan,
+        )
+    )
+
+
 def _cmd_reel(args: argparse.Namespace) -> int:
     start, end = args.keep
     return _emit(
@@ -3961,6 +4023,7 @@ _COMMANDS = {
     "sound": _cmd_sound,
     "hold": _cmd_hold,
     "reel": _cmd_reel,
+    "split": _cmd_split,
     "review": _cmd_review,
     "reframe": _cmd_reframe,
     "reframe-detect": _cmd_reframe_detect,

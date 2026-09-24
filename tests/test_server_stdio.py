@@ -146,6 +146,7 @@ EXPECTED_TOOLS = {
     "sound_generate",
     "finish_check",
     "reel",
+    "split",
     "review_add",
     "review_verdict",
     "review_list",
@@ -784,6 +785,7 @@ TOOL_TO_COMMAND = {
     "sound_generate": "sound",
     "finish_check": "finish-check",
     "reel": "reel",
+    "split": "split",
     "review_add": "review",
     "review_verdict": "review",
     "review_list": "review",
@@ -8673,6 +8675,49 @@ def test_a_second_server_bound_to_a_fresh_reel_can_write_while_the_first_runs(
 
 
 @needs_ffprobe
+@needs_ffmpeg
+def test_a_bound_server_splits_a_dump_into_shorts_it_then_cannot_reach(
+    tmp_path: Path,
+) -> None:
+    """DAYDREAM.md § Splitting a footage dump, designed, design 8: the whole job
+    under one bound server — seed two recordings, split — and then the shorts
+    are outside its project, so `_confine` refuses every call naming one, while
+    a second server bound to a short writes to it."""
+    from test_split import _recording
+
+    dump = tmp_path / "dump"
+    ops.init(dump)
+    for name, colour in (("a", "blue"), ("b", "red")):
+        video, transcript = _recording(tmp_path, name, colour)
+        ops.import_media(dump, video, clip_id=name)
+        ops.attach_transcript(dump, name, transcript)
+    shorts = [
+        {"name": "one", "from": {"clip_id": "a", "word_index": 0}, "to": {"clip_id": "a", "word_index": 7}},
+        {"name": "two", "from": {"clip_id": "b", "phrase": "b00"}, "to": {"clip_id": "b", "word_index": 3}},
+    ]
+
+    async def body(first: ClientSession) -> Any:
+        client = Client(first)
+        await client.call("seed_timeline", clip_id=["a", "b"], remove_silences=False)
+        into = await _refused(first, "split", shorts=shorts, into=str(tmp_path / "elsewhere"))
+        made = await client.call("split", shorts=shorts)
+        reach = await _refused(first, "timeline_status", path=str(tmp_path / "one"))
+
+        async def second(session: ClientSession) -> Any:
+            return await Client(session).call("cut_by_time", spans=[[0.0, 0.5]])
+
+        return into, made, reach, await _with_server(second, _bound(tmp_path / "two"))
+
+    into, made, reach, cut = anyio.run(_with_server, body, _bound(dump))
+
+    assert "leave `into` unset" in into
+    assert [s["project"] for s in made["shorts"]] == [str(tmp_path / "one"), str(tmp_path / "two")]
+    assert [s["clips_dropped"] for s in made["shorts"]] == [["b"], ["a"]]
+    assert str(tmp_path / "one") in reach
+    assert cut["duration_after"] == pytest.approx(4.4, abs=0.05)
+
+
+@needs_ffprobe
 def test_reel_derives_a_project_over_the_wire(
     tmp_path: Path, sources: tuple[Path, Path]
 ) -> None:
@@ -8800,7 +8845,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
             assert "no project" in description, tool.name
         else:
             assert "bound project" in description, tool.name
-    assert seen == 125
+    assert seen == 126
 
 
 def test_no_tool_advertises_an_argument_with_nothing_said_about_it() -> None:

@@ -1161,6 +1161,34 @@ real frames, a valid projection, and a different film with nothing saying so.
 Each survivor is pinned to the in-point the film's own plan gave it; 2 of the
 4 that survived the Scream teaser's span needed one.
 
+## A footage dump: several shorts from one pile
+
+A pile of raw recordings that holds several shorts is cleaned once and then
+split, all in one project:
+
+```sh
+proofcut -C dump seed reel1 reel2 reel3            # end to end, each silence-cut
+proofcut -C dump cut reel1 11:23                   # retakes, as for any timeline
+proofcut -C dump split intro=reel1:0..reel1:46 demo=reel2:0..reel3:"that's it" --plan
+proofcut -C dump split intro=reel1:0..reel1:46 demo=reel2:0..reel3:"that's it" --canvas 1080x1920
+```
+
+`seed` with several clips lays them down in the order given, each through
+the same silence pass. Each short is a name and its first and last word, as
+`CLIP:WORD`, where `WORD` is an index or a phrase. A short may start in one
+recording and end in another. `NAME=START-END` in render seconds works too,
+as `reel` takes them. Every short is created **beside** the project as a
+directory of that name, which must not exist yet. It is a reel of its span,
+so everything above about reels applies to each one, and it keeps only the
+recordings it uses: `clips_dropped` names the rest.
+
+Two things are reported rather than refused. `overlaps` is two shorts
+sharing material, which is how you make two versions of one short.
+`unassigned` is timeline spans no short holds, which is how a take you
+missed shows up. An agent bound to the dump cannot reach a short once it
+exists. Open one with `proofcut -C <short>`, or list them all with
+`proofcut web --root <the dump's parent>`.
+
 ## Describing footage — b-roll search
 
 To find the b-roll to cue in the first place, describe it:

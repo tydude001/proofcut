@@ -383,6 +383,9 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "reframe_detect",
             # A preview-only cache, skipped when current; never the manifest.
             "proxy_transcode",
+            # Creates new projects and refuses any directory that exists, so a
+            # repeat creates nothing; the dump itself is only read.
+            "split",
         ],
         _ADD,
     ),
@@ -929,7 +932,10 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         ),
     },
     "seed_timeline": {
-        "clip_id": "The clip to lay down as the timeline.",
+        "clip_id": (
+            "The clip to lay down as the timeline, or a list of recordings laid end "
+            "to end in that order. Several must all have picture."
+        ),
         "remove_silences": (
             "Silence-cut the clip on the way in, through auto-editor. On by default; "
             "false lays the whole clip down untouched."
@@ -1588,6 +1594,23 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "project state and would stay."
         ),
         "name": "A name for the derived project. Unset, it is derived from `dest`.",
+    },
+    "split": {
+        "shorts": (
+            "Every short, in order: `{name, from, to}` where `from` is its first word "
+            "and `to` its last, each `{clip_id, word_index}` or `{clip_id, phrase}` "
+            "(plus `occurrence` for a repeated phrase); or `{name, start, end}` in the "
+            "render seconds `reel` takes. `name` is one directory name, created beside "
+            "the dump, and must not exist."
+        ),
+        "into": (
+            "The directory the shorts are created in. Unset, the dump's own parent, so "
+            "they sit beside it. A bound server takes no other."
+        ),
+        "canvas": (
+            "The shape to set on every short, e.g. `1080x1920` — one delivery shape for "
+            "the batch. The dump keeps its own."
+        ),
     },
     "reframe": {
         "clip_id": (
@@ -3734,13 +3757,17 @@ def build_shots(path: ProjectPath = None,
 def seed_timeline(
     path: ProjectPath = None,
     *,
-    clip_id: str,
+    clip_id: str | list[str],
     remove_silences: bool = True,
     threshold: float = 0.04,
     margin: str | None = None,
     edit_expr: str | None = None,
 ) -> dict[str, Any]:
     """Lay a clip down as the timeline, silence-cut by auto-editor by default.
+
+    A list of clips lays several recordings end to end in that order, each
+    silence-cut the same way — a footage dump seeded once, cleaned once, then
+    `split`. `clips` reports each one.
 
     `edit_expr` passes auto-editor's edit language straight through, e.g.
     "(or audio:0.03 motion:0.06)".
@@ -4982,6 +5009,43 @@ def reel(
         name=name,
         confirm_suspect=confirm_suspect,
         plan=plan,
+    )
+
+
+@_tool()
+def split(
+    path: ProjectPath = None,
+    *,
+    shorts: list[dict[str, Any]],
+    into: str | None = None,
+    canvas: str | None = None,
+    confirm_suspect: bool = False,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Cut this timeline into shorts, each a new project beside this one.
+
+    For a footage dump: seed every recording (`seed_timeline` takes a list),
+    clean it once (`cut_by_transcript`, `verify`), then split. Which shorts
+    there are and where each starts is your reading of the transcripts. Each
+    short is `reel` over its span, so everything `reel` reports comes back
+    per short, and each also leaves out the recordings it does not use
+    (`clips_dropped`).
+
+    `overlaps` (two shorts sharing material) and `unassigned` (timeline spans
+    no short holds — a take missed stays in the dump) are reported, never
+    refused: read both. This server cannot reach a short once it exists, by
+    design; `proofcut web --root <the dump's parent>` lists them. `plan=True`
+    resolves every short and creates nothing.
+    """
+    if into is not None and _BOUND_ROOT is not None:
+        default = Path(path or _BOUND_ROOT).resolve().parent
+        if Path(into).expanduser().resolve() != default:
+            raise ProjectError(
+                f"this server is bound to {_BOUND_ROOT}, so its shorts go beside the "
+                f"project, in {default}, and nowhere else — leave `into` unset"
+            )
+    return ops.split(
+        path, shorts, into=into, canvas=canvas, confirm_suspect=confirm_suspect, plan=plan
     )
 
 

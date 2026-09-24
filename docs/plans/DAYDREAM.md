@@ -1068,10 +1068,12 @@ Most value per cost first, each with a recommendation. This replaces
    derivation, one project per server, and designed in § Splitting a
    footage dump, designed); the Resolve question above.
 
-**Items 1 to 5 are built**, each approved in turn: HISTORY.md § Caption
+**Items 1 to 6 are built**, each approved in turn: HISTORY.md § Caption
 reveal, caption spans and caption corrections, built; § Animated graphics,
 built (with item 4's graphics library); § Images in, built; § Saved caption
-looks, built; § Transitions and per-cut effects, built. What is left open is the wiki's to track.
+looks, built; § Transitions and per-cut effects, built; § Splitting a
+footage dump, built. Item 6's Resolve question was answered no on
+2026-09-24. What is left open is the wiki's to track.
 
 ---
 
@@ -1732,6 +1734,9 @@ edit.
   it every recording after the first keeps its pauses.
 - **Resolve export.** Not answered in this round. Measuring it needs a
   Resolve installed here first, which is your call.
+
+Answered 2026-09-24: yes to the first five, no to Resolve export. Built the
+same day: HISTORY.md § Splitting a footage dump, built.
 
 ---
 

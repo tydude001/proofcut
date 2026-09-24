@@ -676,6 +676,33 @@ def test_reel_span_parses_and_reaches_ops_as_two_arguments(
     assert not (tmp_path / "teaser").exists()
 
 
+@needs_ffprobe
+def test_split_shorts_parse_as_words_or_seconds(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`NAME=CLIP:WORD..CLIP:WORD` is a word edge each side, an index or a
+    phrase; `NAME=START-END` is `reel`'s own seconds."""
+    project = tmp_path / "proj"
+    audio, transcript = _make_sources(project.parent)
+
+    assert main(["-C", str(project), "init"]) == 0
+    capsys.readouterr()
+    assert main(["-C", str(project), "import", str(audio)]) == 0
+    clip_id = json.loads(capsys.readouterr().out)["clip_id"]
+    assert main(["-C", str(project), "attach-transcript", clip_id, str(transcript)]) == 0
+    capsys.readouterr()
+    assert main(["-C", str(project), "seed", clip_id, "--keep-silences"]) == 0
+    capsys.readouterr()
+
+    shorts = [f"one={clip_id}:0..{clip_id}:w11", "two=0:05-0:08"]
+    assert main(["-C", str(project), "split", *shorts, "--plan"]) == 0
+    one, two = json.loads(capsys.readouterr().out)["shorts"]
+
+    assert (one["from"]["index"], one["to"]["index"], one["to"]["text"]) == (0, 3, "w11")
+    assert (two["start"], two["end"]) == pytest.approx((5.0, 8.0))
+    assert not (tmp_path / "one").exists()
+
+
 def test_head_flags_parse_and_reach_ops(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

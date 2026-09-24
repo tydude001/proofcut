@@ -3842,7 +3842,7 @@ def _timeline_bound(project: Project, clip: dict[str, Any]) -> float:
 
 def seed_timeline(
     path: Path | str,
-    clip_id: str,
+    clip_id: str | Sequence[str],
     *,
     remove_silences: bool = True,
     threshold: float = 0.04,
@@ -3853,44 +3853,84 @@ def seed_timeline(
 
     Silence detection is auto-editor's, not proofcut's — shell out rather than
     reimplement (PLAN.md scope rule).
+
+    `clip_id` may name several recordings, laid end to end in the order given,
+    each silence-cut by the same pass on the way in — a footage dump seeded as
+    one timeline to be cleaned once and then `split` (DAYDREAM.md § Splitting
+    a footage dump, designed, design 2). `follow` is the join between two
+    recordings and splices the second in whole, pauses and all, and no op
+    removes silences from a clip already on the timeline. With more than one,
+    a recording with no picture is refused the way `follow` refuses one,
+    until someone measures what the writer does with two.
     """
     project = Project.open(path)
-    clip = media.get_clip(project, clip_id)
-    source = media.media_path(project, clip)
-
-    # Neither seed may run past the file's picture: auto-editor can count a
-    # frame past the end (an iPhone clip's stretched last frame gets a
-    # 2999/100 timebase). HISTORY.md § The phone's black last frame.
-    end = _timeline_bound(project, clip)
-
-    if remove_silences:
-        edit = autoeditor.silence_edit(
-            source, clip_id, threshold=threshold, margin=margin, edit_expr=edit_expr
+    clip_ids = [clip_id] if isinstance(clip_id, str) else [str(c) for c in clip_id]
+    if not clip_ids:
+        raise ProjectError("name at least one clip to seed the timeline with")
+    repeated = sorted({c for c in clip_ids if clip_ids.count(c) > 1})
+    if repeated:
+        raise ProjectError(
+            f"{', '.join(map(repr, repeated))} named more than once — a seed lays each "
+            "recording down once; place a second copy with `follow`"
         )
-        if edit.segments and edit.segments[-1].end > end:
-            edit = tl.Edit([
-                tl.Segment(clip_id=s.clip_id, start=s.start, end=min(s.end, end))
-                for s in edit.segments
-                if s.start < end
-            ])
-    else:
-        edit = tl.Edit([tl.Segment(clip_id=clip_id, start=0.0, end=end)])
+    clips = [media.get_clip(project, c) for c in clip_ids]
+    if len(clips) > 1:
+        pictureless = [c for c, clip in zip(clip_ids, clips, strict=True) if not clip.get("has_video")]
+        if pictureless:
+            raise ProjectError(
+                f"{', '.join(map(repr, pictureless))} has no picture — a seed of several "
+                "recordings lays down recordings with picture, as `follow` does; seed an "
+                "audio-only recording on its own"
+            )
 
+    segments: list[tl.Segment] = []
+    laid: list[dict[str, Any]] = []
+    for cid, clip in zip(clip_ids, clips, strict=True):
+        source = media.media_path(project, clip)
+        # Neither seed may run past the file's picture: auto-editor can count a
+        # frame past the end (an iPhone clip's stretched last frame gets a
+        # 2999/100 timebase). HISTORY.md § The phone's black last frame.
+        end = _timeline_bound(project, clip)
+        if remove_silences:
+            own = [
+                tl.Segment(clip_id=s.clip_id, start=s.start, end=min(s.end, end))
+                for s in autoeditor.silence_edit(
+                    source, cid, threshold=threshold, margin=margin, edit_expr=edit_expr
+                ).segments
+                if s.start < end
+            ]
+        else:
+            own = [tl.Segment(clip_id=cid, start=0.0, end=end)]
+        segments += own
+        laid.append(
+            {
+                "clip_id": cid,
+                "segments": len(own),
+                "source_duration": float(clip["duration"]),
+                "timeline_duration": round(sum(s.end - s.start for s in own), 6),
+            }
+        )
+    edit = tl.Edit(segments)
+
+    first = clips[0]
     manifest = project.read_manifest()
     manifest.setdefault(
         "timebase",
-        float(clip["fps"]) if clip.get("has_video") and clip.get("fps") else autoeditor.AUDIO_TIMEBASE,
+        float(first["fps"]) if first.get("has_video") and first.get("fps") else autoeditor.AUDIO_TIMEBASE,
     )
     project.write_manifest(manifest)
 
     _save_edit(project, edit)
-    return {
-        "clip_id": clip_id,
+    report: dict[str, Any] = {
+        "clip_id": clip_id if isinstance(clip_id, str) else clip_ids,
         "segments": len(edit.segments),
-        "source_duration": float(clip["duration"]),
+        "source_duration": sum(item["source_duration"] for item in laid),
         "timeline_duration": edit.duration,
         "silences_removed": remove_silences,
     }
+    if len(laid) > 1:
+        report["clips"] = laid
+    return report
 
 
 def _resolve_resource(document: Path, root_attr: str | None, resource: str) -> Path:
@@ -21664,6 +21704,311 @@ def reel(
             shutil.rmtree(reel_project.root, ignore_errors=True)
         raise
 
+    return report
+
+
+# `proofcut split` — DAYDREAM.md § Splitting a footage dump, designed. A dump
+# of recordings is seeded as one timeline, cleaned once, and then cut into
+# shorts, each its own project beside the dump. How many shorts there are and
+# where each starts is the agent's reading of the transcripts; proofcut does
+# not choose (`synopsis`'s rule).
+
+#: What an edge of a short may name. `from`/`to` are words, `start`/`end` are
+#: `reel`'s own render seconds, for a person working from a watch.
+_SPLIT_EDGE_KEYS = ("clip_id", "word_index", "phrase", "occurrence")
+
+
+def _split_name(name: Any) -> str:
+    """One path component, never a path: a short is created *beside* the dump
+    by name, and a separator or `..` would put it somewhere else."""
+    if not isinstance(name, str) or not name.strip():
+        raise ProjectError(f"a short's name is a directory name, not {name!r}")
+    if name in (".", "..") or "/" in name or "\\" in name:
+        raise ProjectError(
+            f"a short's name is one directory name, created beside the dump — {name!r} "
+            "is a path. Pass `into` for another parent"
+        )
+    return name
+
+
+def _split_edge(
+    project: Project, edit: tl.Edit, edge: Any, *, which: str, name: str
+) -> dict[str, Any]:
+    """One word edge of a short, resolved to the timeline second it sits at.
+
+    `from` keeps its word's first surviving instant and `to` its last, so a
+    word a cleaning cut clipped still opens or closes the short where it is
+    heard. A word the cleaning removed entirely is refused: it is not on the
+    timeline, so it cannot bound anything on it.
+    """
+    if not isinstance(edge, dict) or "clip_id" not in edge:
+        raise ProjectError(
+            f"short {name!r}: `{which}` is {{clip_id, word_index or phrase}}, not {edge!r}"
+        )
+    unknown = sorted(set(edge) - set(_SPLIT_EDGE_KEYS))
+    if unknown:
+        raise ProjectError(f"short {name!r}: `{which}` does not take {', '.join(unknown)}")
+    clip_id = str(edge["clip_id"])
+    parsed = _transcript(project, clip_id)
+    index, _ = _resolve_word_or_phrase(
+        parsed,
+        word_index=edge.get("word_index"),
+        phrase=edge.get("phrase"),
+        occurrence=edge.get("occurrence"),
+        edge="first" if which == "from" else "last",
+    )
+    if not 0 <= index < len(parsed):
+        raise tx.TranscriptError(
+            f"short {name!r}: word {index} is outside {clip_id!r}'s transcript "
+            f"(0-{len(parsed) - 1})"
+        )
+    word = parsed.words[index]
+    pieces = edit.timeline_spans(clip_id, word.start, word.end)
+    if not pieces:
+        raise ProjectError(
+            f"short {name!r}: its `{which}` word {index} ({word.text!r}) in {clip_id!r} "
+            "is not on the timeline — the cleaning cut it, or the recording was never "
+            "seeded. Name a word that plays"
+        )
+    at = pieces[0].timeline_start if which == "from" else pieces[-1].timeline_end
+    return {
+        "clip_id": clip_id,
+        "index": index,
+        "text": word.text,
+        "at": round(at, 6),
+        **_context(parsed, index, index),
+    }
+
+
+def _split_spans(spans: list[tuple[float, float]], duration: float) -> list[list[float]]:
+    """`[0, duration)` less every span, as the timeline spans no short holds."""
+    gaps: list[list[float]] = []
+    cursor = 0.0
+    for a, b in sorted(spans):
+        if a - cursor >= tl.MIN_SEGMENT:
+            gaps.append([round(cursor, 6), round(a, 6)])
+        cursor = max(cursor, b)
+    if duration - cursor >= tl.MIN_SEGMENT:
+        gaps.append([round(cursor, 6), round(duration, 6)])
+    return gaps
+
+
+def _split_uses(clip_ids: Iterable[str], cues: Iterable[dict[str, Any]]) -> set[str]:
+    """What places a recording in a short once `reel`'s drops have run: being
+    on its timeline, or being a kept cue's `clip_id` or `asset`."""
+    used = set(clip_ids)
+    for cue in cues:
+        used.add(cue["clip_id"])
+        used.add(cue["asset"])
+    return used
+
+
+def _split_prune(short: Project) -> list[str]:
+    """Leave out every recording the short does not use (design 6).
+
+    Not `clip_rm`: it refuses any transcribed clip, which is every recording
+    in a dump, and it does not look at framing windows. Everything keyed by
+    the dropped `clip_id` alone goes with it — its transcript, and every
+    manifest row naming it (descriptions, framing windows, unspoken marks,
+    caption spans, continuity marks); its synopsis and events ride the clip
+    record itself. The media link is removed; the bytes it pointed at are the
+    dump's and are never touched.
+    """
+    manifest = short.read_manifest()
+    edit = tl.read(short.timeline_path)
+    used = _split_uses((seg.clip_id for seg in edit.segments), manifest.get("cues", []))
+    dropped = [c for c in manifest.get("clips", []) if c["clip_id"] not in used]
+    if not dropped:
+        return []
+    gone = {c["clip_id"] for c in dropped}
+    manifest["clips"] = [c for c in manifest["clips"] if c["clip_id"] not in gone]
+    for key, value in list(manifest.items()):
+        if key == "clips" or not isinstance(value, list):
+            continue
+        if any(isinstance(item, dict) and item.get("clip_id") in gone for item in value):
+            manifest[key] = [
+                item for item in value if not (isinstance(item, dict) and item.get("clip_id") in gone)
+            ]
+    for clip in dropped:
+        for key in ("media", "attenuated", "mixed", "stripped"):
+            entry = clip.get(key)
+            if entry and not Path(entry).is_absolute():
+                link = short.root / entry
+                if link.is_symlink():
+                    link.unlink()
+        short.transcript_path(clip["clip_id"]).unlink(missing_ok=True)
+    short.write_manifest(manifest, snapshot=False)
+    return sorted(gone)
+
+
+def split(
+    path: Path | str,
+    shorts: Sequence[dict[str, Any]],
+    *,
+    into: Path | str | None = None,
+    canvas: str | None = None,
+    confirm_suspect: bool = False,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Cut this timeline into shorts, each a new project beside this one.
+
+    `reel` once per short, in one call: every short is a `name` and either
+    two word edges, `from` (its first word) and `to` (its last), each
+    `{clip_id, word_index | phrase[, occurrence]}`, or `start`/`end` in
+    `reel`'s render seconds. Words, because the agent reads the shorts off
+    the transcripts and a word survives the cleaning cuts made between that
+    reading and this call. Edges may sit in different recordings.
+
+    Each short is created at `<into>/<name>`, `into` defaulting to the dump's
+    own parent, so the shorts sit beside it: never nested, where the dump's
+    server could keep editing them, the picker could not list them, and
+    `list_media` would count their media links as footage. A name is one
+    directory name and must not exist.
+
+    Everything else is `reel`'s, per short: the suspect-edge guard (checked
+    for every short before any is created), cue pruning and pinning, every
+    `*_dropped`, `canvas` (one for the whole split), cards re-authored, media
+    linked and never copied. Then each short leaves out every recording it
+    does not use (`clips_dropped`), and starts with an empty undo stack: the
+    only state behind it is the whole dump, which names recordings it no
+    longer has. `derived_from` gains the short's name.
+
+    Reported, never refused: `overlaps` (two shorts sharing material, which
+    two versions of one short is) and `unassigned` (timeline spans no short
+    holds, in the dump's timeline seconds). `plan=True` resolves every short
+    and creates nothing. A failure part way removes every short this call
+    made.
+    """
+    source = Project.open(path)
+    edit = _load_edit(source)
+    warp = _project_warp(source, edit)
+    if not shorts:
+        raise ProjectError("name at least one short: {name, from, to} or {name, start, end}")
+    parent = Path(into).expanduser().resolve() if into is not None else source.root.parent
+    if not parent.is_dir():
+        raise ProjectError(f"{parent} is not a directory to create the shorts in")
+
+    resolved: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for short in shorts:
+        if not isinstance(short, dict):
+            raise ProjectError(f"a short is {{name, from, to}} or {{name, start, end}}, not {short!r}")
+        name = _split_name(short.get("name"))
+        if name in seen:
+            raise ProjectError(f"two shorts are named {name!r}")
+        seen.add(name)
+        unknown = sorted(set(short) - {"name", "from", "to", "start", "end"})
+        if unknown:
+            raise ProjectError(f"short {name!r} does not take {', '.join(unknown)}")
+        words = "from" in short or "to" in short
+        seconds = "start" in short or "end" in short
+        if words == seconds or (words and not ("from" in short and "to" in short)) or (
+            seconds and not ("start" in short and "end" in short)
+        ):
+            raise ProjectError(
+                f"short {name!r} is bounded by `from` and `to` (words) or by `start` and "
+                "`end` (render seconds) — one pair, both halves"
+            )
+        dest = parent / name
+        if dest.exists() or dest.is_symlink():
+            raise ProjectError(f"{dest} already exists, and a short is a new project — pick another name")
+        entry: dict[str, Any] = {"name": name, "project": str(dest)}
+        if words:
+            first = _split_edge(source, edit, short["from"], which="from", name=name)
+            last = _split_edge(source, edit, short["to"], which="to", name=name)
+            if last["at"] <= first["at"]:
+                raise ProjectError(
+                    f"short {name!r} ends at {last['at']:.3f}s ({last['text']!r}), which is "
+                    f"not after where it starts, {first['at']:.3f}s ({first['text']!r})"
+                )
+            entry["from"], entry["to"] = first, last
+            # `reel` reads render seconds, so a retimed dump's Edit seconds go
+            # out through the warp and come back through it unchanged.
+            start, end = first["at"], last["at"]
+            if warp is not None:
+                start, end = warp.render_at(start), warp.render_at(end)
+        else:
+            start, end = float(short["start"]), float(short["end"])
+        entry["start"], entry["end"] = start, end
+        resolved.append(entry)
+
+    # Every short planned before any is created, so a refusal — a suspect
+    # edge, a span outside the timeline — leaves nothing behind.
+    cues = source.read_manifest().get("cues", [])
+    for entry in resolved:
+        planned = reel(
+            source.root, entry["project"], start=entry["start"], end=entry["end"],
+            canvas=canvas, name=entry["name"], plan=True,
+        )  # fmt: skip
+        entry["plan"] = planned
+        if planned["suspect_edges"] and not (plan or confirm_suspect):
+            hit = planned["suspect_edges"][0]
+            raise tl.TimelineError(
+                f"short {entry['name']!r}: its {hit['edge']} lands on word {hit['index']} "
+                f"({hit['text']!r}) in clip {hit['clip_id']!r}, which claims "
+                f"{hit['duration']}s — more than {hit['limit']}s, so it likely hides a "
+                "retake. Check it and retry with confirm_suspect=True (CLI: "
+                "--confirm-suspect), or move the edge"
+            )
+
+    keeps = [(float(e["plan"]["keep"][0]), float(e["plan"]["keep"][1])) for e in resolved]
+    overlaps = [
+        {
+            "shorts": [resolved[i]["name"], resolved[j]["name"]],
+            "span": [round(max(a[0], b[0]), 6), round(min(a[1], b[1]), 6)],
+        }
+        for i, a in enumerate(keeps)
+        for j, b in enumerate(keeps)
+        if i < j and min(a[1], b[1]) - max(a[0], b[0]) >= tl.MIN_SEGMENT
+    ]
+    report: dict[str, Any] = {
+        "project": str(source.root),
+        "into": str(parent),
+        "source_duration": edit.duration,
+        "overlaps": overlaps,
+        "unassigned": _split_spans(keeps, edit.duration),
+        "plan": bool(plan),
+    }
+
+    if plan:
+        registered = [c["clip_id"] for c in source.read_manifest().get("clips", [])]
+        for entry, (a, b) in zip(resolved, keeps, strict=True):
+            orphaned = {_cue_key(cue) for cue in entry["plan"]["cues_dropped"]}
+            used = _split_uses(
+                (clip_id for clip_id, _, _ in edit.source_spans(a, b)),
+                (cue for cue in cues if _cue_key(cue) not in orphaned),
+            )
+            entry["clips_dropped"] = [c for c in registered if c not in used]
+        report["shorts"] = resolved
+        return report
+
+    made: list[Path] = []
+    try:
+        for entry in resolved:
+            dest = Path(entry["project"])
+            made.append(dest)
+            derived = reel(
+                source.root, dest, start=entry["start"], end=entry["end"],
+                canvas=canvas, name=entry["name"], confirm_suspect=True,
+            )  # fmt: skip
+            short = Project.open(dest)
+            entry["clips_dropped"] = _split_prune(short)
+            manifest = short.read_manifest()
+            manifest["derived_from"] = {**manifest["derived_from"], "short": entry["name"]}
+            short.write_manifest(manifest, snapshot=False)
+            # The undo stack `reel` leaves holds the uncut dump, which names
+            # the recordings just dropped: a short begins where it was split.
+            shutil.rmtree(short.history_dir, ignore_errors=True)
+            entry["plan"] = None
+            entry.update({k: v for k, v in derived.items() if k not in ("project", "reel", "plan")})
+            entry["duration"] = derived["duration"]
+    except Exception:
+        for dest in made:
+            shutil.rmtree(dest, ignore_errors=True)
+        raise
+    for entry in resolved:
+        entry.pop("plan", None)
+    report["shorts"] = resolved
     return report
 
 

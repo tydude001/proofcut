@@ -448,6 +448,15 @@ built; docs/plans/INSTALL.md):
       scores the surface offline — and read what you wrote back: it called
       100% coverage clean over three false claims. HISTORY.md § The tool
       definitions were graded, and `path` was the gap.
+  - **A derivation never holds what it creates.** A selector naming the
+    new project a tool builds (`reel`'s `dest`) is registered with
+    `derives=`, which confines it and never locks it. Without it the wrapper
+    took the new project's lock after the body and kept it until the server
+    exited, so the person opening the reel was refused a plan and a write
+    alike. `split` names no selector for its shorts at all: they are created
+    beside the bound project, where `_confine` then refuses them, and a bound
+    server takes no `into` but the default. HISTORY.md § Splitting a footage
+    dump, built.
   - **`path` is optional everywhere (`str | None = None`) and defaults to
     the bound project** — under `-C` it is ceremony with one accepted value,
     and an agent measured on the real trial passed it on every one of 29

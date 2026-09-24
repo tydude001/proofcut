@@ -18558,3 +18558,78 @@ of `#picture`, interpolated from `punch_keys` by the overlays' own
 the note did not name. A retimed chain's keys count render frames and
 `warp_lane` can split an entry, so a punch keyed from `src_in` would land in
 the wrong place; refusing is the honest first build.
+
+## Splitting a footage dump, built — 2026-09-24
+
+docs/plans/DAYDREAM.md § The gaps, re-ranked, item 6, built the same day its
+design note (§ Splitting a footage dump, designed) was answered: yes to
+cleaning the dump before splitting, to shorts beside the dump by name, to
+fixing `reel`'s held lock in the same build, to dropping unused recordings
+from each short, and to several recordings in one seed; no to Resolve
+export. Built in that order, the lock fix first. The spike is
+`~/proofcut-work/spikes/split-probe/`, and the build's own runs sit beside
+it (`build/`, `stdio/`, `mcp_split.py`).
+
+**The lock fix.** A server that ran `reel` held the new project's lock until
+it exited (the note's finding 6): `_tool` took every created selector's lock
+after the body, the right rule for `init` and the wrong one for a
+derivation. `_tool` gains `derives=`, a selector confined like any other and
+never locked, and `reel` registers `dest` with it.
+`test_a_second_server_bound_to_a_fresh_reel_can_write_while_the_first_runs`
+fails without the fix on the note's exact refusal ("Another proofcut
+session holds this project") and passes with it; the first server still
+holds its own project.
+
+**Several recordings in one seed.** `seed_timeline`'s `clip_id` takes a list
+(CLI `seed reel1 reel2`), each recording silence-cut by the same auto-editor
+pass and laid end to end in the order given; `clips` reports each. On the
+spike's two 18.5 s recordings both came in at 16.8 s, where `follow` had
+kept the second whole. With more than one, a recording with no picture is
+refused, `follow`'s rule, still unmeasured in either direction.
+
+**`split`** (`ops.split`, the MCP tool, CLI `split
+NAME=CLIP:WORD..CLIP:WORD|NAME=START-END`). Each short is `reel` over the
+span from its first word's first surviving instant to its last word's last.
+Every edge echoes its word and three either side. A word the cleaning
+removed is refused by name. Every short is planned before any is created,
+the suspect-edge guard included, and a failure part way removes every short
+the call made. Shorts are created at `<into>/<name>`, where `into` defaults
+to the dump's parent, a name is one path component, and the directory must
+not exist. A bound server refuses any other `into`. `overlaps` and
+`unassigned` are reported, never refused.
+
+Each short then leaves out every recording that is neither on its timeline
+nor named by a kept cue (`clips_dropped`). The clip record goes, carrying
+its synopsis and events, along with every top-level manifest row naming its
+`clip_id`, its transcript, and its media links; the dump's bytes are never
+touched. **One departure from the note: a short starts with an empty undo
+stack.** `reel` leaves its head/tail cut undoable, and undoing it in a short
+would restore the whole dump's timeline, which names recordings the short
+no longer registers. `derived_from` gains `short`.
+
+**How it was judged.**
+- **CLI, on the spike's recordings** (`build/`): `seed reel1 reel2`, both
+  retakes cut (33.6 s to 24.2 s), then three shorts: one per recording and
+  `cross` from `reel1`'s "So" to `reel2`'s "editor.". The plan named both
+  overlaps with `cross` and one unassigned span, `reel2`'s trailing 0.38 s.
+  Each single-recording short holds only its own clip, transcript and media
+  link. `cross` rendered through melt: 242 frames, `frames` agreeing with
+  delta 0, blue (45, 78, 157) at 4.6 s and rust (158, 79, 45) at 4.85 s
+  across its join at 4.733 s. `a` and `b` rendered 352 frames each.
+- **Over stdio** (`mcp_split.py`): one server bound to a fresh dump imported,
+  attached, seeded both, cut both retakes, planned (nothing created), was
+  refused `into=/tmp`, and split into `a` and `b` at 1080x1920. Neither
+  short held a lock, and the dump stayed held. The same server was then
+  refused `a` by `_confine`, while a second server bound to `a` cut 0.5 s
+  from it (11.72 s to 11.23 s) at undo depth 1. `b` rendered through melt at
+  1080x1920: 352 frames, delta 0, rust at 5 s.
+- **Tests**: `tests/test_split.py` (20), the stdio
+  `test_a_bound_server_splits_a_dump_into_shorts_it_then_cannot_reach`, the
+  lock test above, and the CLI parse test. The full suite ran 2804 passed
+  and one failed, `test_every_advertised_path_says_what_it_means` counting
+  `split`'s `path` (125 to 126, widened).
+
+**Not done**: nobody has heard a short. Whisper was not run over the renders,
+because the box may be running an encoder. The design's deferrals stand:
+opening a short from the window, and audio-only recordings in a seed of
+several.
