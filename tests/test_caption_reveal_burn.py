@@ -9,6 +9,7 @@ each word sits, before, during and after the second word's reveal.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -18,7 +19,18 @@ import pytest
 from proofcut import captions
 from proofcut.captions import CueWord
 
-pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs ffmpeg with libass")
+
+def _has_libass() -> bool:
+    """Homebrew's plain `ffmpeg`, which CI's macOS job installs, has no `ass`
+    filter — so asking only whether ffmpeg is on PATH ran these there and
+    failed them at the burn. Same listing test as doctor's `TEXT_FILTERS`."""
+    if shutil.which("ffmpeg") is None:
+        return False
+    listing = subprocess.run(["ffmpeg", "-hide_banner", "-filters"], capture_output=True, text=True, check=False).stdout
+    return re.search(r"^[ \t]*\S+[ \t]+ass[ \t]", listing, re.MULTILINE) is not None
+
+
+pytestmark = pytest.mark.skipif(not _has_libass(), reason="needs ffmpeg with libass")
 
 W, H = 640, 360
 GREY = 128
