@@ -114,6 +114,9 @@ once-per-instance rule stays — is [docs/plans/GROUPED-UNDO.md](docs/plans/GROU
 written and built 2026-09-20 but for the panel's button.
 Whether a person's own b-roll picks could pick the next ones — checked and
 not built 2026-09-20 — is [docs/plans/PICKS-PRIOR.md](docs/plans/PICKS-PRIOR.md).
+Whether proofcut wants a landing page (GitHub Pages) — not yet, because a site
+converts traffic and makes none; it waits on the launch recording or a paid
+tier — is [docs/plans/SITE.md](docs/plans/SITE.md), written 2026-09-24.
 **Competitor research and anything copied from another product follows
 docs/plans/DAYDREAM.md § Copyright, the DMCA, and this work**: a research
 download stays private and is deleted once its notes are checked, never commit
