@@ -90,6 +90,65 @@ class MLTError(Exception):
     written disagrees with the frame total it was built from."""
 
 
+#: A punch's two shapes: `in` goes from the canvas to `scale` and holds for
+#: the shot (the channel's "zooms into the word"); `settle` starts at `scale`
+#: and eases back to the canvas.
+PUNCH_MODES = ("in", "settle")
+
+
+@dataclass(frozen=True)
+class Punch:
+    """A scale punch about the canvas centre over one shot's first `frames`.
+
+    Drawn on the shot's own playlist entry, never its node: a node is shared
+    by every use of its file, and a punch belongs to one cut (the gap-5 spike,
+    `~/proofcut-work/spikes/transitions-probe`, probe 5). It composes over the
+    node's reframe crop. docs/plans/DAYDREAM.md § Transitions and per-cut
+    effects, designed and spiked.
+    """
+
+    scale: float
+    frames: int
+    ease: str = "ease-out"
+    mode: str = "in"
+
+
+def punch_keys(punch: Punch, resolution: tuple[int, int]) -> list[dict[str, Any]]:
+    """The punch's `qtblend` keys as data: frame from the entry's first, curve, rect.
+
+    One list, read by two consumers — `_playlist` writes it into the entry's
+    filter, and `timeline_view` hands it to the window, which scales the
+    picture layer by it (`overlay_keys`' rule). **The writer offsets every
+    frame by the entry's `src_in`**: keys count in the producer's frames, and
+    counted from 0 a punch never moves (spike probe 4c). A moving key is never
+    1:1, so nothing is nudged; the resting key is exactly the canvas.
+    """
+    width, height = resolution
+
+    def scaled(factor: float) -> tuple[int, int, int, int]:
+        return (round(width / 2 * (1 - factor)), round(height / 2 * (1 - factor)), round(width * factor), round(height * factor))
+
+    near, far = ((1.0, punch.scale) if punch.mode == "in" else (punch.scale, 1.0))
+    return [
+        {"frame": 0, "ease": punch.ease, "rect": scaled(near)},
+        {"frame": punch.frames, "ease": None, "rect": scaled(far)},
+    ]
+
+
+def _check_punch(entry: Entry) -> None:
+    punch = entry.punch
+    assert punch is not None
+    where = f"the punch on {entry.resource!r} from frame {entry.src_in}"
+    if punch.mode not in PUNCH_MODES:
+        raise MLTError(f"{where}: mode {punch.mode!r} is not one of {', '.join(PUNCH_MODES)}")
+    if punch.ease not in EASINGS:
+        raise MLTError(f"{where}: ease {punch.ease!r} is not one of {', '.join(EASINGS)}")
+    if not 1 <= punch.frames <= entry.frames:
+        raise MLTError(f"{where} lasts {punch.frames} frames and the shot {entry.frames}")
+    if entry.time_map:
+        raise MLTError(f"{where}: a retimed entry's keys count render frames, and a punch is not drawn on one")
+
+
 @dataclass(frozen=True)
 class Entry:
     """`frames` frames of `resource`, read from `src_in` on.
@@ -143,6 +202,10 @@ class Entry:
     #: before retimes existed. `retime.warp_lane` is the one maker.
     #: docs/plans/NATIVE.md § B5, designed.
     time_map: tuple[tuple[int, float], ...] = ()
+    #: A scale punch on this entry alone, drawn as an entry-attached
+    #: `qtblend` filter (`punch_keys`). None writes exactly what an entry
+    #: wrote before punches existed. Only the picture lane sets it.
+    punch: Punch | None = None
 
     @property
     def src_out(self) -> int:
@@ -572,11 +635,28 @@ class Dissolve:
     frames: int
     ease: str = "linear"
     is_image: bool = False
+    #: The outgoing shot's post-roll instead: the `frames` just past its
+    #: out-point, drawn over the incoming one from the join and fading *out*
+    #: (spike probe 2). A cue crossfade falls back to it where the incoming
+    #: shot has no frames before its in-point; `start` is then the join.
+    fade_out: bool = False
 
     @property
     def end(self) -> int:
-        """The join: the first render frame after the dissolve."""
+        """The first render frame after the dissolve — the join, for a pre-roll."""
         return self.start + self.frames
+
+
+def dissolve_alpha(dissolve: Dissolve) -> list[dict[str, Any]]:
+    """The dissolve's `brightness` alpha keys as data, from its first frame.
+
+    One list, read by the writer (offset by `src_in`, the producer's frames)
+    and by `timeline_view`, whose window fades its dissolve element by it. A
+    pre-roll's last frame is one step short of opaque, so the lane's own
+    entry takes over on the join; a post-roll is opaque on the join itself.
+    """
+    near, far = (1, 0) if dissolve.fade_out else (0, 1)
+    return [{"frame": 0, "ease": dissolve.ease, "alpha": near}, {"frame": dissolve.frames, "ease": None, "alpha": far}]
 
 
 def _check_dissolve(dissolve: Dissolve, total_frames: int) -> None:
@@ -1602,7 +1682,9 @@ def _node_key(entry: Entry) -> Any:
     return entry if entry.time_map else entry.resource
 
 
-def _playlist(playlist_id: str, entries: list[Entry], nodes: dict[Any, str]) -> ET.Element:
+def _playlist(
+    playlist_id: str, entries: list[Entry], nodes: dict[Any, str], resolution: tuple[int, int] = DEFAULT_RESOLUTION
+) -> ET.Element:
     """One track's entries, laid end to end.
 
     No `<blank>` is emitted, ever — see this module's docstring. The entries
@@ -1630,6 +1712,15 @@ def _playlist(playlist_id: str, entries: list[Entry], nodes: dict[Any, str]) -> 
             filt = ET.SubElement(node, "filter", {"id": f"{playlist_id}fade{index}"})
             _property(filt, "mlt_service", "volume")
             _property(filt, "level", _fade_level(entry))
+        if entry.punch is not None:
+            _check_punch(entry)
+            filt = ET.SubElement(node, "filter", {"id": f"{playlist_id}punch{index}"})
+            _property(filt, "mlt_service", "qtblend")
+            _property(filt, "rect", ";".join(
+                f"{entry.src_in + key['frame']}{EASINGS[key['ease']] if key['ease'] else ''}="
+                f"{' '.join(str(v) for v in key['rect'])} 1"
+                for key in punch_keys(entry.punch, resolution)
+            ))  # fmt: skip
     return playlist
 
 
@@ -1836,6 +1927,7 @@ def document(
     sounds: list[list[Entry]] | None = None,
     insets: list[Inset] | None = None,
     dissolves: list[Dissolve] | None = None,
+    cue_dissolves: list[Dissolve] | None = None,
     tail_fade: Dissolve | None = None,
     rate: float,
     resolution: tuple[int, int] = DEFAULT_RESOLUTION,
@@ -2013,6 +2105,9 @@ def document(
         _check_dissolve(dissolve, total_frames)
     if tail_fade is not None:
         _check_dissolve(tail_fade, total_frames)
+    cue_dissolves = cue_dissolves or []
+    for dissolve in cue_dissolves:
+        _check_dissolve(dissolve, total_frames)
     for entry in [*music, *music2, *holds, *sound_entries]:
         if entry.time_map:
             raise MLTError(
@@ -2061,6 +2156,9 @@ def document(
     sources: dict[str, Entry] = {}
     inset_entries = [Entry(inset.resource, inset.src_in, inset.frames, has_video=True) for inset in insets]
     dissolve_entries = [Entry(d.resource, d.src_in, d.frames, has_video=True) for d in dissolves]
+    cue_dissolve_entries = [
+        Entry(d.resource, d.src_in, d.frames, is_image=d.is_image, has_video=True) for d in cue_dissolves
+    ]
     tail_fade_entries = (
         [Entry(tail_fade.resource, tail_fade.src_in, tail_fade.frames, is_image=tail_fade.is_image, has_video=True)]
         if tail_fade is not None
@@ -2068,7 +2166,7 @@ def document(
     )
     for entry in [
         *audio, *picture, *music, *music2, *holds, *sound_entries, *inset_entries, *dissolve_entries,
-        *tail_fade_entries,
+        *cue_dissolve_entries, *tail_fade_entries,
     ]:  # fmt: skip
         # A bin entry is the raw media, so it never carries an entry's retime.
         sources.setdefault(entry.resource, replace(entry, time_map=(), gain_keys=()))
@@ -2210,7 +2308,7 @@ def document(
                     )
             root.append(node)
 
-        root.append(_playlist("playlist2", picture, picture_nodes))
+        root.append(_playlist("playlist2", picture, picture_nodes, resolution))
         root.append(ET.Element("playlist", {"id": "playlist3"}))
         picture_track = ET.SubElement(
             root, "tractor", {"id": "tractor1", "in": "0", "out": str(total_frames - 1)}
@@ -2324,9 +2422,10 @@ def document(
         _property(fade, "level", "1")
         # Keyed in the producer's frames, the inset fade's rule, and 1 on the
         # join itself so the pre-roll's last frame is still a step short of it.
-        _property(
-            fade, "alpha", f"{dissolve.src_in}{EASINGS[dissolve.ease]}=0;{dissolve.src_in + dissolve.frames}=1"
-        )
+        _property(fade, "alpha", ";".join(
+            f"{dissolve.src_in + key['frame']}{EASINGS[key['ease']] if key['ease'] else ''}={key['alpha']}"
+            for key in dissolve_alpha(dissolve)
+        ))  # fmt: skip
         root.append(node)
         lane = ET.SubElement(root, "playlist", {"id": f"{playlist}a"})
         if dissolve.start:
@@ -2345,6 +2444,14 @@ def document(
     dissolve_tracks = [
         dissolve_track(dissolve, entry, f"xchain{index}", f"xplaylist{index}", f"tractorX{index}", f"Dissolve {index + 1}")
         for index, (dissolve, entry) in enumerate(zip(dissolves, dissolve_entries))
+    ]
+    # A crossfade between picture cues: the same track one place higher, over
+    # the picture lane and under every overlay — left under the lane, where an
+    # Edit join's goes, it draws nothing at all (spike probe 1c). Its own ids
+    # (kchain/kplaylist/tractorK), so a document without one is byte-identical.
+    cue_dissolve_tracks = [
+        dissolve_track(dissolve, entry, f"kchain{index}", f"kplaylist{index}", f"tractorK{index}", f"Crossfade {index + 1}")
+        for index, (dissolve, entry) in enumerate(zip(cue_dissolves, cue_dissolve_entries))
     ]
     # The tail's card fading in over the film's end: over everything the film
     # draws, overlays included, as the card after the join is (A crossfades
@@ -2574,6 +2681,7 @@ def document(
         stack.append("tractor1")
     if picture_panes:
         stack.append("tractor4")
+    stack.extend(cue_dissolve_tracks)
     # Above every picture track: an overlay is drawn over the film.
     stack.extend(overlay_tracks)
     stack.extend(tail_fade_tracks)
@@ -2755,6 +2863,13 @@ def document(
         f"xchain{index}"
         for index, dissolve in enumerate(dissolves)
         if dissolve.resource in reframe and not reframe[dissolve.resource].is_identity(resolution)
+    }
+    expected |= {
+        f"kchain{index}"
+        for index, dissolve in enumerate(cue_dissolves)
+        if not dissolve.is_image
+        and dissolve.resource in reframe
+        and not reframe[dissolve.resource].is_identity(resolution)
     }
     found = set(reframed_nodes(root))
     if expected != found:

@@ -64,7 +64,7 @@ INSTRUCTIONS = (
     "- transcript: transcribe or attach_transcript; get_transcript with search=; "
     "hear (what the source audio says between two times)\n"
     "- cut: seed_timeline, then cut_by_transcript / cut_by_time, restore, locate, retime_add\n"
-    "- picture: cue_add (b-roll under a line), broll_brief, shot_sheet, canvas, "
+    "- picture: cue_add (b-roll under a line), cue_set (crossfade, punch), broll_brief, shot_sheet, canvas, "
     "reframe, reframe_sheet, inset_add (a clip inside the recording), follow "
     "(a second recording after the first, dissolved)\n"
     "- sound: music (the bed), hold_add, vo_extend, vo_synth, sound_add (one-shots at events)\n"
@@ -406,6 +406,8 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "caption_style_load",
             # Replaces the dissolve at its join, or clears it.
             "dissolve",
+            # Sets or clears a cue's crossfade and punch; a repeat lands the same record.
+            "cue_set",
             # Rewrites the generated WAVs with the same bytes; imports only
             # the clip ids not yet registered.
             "sound_generate",
@@ -821,6 +823,44 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "`name#k` when the name repeats — a screen recording's logged moments, "
             "for a clip with no transcript. Not with word_index or phrase."
         ),
+        "dissolve": (
+            "Crossfade into this cue over this many seconds: the incoming shot's frames "
+            "before its in-point fade in, reaching the shot on the cue's word. Where the "
+            "clip has none (an unpinned first use), the outgoing shot fades out from the "
+            "word instead. "
+        ),
+        "dissolve_ease": "The crossfade's curve: linear (the default), ease, ease-in or ease-out.",
+        "punch": (
+            "A scale punch from the cut, about the canvas centre: 1.1 zooms in 10%. "
+            "Not with a dissolve on the same cue. "
+        ),
+        "punch_seconds": "How long the punch moves. Default 0.2.",
+        "punch_ease": "The punch's curve. Default ease-out.",
+        "punch_mode": "`in` (default) zooms to `punch` and holds for the shot; `settle` starts there and eases back.",
+    },
+    "cue_set": {
+        "clip_id": (
+            "The transcript the cue is addressed against. With `every`, narrows to that "
+            "clip's cues; omitted with `every`, every cue."
+        ),
+        "word_index": "The word the cue sits on. Give this, `phrase` or `event`, or pass `every`.",
+        "phrase": "Address the cue by wording; it resolves to its first word, as `cue_add` placed it.",
+        "event": "The event the cue sits on, spelled as `cue_add` was given it.",
+        "every": "Set every cue (of `clip_id`, if given) in one call: a punch or crossfade per cut.",
+        "dissolve": (
+            "Crossfade into this cue over this many seconds: the incoming shot's frames "
+            "before its in-point fade in, reaching the shot on the cue's word. Where the "
+            "clip has none (an unpinned first use), the outgoing shot fades out from the "
+            "word instead. 0 clears it."
+        ),
+        "dissolve_ease": "The crossfade's curve: linear (the default), ease, ease-in or ease-out.",
+        "punch": (
+            "A scale punch from the cut, about the canvas centre: 1.1 zooms in 10%. "
+            "Not with a dissolve on the same cue. 1 clears it."
+        ),
+        "punch_seconds": "How long the punch moves. Default 0.2.",
+        "punch_ease": "The punch's curve. Default ease-out.",
+        "punch_mode": "`in` (default) zooms to `punch` and holds for the shot; `settle` starts there and eases back.",
     },
     "cue_rm": {
         "clip_id": "The transcript the cue was addressed against.",
@@ -3356,6 +3396,12 @@ def cue_add(
     occurrence: int | None = None,
     src_start: float | None = None,
     event: str | None = None,
+    dissolve: float | None = None,
+    dissolve_ease: str | None = None,
+    punch: float | None = None,
+    punch_seconds: float | None = None,
+    punch_ease: str | None = None,
+    punch_mode: str | None = None,
 ) -> dict[str, Any]:
     """Add a picture cue: from `word_index` of `clip_id` onward, show `asset`.
 
@@ -3388,6 +3434,8 @@ def cue_add(
     and the picture lane report it rather than quietly showing the asset's
     opening seconds instead. Shorten the shot with another cue, or pin
     earlier. A card takes no `src_start`; a held frame has no playhead.
+
+    `dissolve` and `punch` are the cut's effects, as `cue_set` sets them.
     """
     return ops.cue_add(
         path,
@@ -3399,6 +3447,66 @@ def cue_add(
         occurrence=occurrence,
         src_start=src_start,
         event=event,
+        dissolve=dissolve,
+        dissolve_ease=dissolve_ease,
+        punch=punch,
+        punch_seconds=punch_seconds,
+        punch_ease=punch_ease,
+        punch_mode=punch_mode,
+    )
+
+
+@_tool()
+def cue_set(
+    path: ProjectPath = None,
+    *,
+    clip_id: str | None = None,
+    word_index: int | None = None,
+    phrase: str | None = None,
+    after: int = -1,
+    occurrence: int | None = None,
+    event: str | None = None,
+    every: bool = False,
+    dissolve: float | None = None,
+    dissolve_ease: str | None = None,
+    punch: float | None = None,
+    punch_seconds: float | None = None,
+    punch_ease: str | None = None,
+    punch_mode: str | None = None,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Set or clear a crossfade or a scale punch on one picture cue, or on every cue.
+
+    Address one cue as `cue_rm` does, or pass `every` for all of them: "a
+    scale punch per cut" is one call. `dissolve` crossfades into the cue (0
+    clears); `punch` scales the shot about the canvas centre from its cut (1
+    clears). A field not given is left alone. A punch and a crossfade on one
+    cue are refused: the crossfade removes the cut the punch is on.
+
+    Checked against the picture plan before writing, and each crossfade is
+    echoed: `from: "outgoing"` means the incoming clip had nothing before its
+    in-point, so the fade starts on the cue's word rather than ending on it —
+    pin the cue later into its clip (`src_start`) to move it. The first shot
+    has nothing to cross from and is reported in `crossfades_skipped`. A
+    vignette is not this: it is an overlay, `card_new` from the `vignette`
+    template. `plan` writes nothing; `undo` reverses the call.
+    """
+    return ops.cue_set(
+        path,
+        clip_id,
+        word_index,
+        phrase=phrase,
+        after=after,
+        occurrence=occurrence,
+        event=event,
+        every=every,
+        dissolve=dissolve,
+        dissolve_ease=dissolve_ease,
+        punch=punch,
+        punch_seconds=punch_seconds,
+        punch_ease=punch_ease,
+        punch_mode=punch_mode,
+        plan=plan,
     )
 
 

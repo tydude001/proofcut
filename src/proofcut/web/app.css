@@ -105,6 +105,7 @@
  *                          playhead, `contain` so nothing is cropped
  *   .picture-note             why a shot is not showing, in words
  *   #inset-layer             insets over the edit's track, under #picture
+ *   #dissolve-layer          a crossfade's other shot, over #picture
  *   #overlay-layer           overlays over the picture, one image each
  *   #caption-layer           CC over both — geometry only, because every
  *                          visible property comes off /api/captions so the
@@ -1655,6 +1656,23 @@ textarea {
 }
 
 .inset-slot[hidden] {
+  display: none;
+}
+
+/* The dissolve layer — a crossfade's other shot (player.js § dissolves),
+   over #picture and under the overlays, as the writer stacks its track.
+   Its elements are #frame's, placed by `place()`; only opacity is set here
+   from the writer's own alpha keys. Never takes a click. */
+#dissolve-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+#dissolve-layer[hidden],
+#dissolve-video[hidden],
+#dissolve-still[hidden] {
   display: none;
 }
 

@@ -2610,6 +2610,12 @@ def cue_add(
     occurrence: int | None = None,
     src_start: float | None = None,
     event: str | None = None,
+    dissolve: float | None = None,
+    dissolve_ease: str | None = None,
+    punch: float | None = None,
+    punch_seconds: float | None = None,
+    punch_ease: str | None = None,
+    punch_mode: str | None = None,
 ) -> dict[str, Any]:
     """Add a cue: from `word_index` of `clip_id` onward, show `asset`.
 
@@ -2656,11 +2662,19 @@ def cue_add(
     is the projection's job. What it does check is the pin's own arithmetic —
     a negative in-point, or one on a `card:`, where a held frame has no
     playhead to move.
+
+    `dissolve` crossfades into the cue over that many seconds, and `punch`
+    scales the shot about the canvas centre from its cut — `cue_set`'s two
+    effects, checked against the picture plan the way `cue_set` checks them.
     """
     if asset is None:
         raise tx.TranscriptError(
             "cue_add needs asset — a cue says what to show, not only where"
         )
+    effects = _cue_effect_fields(
+        dissolve=dissolve, dissolve_ease=dissolve_ease, punch=punch,
+        punch_seconds=punch_seconds, punch_ease=punch_ease, punch_mode=punch_mode,
+    )  # fmt: skip
     if event is not None and (word_index is not None or phrase is not None):
         raise ProjectError("a cue is at a word (word_index or phrase) or at an event, not both")
     project = Project.open(path)
@@ -2691,6 +2705,7 @@ def cue_add(
                 "drop src_start, or point the cue at a video clip_id"
             )
         cue["src_start"] = src_start
+    cue.update({key: value for key, value in effects.items() if value is not None})
 
     manifest = project.read_manifest()
     cues = manifest.setdefault("cues", [])
@@ -2702,6 +2717,7 @@ def cue_add(
         )
     cues.append(cue)
     cues.sort(key=_cue_order)
+    effect_check = _check_cue_effects(project, cues) if effects else None
     project.write_manifest(manifest)
     return {
         "clip_id": clip_id,
@@ -2709,8 +2725,114 @@ def cue_add(
         "src_start": src_start,
         "phrase": phrase,
         "cues": len(cues),
+        **({key: cue.get(key) for key in ("dissolve", "punch")} if effects else {}),
+        **(effect_check or {}),
         **echo,
     }
+
+
+def _check_cue_effects(project: Project, cues: list[dict[str, Any]]) -> dict[str, Any]:
+    """Every crossfade and punch of a cue table not yet written, planned or refused.
+
+    The picture plan itself can refuse for reasons that are nothing to do
+    with an effect — a cut cue word, a shot outrunning its clip — and those
+    are reported as `effects_unchecked` rather than refusing an effect the
+    export would check again anyway. An effect's own refusal raises.
+    """
+    rate = _export_fps(_clips_by_id(project))
+    try:
+        shots, lane = _picture_plan(project, rate, cues=cues)
+    except _PICTURE_REFUSALS as exc:
+        return {"effects_unchecked": str(exc)}
+    _, plans, skipped = _cue_effects(project, shots, lane, rate)
+    return {"crossfades": [_crossfade_view(plan) for plan in plans], "crossfades_skipped": skipped}
+
+
+def cue_set(
+    path: Path | str,
+    clip_id: str | None = None,
+    word_index: int | None = None,
+    *,
+    phrase: str | None = None,
+    after: int = -1,
+    occurrence: int | None = None,
+    event: str | None = None,
+    every: bool = False,
+    dissolve: float | None = None,
+    dissolve_ease: str | None = None,
+    punch: float | None = None,
+    punch_seconds: float | None = None,
+    punch_ease: str | None = None,
+    punch_mode: str | None = None,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Set or clear a crossfade or a scale punch on one cue, or on every cue.
+
+    One cue is addressed as `cue_rm` addresses it (`clip_id` with
+    `word_index`, `phrase` or `event`); `every=True` takes every cue, or
+    every cue of `clip_id` — "a punch per cut" is one call. `dissolve` is the
+    crossfade into the cue, in seconds (0 clears it); `punch` is a scale of
+    the canvas about its centre from the cut (1 clears it), moving over
+    `punch_seconds` on `punch_ease`, and `punch_mode` `in` holds it for the
+    shot while `settle` eases back. A field not given is left as it is.
+
+    Checked against the live picture plan before anything is written, and
+    the crossfades it would draw are echoed — `from: "outgoing"` where the
+    incoming clip has nothing before its in-point and the fade starts on the
+    cue's word instead of ending on it. One undo. `plan=True` writes nothing.
+    """
+    effects = _cue_effect_fields(
+        dissolve=dissolve, dissolve_ease=dissolve_ease, punch=punch,
+        punch_seconds=punch_seconds, punch_ease=punch_ease, punch_mode=punch_mode,
+    )  # fmt: skip
+    if not effects:
+        raise ProjectError("cue_set sets dissolve or punch; name at least one")
+    project = Project.open(path)
+    manifest = project.read_manifest()
+    cues = [dict(c) for c in manifest.get("cues", [])]
+    if every:
+        if word_index is not None or phrase is not None or event is not None:
+            raise ProjectError("every takes all the cues (of clip_id, if given); drop the word, phrase or event")
+        chosen = [c for c in cues if clip_id is None or c["clip_id"] == clip_id]
+        if not chosen:
+            raise ProjectError("there are no cues to set" + (f" on {clip_id!r}" if clip_id else ""))
+    else:
+        if clip_id is None:
+            raise ProjectError("name the cue by clip_id and word_index, phrase or event — or pass every")
+        if event is not None and (word_index is not None or phrase is not None):
+            raise ProjectError("a cue is at a word (word_index or phrase) or at an event, not both")
+        if event is None:
+            word_index, _ = _resolve_word_or_phrase(
+                _transcript(project, clip_id), word_index=word_index, phrase=phrase,
+                after=after, occurrence=occurrence, edge="first",
+            )  # fmt: skip
+        wanted = (clip_id, None if event is not None else word_index, None if event is None else str(event))
+        chosen = [c for c in cues if _cue_key(c) == wanted]
+        if not chosen:
+            where = f"event {event!r}" if event is not None else f"word {word_index}"
+            raise tx.TranscriptError(f"no cue at {clip_id!r} {where} — see cue_ls")
+    for cue in chosen:
+        for key, value in effects.items():
+            if value is None:
+                cue.pop(key, None)
+            else:
+                cue[key] = dict(value)
+    check = _check_cue_effects(project, cues)
+    transcripts: dict[str, tx.Transcript] = {}
+    changed = []
+    for cue in chosen:
+        if cue.get("event") is not None:
+            echo = {"word_index": None, "event": cue["event"]}
+        else:
+            if cue["clip_id"] not in transcripts:
+                transcripts[cue["clip_id"]] = _transcript(project, cue["clip_id"])
+            echo = _cue_echo(transcripts[cue["clip_id"]], int(cue["word_index"]))
+        changed.append({"clip_id": cue["clip_id"], "asset": cue["asset"], "dissolve": cue.get("dissolve"),
+                        "punch": cue.get("punch"), **echo})  # fmt: skip
+    if not plan:
+        manifest["cues"] = cues
+        project.write_manifest(manifest)
+    return {"cues": changed, "count": len(changed), **check, "written": not plan, "plan": bool(plan)}
 
 
 def cue_rm(
@@ -2795,6 +2917,7 @@ def cue_ls(path: Path | str, clip_id: str | None = None) -> dict[str, Any]:
                 "asset": cue["asset"],
                 "src_start": cue.get("src_start"),
                 "phrase": cue.get("phrase"),
+                **{key: cue[key] for key in ("dissolve", "punch") if cue.get(key)},
                 **echo,
             }
         )
@@ -3326,7 +3449,11 @@ def _resolve_asset(project: Project, asset: str) -> dict[str, Any]:
 
 
 def build_shots(
-    path: Path | str, *, fps: float | None = None, edit: tl.Edit | None = None
+    path: Path | str,
+    *,
+    fps: float | None = None,
+    edit: tl.Edit | None = None,
+    cues: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Project the cue table into contiguous shots over the current edit.
 
@@ -3380,14 +3507,18 @@ def build_shots(
 
     `edit` overrides the timeline read off disk — for a caller (`vo_extend`)
     that needs the projection over an edit it has mutated in memory but not
-    yet decided to save, never for an ordinary read.
+    yet decided to save, never for an ordinary read. `cues` does the same
+    for a cue table not yet written (`cue_set`'s check before it writes).
+
+    A cue's `dissolve` and `punch` ride through onto its shot, and are
+    decided by `_cue_effects`, not here.
     """
     project = Project.open(path)
     edit = edit if edit is not None else _load_edit(project)
     rate = float(fps) if fps else _rate(project)
     total_frames = autoeditor.frame_total(edit, rate)
 
-    cues = project.read_manifest().get("cues", [])
+    cues = project.read_manifest().get("cues", []) if cues is None else cues
     if not cues:
         raise tl.TimelineError(
             "this project has no cues yet — add one with cue_add "
@@ -3421,6 +3552,7 @@ def build_shots(
                 "text": echo["text"] if cue.get("event") is None else cue["event"],
                 "asset": cue["asset"],
                 "src_pin": cue.get("src_start"),
+                **{key: cue[key] for key in ("dissolve", "punch") if cue.get(key)},
                 **_resolve_asset(project, cue["asset"]),
                 "start_frame": round(timeline_start * rate),
             }
@@ -3466,7 +3598,7 @@ _PICTURE_REFUSALS = (
 
 
 def _picture_plan(
-    project: Project, rate: float, *, edit: tl.Edit | None = None
+    project: Project, rate: float, *, edit: tl.Edit | None = None, cues: list[dict[str, Any]] | None = None
 ) -> tuple[list[dict[str, Any]], list[mlt.Entry]]:
     """The picture track, projected and planned, on one frame grid.
 
@@ -3491,15 +3623,197 @@ def _picture_plan(
     `edit` is passed straight through to `build_shots`, for the same
     not-yet-saved-edit case that parameter exists for.
     """
-    if not project.read_manifest().get("cues"):
+    if not (project.read_manifest().get("cues") if cues is None else cues):
         return [], []
-    shots = build_shots(project.root, fps=rate, edit=edit)["shots"]
+    shots = build_shots(project.root, fps=rate, edit=edit, cues=cues)["shots"]
     entries = mlt.plan_picture(shots, rate)
     annotated = [
         {**shot, "src_in": entry.src_in, "src_out": entry.src_out, "src_start": entry.src_in / rate}
         for shot, entry in zip(shots, entries)
     ]
     return annotated, entries
+
+
+#: A cue's effects, as stored: `dissolve` is `{seconds, ease}`, `punch` is
+#: `{scale, seconds, ease, mode}`. The punch's defaults are the channel's zoom
+#: into the word (docs/plans/DAYDREAM.md § Transitions and per-cut effects).
+PUNCH_DEFAULTS = {"seconds": 0.2, "ease": "ease-out", "mode": "in"}
+
+
+def _cue_effect_fields(
+    *,
+    dissolve: float | None,
+    dissolve_ease: str | None,
+    punch: float | None,
+    punch_seconds: float | None,
+    punch_ease: str | None,
+    punch_mode: str | None,
+) -> dict[str, dict[str, Any] | None]:
+    """The effect fields a call sets, checked: a record to store, or None to clear.
+
+    `dissolve` is seconds, and 0 clears it; `punch` is a scale, and 1 clears
+    it — a punch to the canvas's own size is no punch. A field not named is
+    not in the answer, so a call that sets one leaves the other alone.
+    """
+    fields: dict[str, dict[str, Any] | None] = {}
+    if dissolve is not None:
+        seconds = float(dissolve)
+        if seconds < 0:
+            raise ProjectError(f"dissolve is a length in seconds, not {seconds}")
+        ease = "linear" if dissolve_ease is None else str(dissolve_ease)
+        if ease not in mlt.EASINGS:
+            raise ProjectError(f"dissolve_ease {ease!r} is not one of {', '.join(mlt.EASINGS)}")
+        fields["dissolve"] = {"seconds": seconds, "ease": ease} if seconds else None
+    elif dissolve_ease is not None:
+        raise ProjectError("dissolve_ease shapes a dissolve; give its length as dissolve")
+    if punch is not None:
+        scale = float(punch)
+        if not 0.5 <= scale <= 2.0:
+            raise ProjectError(f"punch is a scale of the canvas, 0.5 to 2.0 (1.1 zooms in 10%), not {scale}")
+        record = {
+            "scale": scale,
+            "seconds": PUNCH_DEFAULTS["seconds"] if punch_seconds is None else float(punch_seconds),
+            "ease": PUNCH_DEFAULTS["ease"] if punch_ease is None else str(punch_ease),
+            "mode": PUNCH_DEFAULTS["mode"] if punch_mode is None else str(punch_mode),
+        }
+        if record["seconds"] <= 0:
+            raise ProjectError(f"punch_seconds is how long the punch moves, not {record['seconds']}")
+        if record["ease"] not in mlt.EASINGS:
+            raise ProjectError(f"punch_ease {record['ease']!r} is not one of {', '.join(mlt.EASINGS)}")
+        if record["mode"] not in mlt.PUNCH_MODES:
+            raise ProjectError(f"punch_mode {record['mode']!r} is not one of {', '.join(mlt.PUNCH_MODES)}")
+        fields["punch"] = None if scale == 1.0 else record
+    elif any(v is not None for v in (punch_seconds, punch_ease, punch_mode)):
+        raise ProjectError("punch_seconds, punch_ease and punch_mode shape a punch; give its scale as punch")
+    return fields
+
+
+def _cue_effects(
+    project: Project, shots: list[dict[str, Any]], lane: list[mlt.Entry], rate: float
+) -> tuple[list[mlt.Entry], list[dict[str, Any]], list[dict[str, Any]]]:
+    """The picture lane with each cue's punch on its entry, its crossfades, and the ones skipped.
+
+    docs/plans/DAYDREAM.md § Transitions and per-cut effects, designed and
+    spiked. **A crossfade is the incoming cue's pre-roll** — the `seconds` of
+    its asset before its in-point, fading in on a track over the lane and
+    reaching the shot on the cue's word — and where the incoming shot has no
+    frames before its in-point (any unpinned first use of a clip), the
+    outgoing shot's post-roll fading out from the word instead, reported as
+    `from: "outgoing"` because the fade then starts on the word rather than
+    ending on it. The first shot has nothing to cross from, and since any cut
+    can make any cue first, that is `skipped`, never refused.
+
+    Refused by name: a crossfade longer than either shot, one with neither
+    side's frames to spare, one into or out of a split or blur-filled window
+    (the track draws only the main rect), a punch and a crossfade on one cue
+    (a punch is on a cut, and a crossfade removes the cut), a post-roll out
+    of a shot punched `in` (the post-roll would draw it unpunched), and
+    either under a retime, whose chains count render frames.
+    """
+    if not any(shot.get("dissolve") or shot.get("punch") for shot in shots):
+        return lane, [], []
+    if _stored_retime(project):
+        raise ProjectError(
+            "this project has a retime, and a crossfade or punch between cues is not drawn on a "
+            "retimed picture lane — clear them (cue_set), or the retime"
+        )
+    reframes = _reframe_map(project, _mlt_resolution(project))
+
+    def split(shot: dict[str, Any]) -> bool:
+        found = None if shot["is_image"] else reframes.get(str(shot["asset"]))
+        return found is not None and bool(found.panes or found.fills)
+
+    lane = list(lane)
+    for index, shot in enumerate(shots):
+        punch = shot.get("punch")
+        if not punch:
+            continue
+        label = f"the punch on the cue at {_cue_address_text(shot)}"
+        if split(shot):
+            raise ProjectError(f"{label}: {shot['asset']!r} has a split or blur-filled window, which a punch does not scale")
+        frames = round(float(punch["seconds"]) * rate)
+        if not 1 <= frames <= shot["frames"]:
+            raise ProjectError(
+                f"{label} moves for {punch['seconds']:g}s and the shot is {shot['frames'] / rate:.3f}s — shorten the punch"
+            )
+        lane[index] = replace(
+            lane[index], punch=mlt.Punch(float(punch["scale"]), frames, str(punch["ease"]), str(punch["mode"]))
+        )
+
+    plans: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for index, shot in enumerate(shots):
+        dissolve = shot.get("dissolve")
+        if not dissolve:
+            continue
+        address = {"clip_id": shot["clip_id"], "word_index": shot.get("word_index"), "event": shot.get("event")}
+        label = f"the crossfade into the cue at {_cue_address_text(shot)}"
+        if index == 0:
+            skipped.append({**address, "reason": "the first shot has nothing to cross from"})
+            continue
+        before, incoming, outgoing = shots[index - 1], lane[index], lane[index - 1]
+        frames = round(float(dissolve["seconds"]) * rate)
+        if frames < 1:
+            raise ProjectError(f"{label} lasts {dissolve['seconds']}s, under one frame — a cut is no crossfade")
+        if frames > min(before["frames"], shot["frames"]):
+            raise ProjectError(
+                f"{label} lasts {dissolve['seconds']:g}s, longer than the shot it "
+                f"{'leaves' if before['frames'] < shot['frames'] else 'enters'} "
+                f"({min(before['frames'], shot['frames']) / rate:.3f}s) — shorten it"
+            )
+        if split(shot) or split(before):
+            raise ProjectError(f"{label}: a split or blur-filled window on either side is not crossfaded")
+        if shot.get("punch"):
+            raise ProjectError(f"{label}: the cue also punches, and a punch is on a cut a crossfade removes — keep one")
+        join = int(shot["start_frame"])
+        ease = str(dissolve["ease"])
+        if incoming.is_image or incoming.src_in >= frames:
+            side, asset = "incoming", shot["asset"]
+            drawn = mlt.Dissolve(
+                incoming.resource, 0 if incoming.is_image else incoming.src_in - frames,
+                join - frames, frames, ease, is_image=incoming.is_image,
+            )  # fmt: skip
+        else:
+            side, asset = "outgoing", before["asset"]
+            if (before.get("punch") or {}).get("mode") == "in":
+                raise ProjectError(
+                    f"{label}: {shot['asset']!r} has no frames before its in-point, so it would cross from "
+                    f"the outgoing shot's post-roll — which is punched in and would be drawn unpunched; pin "
+                    "the cue later into its clip (src_start), or drop one"
+                )
+            if not outgoing.is_image:
+                available = round(float(before["asset_duration"]) * rate)
+                if outgoing.src_in + outgoing.frames + frames > available:
+                    raise ProjectError(
+                        f"{label}: neither side has {dissolve['seconds']:g}s to spare — {shot['asset']!r} starts "
+                        f"at its head and {before['asset']!r} ends at its end; pin the cue later into its clip "
+                        "(src_start), or shorten the crossfade"
+                    )
+            drawn = mlt.Dissolve(
+                outgoing.resource, 0 if outgoing.is_image else outgoing.src_in + outgoing.frames,
+                join, frames, ease, is_image=outgoing.is_image, fade_out=True,
+            )  # fmt: skip
+        plans.append(
+            {
+                **address,
+                "into": shot["asset"],
+                "from": side,
+                "asset": asset,
+                "seconds": float(dissolve["seconds"]),
+                "ease": ease,
+                "frames": frames,
+                "start": round(drawn.start / rate, 4),
+                "join": round(join / rate, 4),
+                "src_start": round(drawn.src_in / rate, 4),
+                "is_image": drawn.is_image,
+                "dissolve": drawn,
+            }
+        )
+    return lane, plans, skipped
+
+
+def _crossfade_view(plan: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in plan.items() if key != "dissolve"}
 
 
 # -- timeline ------------------------------------------------------------
@@ -4720,8 +5034,9 @@ def timeline_view(
 
     shots_rate = _export_fps(clips)
     shots_error: str | None = None
+    lane_entries: list[mlt.Entry] = []
     try:
-        shots, _ = _picture_plan(project, shots_rate)
+        shots, lane_entries = _picture_plan(project, shots_rate)
     except _PICTURE_REFUSALS as exc:
         shots, shots_error = [], str(exc)
 
@@ -4963,6 +5278,59 @@ def timeline_view(
         # is treated, so the preview derives neither. Null on every other shot.
         shot["fill"] = _fill_view(found, at, resolution) if drawn else None
 
+    # Each cut's effects as the writer draws them, in the preview's key shape
+    # (`_view_keys`): a shot's `punch_keys` from its own start, its
+    # `crossfade` from the crossfade's. `effects_error` where they refuse,
+    # `shots_error`'s policy — the shots are still drawn.
+    effects_error: str | None = None
+    if shots and any(shot.get("dissolve") or shot.get("punch") for shot in shots):
+        try:
+            punched, crossfades, _ = _cue_effects(project, shots, lane_entries, shots_rate)
+        except _PICTURE_REFUSALS as exc:
+            effects_error = str(exc)
+        else:
+            for shot, entry in zip(shots, punched):
+                shot["punch_keys"] = _effect_keys(
+                    [{**key, "opacity": 1} for key in mlt.punch_keys(entry.punch, resolution)], resolution, shots_rate
+                ) if entry.punch else None  # fmt: skip
+            by_join = {round(plan["join"], 4): plan for plan in crossfades}
+            for shot in shots:
+                plan = by_join.get(round(shot["start"], 4)) if shot.get("dissolve") else None
+                if plan is None:
+                    shot["crossfade"] = None
+                    continue
+                found = entries.get(str(plan["asset"]))
+                shot["crossfade"] = {
+                    **_crossfade_view(plan),
+                    "end": round(plan["start"] + plan["frames"] / shots_rate, 4),
+                    "dest": None if plan["is_image"] or found is None
+                    else list(found.dest_rect_at(plan["src_start"], resolution)),
+                    "keys": _dissolve_keys(plan["dissolve"], shots_rate),
+                }
+
+    # The Edit's own joins' dissolves, for the preview's dissolve element:
+    # drawn only where no cue lane covers the Edit, as the render has it.
+    edit_dissolves: list[dict[str, Any]] = []
+    if project.read_manifest().get(DISSOLVES_KEY):
+        try:
+            for plan in _dissolve_plan(project, edit, shots_rate):
+                drawn = plan["dissolve"]
+                found = entries.get(plan["clip_id"])
+                edit_dissolves.append(
+                    {
+                        **_dissolve_view(plan),
+                        "asset": plan["clip_id"],
+                        "is_image": False,
+                        "start": round(drawn.start / shots_rate, 4),
+                        "end": round(drawn.end / shots_rate, 4),
+                        "src_start": round(drawn.src_in / shots_rate, 4),
+                        "dest": list(found.dest_rect_at(drawn.src_in / shots_rate, resolution)) if found else None,
+                        "keys": _dissolve_keys(drawn, shots_rate),
+                    }
+                )
+        except (ProjectError, tx.TranscriptError, media.MediaError) as exc:
+            effects_error = effects_error or str(exc)
+
     head_cfg = _stored_head(project)
     head_view = {**head_cfg, "frames": _head_frames(project, shots_rate)} if head_cfg else None
 
@@ -4988,6 +5356,9 @@ def timeline_view(
         "reframe": placement,
         "shots": shots or None,
         "shots_rate": shots_rate,
+        # Each Edit join's dissolve, and any crossfade or punch that refuses.
+        "edit_dissolves": edit_dissolves,
+        "effects_error": effects_error,
         "music": music_view,
         # [] with no holds, each entry the stored record plus its
         # live-resolved fields (or `hold_error` when it cannot resolve right
@@ -15008,6 +15379,32 @@ def _view_keys(piece: mlt.Overlay, canvas: tuple[int, int], rate: float) -> list
     ]
 
 
+def _effect_keys(keys: list[dict[str, Any]], canvas: tuple[int, int], rate: float) -> list[dict[str, Any]]:
+    """Writer keys (`frame`, `ease`, `rect`, `opacity`) in `_view_keys`' shape."""
+    width, height = canvas
+    return [
+        {
+            "t": round(key["frame"] / rate, 4),
+            "ease": key["ease"] or "linear",
+            "x": key["rect"][0] / width,
+            "y": key["rect"][1] / height,
+            "w": key["rect"][2] / width,
+            "h": key["rect"][3] / height,
+            "opacity": key["opacity"],
+        }
+        for key in keys
+    ]
+
+
+def _dissolve_keys(dissolve: mlt.Dissolve, rate: float) -> list[dict[str, Any]]:
+    """`mlt.dissolve_alpha` in `_view_keys`' shape: opacity alone, from the dissolve's start."""
+    return [
+        {"t": round(key["frame"] / rate, 4), "ease": key["ease"] or "linear", "x": 0, "y": 0, "w": 1, "h": 1,
+         "opacity": key["alpha"]}
+        for key in mlt.dissolve_alpha(dissolve)
+    ]  # fmt: skip
+
+
 def _overlay_view(plan: dict[str, Any]) -> dict[str, Any]:
     """An overlay plan as JSON — everything but the writer's own objects."""
     return {key: value for key, value in plan.items() if key not in ("overlay", "drawn")}
@@ -16714,6 +17111,10 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
     for shot in shots:
         if not shot["is_image"]:
             clip_of[shot["asset_path"]] = shot["asset"]
+    # Each cue's punch onto its own entry, before a head is prepended or a
+    # tail appended, so both move with the shot; the crossfades are placed by
+    # the head below, the Edit dissolves' way.
+    lane, crossfade_plans, crossfades_skipped = _cue_effects(project, shots, lane, rate)
     # With no cues, a head or tail goes on the Edit's own track (RECUT.md
     # step 3): its picture is the film's, so a card appended there follows
     # it. The plan's identity lane — the Edit's picture copied onto a picture
@@ -17177,6 +17578,9 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         sounds=sound_lanes,
         insets=insets,
         dissolves=dissolves,
+        cue_dissolves=[
+            replace(plan["dissolve"], start=plan["dissolve"].start + head_frames) for plan in crossfade_plans
+        ],
         tail_fade=tail_fade,
         rate=rate,
         resolution=resolution,
@@ -17196,6 +17600,16 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         "shots": shots,
         # [] with none, or each join the render dissolves across.
         "dissolves": [_dissolve_view(plan) for plan in dissolve_plans],
+        # [] with none, or each crossfade between cues the render draws, and
+        # the ones a first shot could not have.
+        "crossfades": [_crossfade_view(plan) for plan in crossfade_plans],
+        "crossfades_skipped": crossfades_skipped,
+        # [] with none, or each punched cue's address and its punch.
+        "punches": [
+            {"clip_id": shot["clip_id"], "word_index": shot.get("word_index"), "event": shot.get("event"), **shot["punch"]}
+            for shot in shots
+            if shot.get("punch")
+        ],
         # True when a head or tail went on the Edit's own track, for want of
         # a picture lane to join.
         "on_edit_track": on_edit_track and (head_report is not None or tail_report is not None),
@@ -17272,6 +17686,12 @@ def _mlt_reply(built: dict[str, Any], edit: tl.Edit, **extra: Any) -> dict[str, 
         "insets": built["insets"],
         # None with no retime, or each stretch's Edit span, render span and speed.
         "retime": built["retime"],
+        # [] with none: each join the render dissolves, each crossfade between
+        # cues (and any a first shot skipped), and each punched cut.
+        "dissolves": built["dissolves"],
+        "crossfades": built["crossfades"],
+        "crossfades_skipped": built["crossfades_skipped"],
+        "punches": built["punches"],
         # Named on both roads because a crop is a decision about what is on
         # screen, and the render that made it looks entirely plausible.
         "reframed": built["reframed"],

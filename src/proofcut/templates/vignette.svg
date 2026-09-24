@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="{{width}}" height="{{height}}" viewBox="0 0 1920 {{view_height}}">
+  <defs>
+    <radialGradient id="vignette" cx="0.5" cy="0.5" r="0.7071">
+      <stop offset="0" stop-color="{{ink}}" stop-opacity="0"/>
+      <stop offset="0.45" stop-color="{{ink}}" stop-opacity="0"/>
+      <stop offset="0.5188" stop-color="{{ink}}" stop-opacity="{{ramp_1}}"/>
+      <stop offset="0.5875" stop-color="{{ink}}" stop-opacity="{{ramp_2}}"/>
+      <stop offset="0.6562" stop-color="{{ink}}" stop-opacity="{{ramp_3}}"/>
+      <stop offset="0.7250" stop-color="{{ink}}" stop-opacity="{{ramp_4}}"/>
+      <stop offset="0.7937" stop-color="{{ink}}" stop-opacity="{{ramp_5}}"/>
+      <stop offset="0.8625" stop-color="{{ink}}" stop-opacity="{{ramp_6}}"/>
+      <stop offset="0.9313" stop-color="{{ink}}" stop-opacity="{{ramp_7}}"/>
+      <stop offset="1" stop-color="{{ink}}" stop-opacity="{{edge_opacity}}"/>
+    </radialGradient>
+  </defs>
+  <rect x="0" y="0" width="1920" height="{{view_height}}" fill="url(#vignette)"/>
+</svg>

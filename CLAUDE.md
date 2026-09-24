@@ -1725,6 +1725,18 @@ built; docs/plans/INSTALL.md):
   src_start)`, never a timeline second. The window hard-cuts where the
   render dissolves. HISTORY.md § A second recording follows the first,
   through a dissolve.
+- **A cue's crossfade and punch (`dissolve`/`punch` on the cue, `cue_set`)
+  ride the writer's existing pieces, and where each sits is the mechanism.**
+  The crossfade is a `Dissolve` on a track directly OVER the picture lane
+  (`tractorK`) — under it, where an Edit join's goes, melt draws a hard cut at
+  exit 0 — and falls back to the outgoing shot's post-roll (`fade_out`) where
+  the incoming clip has no frames before its in-point, reported as `from:
+  "outgoing"`. The punch is a `qtblend` on the shot's playlist ENTRY, keyed
+  from its `src_in`: keyed from 0 it never moves, and on the node it would
+  punch every use of the file. `mlt.punch_keys` and `mlt.dissolve_alpha` are
+  the one statement of each, read by the writer and the preview alike. A
+  vignette is an overlay card, never melt's vignette filters. HISTORY.md
+  § Transitions and per-cut effects, built.
 - **With no cues, a head or tail goes on the Edit's own track** — a card is
   a silent `qimage` entry after the last frame. A picture lane copied from
   the Edit would draw over every inset, which sit under it. HISTORY.md § A

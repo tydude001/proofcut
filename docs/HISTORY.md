@@ -18480,3 +18480,81 @@ the saved look through `captions.resolve` before writing it, so one this
 proofcut cannot read is refused rather than stored, and the load is an
 ordinary manifest write: undo reverts it (a test holds that). Loading into a
 second project reproduces the first's resolved look exactly.
+
+## Transitions and per-cut effects, built — 2026-09-24
+
+docs/plans/DAYDREAM.md § The gaps, re-ranked, item 5, built the same day
+its design note was approved on all four recommendations ("proceed with your
+recommendations"): a crossfade between picture cues, a scale punch per cut,
+and a vignette. The spike behind it is
+`~/proofcut-work/spikes/transitions-probe/`, and the note is DAYDREAM.md
+§ Transitions and per-cut effects, designed and spiked.
+
+**What shipped.** A cue takes two optional fields, `dissolve: {seconds,
+ease}` and `punch: {scale, seconds, ease, mode}`, set by `cue_add` or by a
+new `cue_set` (CLI `cue set`), which takes one cue or `every` cue in one
+undo, echoes each cue's word, and checks the picture plan before writing. A
+`vignette` overlay template draws the frame's edges darker towards the
+corners. The export reply names `crossfades`, `crossfades_skipped`,
+`punches`, and the Edit joins' `dissolves`, which it had never reported.
+No schema bump: both fields are additive-optional, and a cue table already
+routes through the MLT writer, so `_is_layered` needed no new trigger.
+
+**The writer.** A crossfade is `mlt.Dissolve` on its own track
+(`kchain`/`kplaylist`/`tractorK`) directly over the picture lane and under
+every overlay. Left where an Edit join's dissolve goes, under the lane, the
+spike's control drew a hard cut. It is the incoming shot's pre-roll, ending
+on the cue's word; where the incoming clip has no frames before its
+in-point, it is the outgoing shot's post-roll (`Dissolve.fade_out`),
+opaque on the join and fading out, reported as `from: "outgoing"`. A punch
+is a `qtblend` filter on the shot's own playlist entry
+(`Entry.punch`, `mlt.Punch`), keyed from the entry's `src_in`, so it
+composes over the node's reframe and leaves the node's other entries alone.
+`mlt.punch_keys` and `mlt.dissolve_alpha` are each the one statement of
+their keys: the writer formats them and `timeline_view` hands the same lists
+to the window. Every document without an effect is byte-identical.
+
+**Refused by name**, all before a write: a punch and a crossfade on one cue
+(a crossfade removes the cut a punch is on), a crossfade longer than either
+shot or with neither side's frames to spare, either effect on a split or
+blur-filled window, a post-roll out of a shot punched `in` (the post-roll
+would draw it unpunched), and either under a retime, whose chains count
+render frames. The first shot has nothing to cross from, and since any cut
+can make any cue first, it is `crossfades_skipped`, never refused.
+
+**The window draws all three**, and the Edit join's dissolve too, which had
+hard-cut in the preview since it shipped. A `#dissolve-layer` over
+`#picture` holds the crossfade's other shot, placed at the view's `dest`
+and faded by its keys; an Edit dissolve is drawn only where no cue lane
+covers the Edit, as the render stacks it. A punch is a translate and scale
+of `#picture`, interpolated from `punch_keys` by the overlays' own
+`keyedMotion`.
+
+**How it was judged.**
+- **Real melt, over MCP**:
+  `test_a_crossfade_and_a_punch_between_cues_are_drawn_as_their_keys_say`
+  lays four cues over a grey recording from sources that name their own
+  frames in luma: a pinned crossfade (pre-roll), an unpinned one that falls
+  back to the outgoing post-roll, and a punch to 1.1 on a clip's second use.
+  Over all 120 frames the luma is within 2.25 levels of the arithmetic, and
+  the punch's edge lands on the ease-out curve: 138.01 px against 138.03 at
+  its second frame, 133.63 against 133.63 at its fourth, 132.99 held, while
+  the same node's first use stays at 150.01. **The control fails it**: with
+  the crossfade track moved back under the picture lane, as an Edit join's
+  sits, the luma check breaks.
+- **The window, in a real browser, against the same film**
+  (`~/proofcut-work/spikes/transitions-probe/live`). At 0.8 s the dissolve
+  element holds the pre-roll at 0.8 s, opacity 0.5, and reads luma 206 off
+  a canvas, which is that source frame (230 − 24); at 2.2 s the post-roll at
+  2.2 s, opacity 0.5, luma 164; at 3.1 s the picture layer is scaled 1.0875,
+  the render's own value halfway through an ease-out to 1.1, and `#frame`
+  clips it. An Edit join with no cues fades in at 3.75 s with the terminal at
+  0.75 s, opacity 0.5, luma 104 (its frame 22). Playback through every effect
+  clicked at 0 and 120 ms dwell, with a clean console.
+- **The vignette** composites as its PNG says: within 0.6 levels of
+  `base × (1 − alpha)` at four points (spike probe 6).
+
+**One departure from the note**: both effects refuse under a retime, which
+the note did not name. A retimed chain's keys count render frames and
+`warp_lane` can split an entry, so a punch keyed from `src_in` would land in
+the wrong place; refusing is the honest first build.

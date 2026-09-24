@@ -36,7 +36,7 @@
  *
  * player.js owns #viewer, #frame (with #frame-note), #media, #visualizer,
  * #picture (with #picture-video, #picture-pane,
- * #picture-still, #picture-note), #inset-layer, #overlay-layer, #caption-layer (with #caption-line),
+ * #picture-still, #picture-note), #inset-layer, #dissolve-layer, #overlay-layer, #caption-layer (with #caption-line),
  * #transport, #play, #clock, #playhint and touches no other pane's DOM. Every animation frame it emits
  * a 'playhead' event `{now, total}` on the shared bus, and a 'playing-word'
  * event `{index}` whenever the playing word changes — transcript.js and
@@ -103,6 +103,11 @@ let shotCursor = 0; // cache for the shot-under-the-playhead scan
 const pictureRefused = new Set(); // assets the browser would not decode
 let insetLayer = null; // the insets' layer, or null before init
 const insetSlots = []; // one {box, dim, video} per stack position, reused across views
+let dissolveLayer = null; // a crossfade's other shot, or null before init
+let dissolveVideo = null;
+let dissolveStill = null;
+let dissolveAsset = null; // which asset the dissolve element holds
+let pendingDissolveSeek = null;
 let overlayLayer = null; // the overlays' layer, or null before init
 const overlayImages = []; // one <img> per stack position, reused across views
 
@@ -281,6 +286,7 @@ function tick() {
   paintPicture(t);
   followEditFill();
   paintInsets(t);
+  paintDissolve(t);
   paintOverlays(t);
   paintCaption(t);
   drawVisualizer();
@@ -624,6 +630,7 @@ function paintPicture(t) {
     return;
   }
   picture.hidden = false;
+  paintPunch(shot, t);
   if (pictureAsset !== shot.asset) loadShot(shot);
   else placeShot(shot);
   if (shot.is_image) return;
@@ -646,6 +653,74 @@ function paintPicture(t) {
   if (pictureVideo.paused) pictureVideo.play().catch(() => {});
   followPane(target, false);
   followFill(target, false);
+}
+
+/* A cut's scale punch: the writer's own keys (`mlt.punch_keys`, handed over
+ * as `punch_keys`), interpolated the way the overlays' are and drawn as a
+ * translate and scale of the whole layer from the frame's top left — which is
+ * what the entry's `qtblend` does to the shot. Nothing here derives a scale. */
+function paintPunch(shot, t) {
+  const keys = shot && Array.isArray(shot.punch_keys) ? shot.punch_keys : null;
+  if (!keys) {
+    if (picture.style.transform) picture.style.transform = "";
+    return;
+  }
+  const box = frameBox();
+  const m = keyedMotion(keys, t - shot.start);
+  picture.style.transformOrigin = "0 0";
+  picture.style.transform = `translate(${(m.x * (box.width || 0)).toFixed(2)}px, ${(m.y * (box.height || 0)).toFixed(2)}px) scale(${m.w.toFixed(4)}, ${m.h.toFixed(4)})`;
+}
+
+/* -- dissolves -------------------------------------------------------------
+ *
+ * A crossfade between cues draws its other shot on a track over the picture
+ * lane (`ops._cue_effects`): the incoming cue's frames before its in-point
+ * fading in to its word, or the outgoing one's after its out-point fading out
+ * from it. An Edit join's dissolve is the same track under the picture lane,
+ * so it is drawn only where no cue lane covers the Edit. One element either
+ * way, at the view's `dest` and `src_start`, faded by `keys` — the writer's
+ * own alpha keys (`mlt.dissolve_alpha`).
+ */
+function dissolveAt(t) {
+  const v = view();
+  if (!v) return null;
+  const inRange = (d) => d && t >= d.start && t < d.end;
+  if (v.shots && v.shots.length) {
+    const shot = v.shots.find((s) => inRange(s.crossfade));
+    return shot ? shot.crossfade : null;
+  }
+  return (v.edit_dissolves || []).find(inRange) || null;
+}
+
+function paintDissolve(t) {
+  if (!dissolveLayer) return;
+  const d = dissolveAt(t);
+  if (!d) {
+    if (dissolveLayer.hidden) return;
+    dissolveLayer.hidden = true;
+    dissolveVideo.pause();
+    return;
+  }
+  dissolveLayer.hidden = false;
+  if (dissolveAsset !== d.asset) {
+    dissolveAsset = d.asset;
+    dissolveStill.hidden = !d.is_image;
+    dissolveVideo.hidden = d.is_image;
+    if (d.is_image) {
+      dissolveVideo.pause();
+      dissolveVideo.removeAttribute("src");
+      dissolveStill.src = assetURL(d.asset);
+    } else {
+      dissolveStill.removeAttribute("src");
+      dissolveVideo.src = assetURL(d.asset);
+      pendingDissolveSeek = d.src_start + Math.max(0, t - d.start);
+    }
+  }
+  const el = d.is_image ? dissolveStill : dissolveVideo;
+  if (!d.is_image) place(el, d.asset, d.dest || null);
+  el.style.opacity = keyedMotion(d.keys || [], t - d.start).opacity.toFixed(3);
+  if (d.is_image || dissolveVideo.readyState === 0) return;
+  follow(dissolveVideo, d.src_start + Math.max(0, t - d.start), media.paused);
 }
 
 /* -- insets ----------------------------------------------------------------
@@ -1267,6 +1342,15 @@ export function init(passedCtx) {
   pictureNote = $("picture-note");
   insetLayer = $("inset-layer");
   overlayLayer = $("overlay-layer");
+  dissolveLayer = $("dissolve-layer");
+  dissolveVideo = $("dissolve-video");
+  dissolveStill = $("dissolve-still");
+  dissolveVideo.addEventListener("loadedmetadata", () => {
+    if (pendingDissolveSeek !== null) {
+      dissolveVideo.currentTime = pendingDissolveSeek;
+      pendingDissolveSeek = null;
+    }
+  });
   captionLayer = $("caption-layer");
   captionLine = $("caption-line");
 

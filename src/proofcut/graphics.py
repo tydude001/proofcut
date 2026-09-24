@@ -1832,6 +1832,34 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         },
         "variants": {"portrait": {}},
     },
+    "vignette": {
+        "description": (
+            "The frame's edges darkened towards its corners, clear in the middle. "
+            "Place it with overlay_add over the span it should darken."
+        ),
+        "overlay": True,
+        "slots": {
+            "strength": {
+                "kind": "fraction",
+                "placed": False,
+                "default": 0.55,
+                "description": "how dark the corners get, 0 to 1",
+            },
+        },
+        # An ellipse of the frame's own shape (the gradient is in its bounding
+        # box, so one file draws every aspect), clear to 0.45 of the way to the
+        # corners and climbing as u**1.6 to `strength` there — the scrim's curve
+        # and its eight stops, run outward. A card rather than melt's own
+        # vignette filters, so the preview draws the PNG the render composites
+        # (docs/plans/DAYDREAM.md § Transitions and per-cut effects).
+        "derived": {
+            "edge_opacity": ("fraction", "strength", 1.0),
+            **{
+                f"ramp_{k}": ("fraction", "strength", (k / SCRIM_RAMP_STOPS) ** 1.6)
+                for k in range(1, SCRIM_RAMP_STOPS)
+            },
+        },
+    },
 }
 
 

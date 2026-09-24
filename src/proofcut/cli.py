@@ -681,6 +681,20 @@ def _build_parser() -> argparse.ArgumentParser:
     p_cue_add.add_argument(
         "--event", help="start on this event of clip_id (name or name#k) instead of a word — for a recording"
     )
+    _cue_effect_arguments(p_cue_add, clearing=False)
+
+    p_cue_set = cue_sub.add_parser(
+        "set", help="set or clear a crossfade or a scale punch on one cue, or on every cue (--every)"
+    )
+    p_cue_set.add_argument("clip_id", nargs="?", help="the cue's transcript; with --every, only its cues")
+    p_cue_set.add_argument("word_index", type=int, nargs="?", help="the word the cue sits on")
+    p_cue_set.add_argument("--phrase", help="address the cue by wording (its first word)")
+    p_cue_set.add_argument("--after", type=int, default=-1, help="only match --phrase forward of this word index")
+    p_cue_set.add_argument("--occurrence", type=int, help="pick the Nth match rather than refusing on ambiguity")
+    p_cue_set.add_argument("--event", help="the event the cue sits on, as it was added")
+    p_cue_set.add_argument("--every", action="store_true", help="every cue (of clip_id, if given): an effect per cut")
+    _cue_effect_arguments(p_cue_set, clearing=True)
+    p_cue_set.add_argument("--plan", action="store_true", help="check and echo, write nothing")
 
     p_cue_rm = cue_sub.add_parser("rm", help="remove a cue")
     p_cue_rm.add_argument("clip_id")
@@ -2697,7 +2711,45 @@ def _cmd_pack(args: argparse.Namespace) -> int:
     return _emit(ops.pack_status(args.project))
 
 
+def _cue_effect_arguments(parser: argparse.ArgumentParser, *, clearing: bool) -> None:
+    """`cue add` and `cue set`'s crossfade and punch options."""
+    parser.add_argument(
+        "--dissolve", type=float,
+        help="crossfade into the cue over this many seconds" + (" (0 clears)" if clearing else ""),
+    )  # fmt: skip
+    parser.add_argument("--dissolve-ease", help="linear (default), ease, ease-in or ease-out")
+    parser.add_argument(
+        "--punch", type=float,
+        help="scale punch from the cut about the canvas centre, e.g. 1.1" + (" (1 clears)" if clearing else ""),
+    )  # fmt: skip
+    parser.add_argument("--punch-seconds", type=float, help="how long the punch moves (default 0.2)")
+    parser.add_argument("--punch-ease", help="the punch's curve (default ease-out)")
+    parser.add_argument("--punch-mode", choices=("in", "settle"), help="in: zoom and hold (default); settle: ease back")
+
+
+def _cue_effects(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        key: getattr(args, key)
+        for key in ("dissolve", "dissolve_ease", "punch", "punch_seconds", "punch_ease", "punch_mode")
+    }
+
+
 def _cmd_cue(args: argparse.Namespace) -> int:
+    if args.cue_command == "set":
+        return _emit(
+            ops.cue_set(
+                args.project,
+                args.clip_id,
+                args.word_index,
+                phrase=args.phrase,
+                after=args.after,
+                occurrence=args.occurrence,
+                event=args.event,
+                every=args.every,
+                plan=args.plan,
+                **_cue_effects(args),
+            )
+        )
     if args.cue_command == "add":
         return _emit(
             ops.cue_add(
@@ -2710,6 +2762,7 @@ def _cmd_cue(args: argparse.Namespace) -> int:
                 occurrence=args.occurrence,
                 src_start=args.src_start,
                 event=args.event,
+                **_cue_effects(args),
             )
         )
     if args.cue_command == "rm":

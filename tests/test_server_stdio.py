@@ -90,6 +90,7 @@ EXPECTED_TOOLS = {
     "pack_show",
     "pack_status",
     "cue_add",
+    "cue_set",
     "cue_rm",
     "cue_ls",
     "cue_reresolve",
@@ -728,6 +729,7 @@ TOOL_TO_COMMAND = {
     "pack_status": "pack",
     "cue_add": "cue",
     "cue_rm": "cue",
+    "cue_set": "cue",
     "cue_ls": "cue",
     "cue_reresolve": "cue",
     "unspoken_add": "unspoken",
@@ -984,6 +986,7 @@ def test_card_new_from_a_template_over_the_wire(tmp_path: Path) -> None:
         "chapter",
         "lowerthird",
         "scrim",
+        "vignette",
     }
     assert out["made"]["asset"] == "card:receipt-scream-1996"
     # No video clip in this project, so the canvas falls back to 1080p.
@@ -8765,7 +8768,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
             assert "no project" in description, tool.name
         else:
             assert "bound project" in description, tool.name
-    assert seen == 124
+    assert seen == 125
 
 
 def test_no_tool_advertises_an_argument_with_nothing_said_about_it() -> None:
@@ -10693,6 +10696,106 @@ def test_a_second_recording_follows_the_first_through_a_dissolve(visible_tmp: Pa
             want = 60 + 2 * (k - 90)
         worst = max(worst, abs(centre(pixels) - want))
     assert worst <= 4, worst
+
+
+@needs_ffmpeg
+@needs_melt
+def test_a_crossfade_and_a_punch_between_cues_are_drawn_as_their_keys_say(visible_tmp: Path) -> None:
+    """docs/plans/DAYDREAM.md § Transitions and per-cut effects, against a real
+    melt. A grey recording carries four words at 0, 1, 2 and 3 s; the cues lay
+    A (luma 40 + N), then B (230 − N, a black bar at x 150..169) pinned 1 s in
+    with a 0.4 s crossfade, then C (flat 120) unpinned with a 0.4 s crossfade,
+    then B again pinned 3 s in and punched to 1.1. So frames 18..29 blend A into
+    B's pre-roll (its frames 18..29); C has no frames before its in-point, so
+    frames 60..71 fade B's post-roll (its frames 60..71) out over C; and from
+    frame 90 the bar's edge moves from 150 to 320 − 170 × 1.1 over 6 frames
+    while B's first use, on the same node, stays unscaled."""
+    project = visible_tmp / "proj"
+    sources = {}
+    for name, expr in (("window", "250"), ("a", "40+N"), ("b", "if(between(X,150,169),0,230-N)"), ("c", "120")):
+        sources[name] = visible_tmp / f"{name}.mp4"
+        # The recording carries a silent track, which its transcript's times are of.
+        sound = ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "4", "-c:a", "aac"] if name == "window" else []
+        subprocess.run(
+            ["ffmpeg", "-nostdin", "-v", "error", "-y",
+             "-f", "lavfi", "-i", "color=c=black:size=640x360:rate=30:duration=4", *sound[:4],
+             "-vf", f"format=gray,geq=lum='{expr}',format=yuv420p", "-c:v", "libx264", "-qp", "0",
+             *sound[4:], str(sources[name])],
+            capture_output=True, check=True,
+        )  # fmt: skip
+    transcript = visible_tmp / "window.json"
+    transcript.write_text(
+        json.dumps({"language": "en", "words": [
+            {"word": w, "start": float(i), "end": i + 0.3} for i, w in enumerate(("one", "two", "three", "four"))
+        ]}),
+        encoding="utf-8",
+    )  # fmt: skip
+    output = visible_tmp / "out.mp4"
+
+    async def body(session: ClientSession) -> tuple[Any, Any]:
+        client = Client(session)
+        await client.call("init", path=str(project))
+        ids = {}
+        for name, source in sources.items():
+            ids[name] = (await client.call("import_media", path=str(project), source=str(source)))["clip_id"]
+        window = ids["window"]
+        await client.call("attach_transcript", path=str(project), clip_id=window, transcript_path=str(transcript))
+        await client.call("seed_timeline", path=str(project), clip_id=window, remove_silences=False)
+        await client.call("cue_add", path=str(project), clip_id=window, word_index=0, asset=ids["a"])
+        await client.call(
+            "cue_add", path=str(project), clip_id=window, word_index=1, asset=ids["b"], src_start=1.0, dissolve=0.4,
+        )  # fmt: skip
+        await client.call("cue_add", path=str(project), clip_id=window, word_index=2, asset=ids["c"])
+        await client.call("cue_add", path=str(project), clip_id=window, word_index=3, asset=ids["b"], src_start=3.0)
+        set_ = await client.call("cue_set", path=str(project), clip_id=window, word_index=2, dissolve=0.4)
+        await client.call(
+            "cue_set", path=str(project), clip_id=window, word_index=3, punch=1.1, punch_seconds=0.2,
+        )  # fmt: skip
+        rendered = await client.call("export", path=str(project), output=str(output), export_format=None)
+        return set_, rendered
+
+    set_, rendered = anyio.run(_with_server, body)
+    assert [f["from"] for f in set_["crossfades"]] == ["incoming", "outgoing"]
+    assert rendered["writer"] == "melt"
+    assert [f["join"] for f in rendered["crossfades"]] == [1.0, 2.0]
+    frames = _rgb_frames(output, 640, 360)
+    assert len(frames) == 120
+
+    def luma(pixels: bytes, x: int, y: int = 180) -> float:
+        i = (y * 640 + x) * 3
+        return 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2]
+
+    def want(k: int) -> float:
+        if k < 18:
+            return 40 + k
+        if k < 30:
+            a = (k - 18) / 12
+            return (1 - a) * (40 + k) + a * (230 - k)
+        if k < 60:
+            return 230 - k
+        if k < 72:
+            a = 1 - (k - 60) / 12
+            return a * (230 - k) + (1 - a) * 120
+        if k < 90:
+            return 120
+        return 230 - k
+
+    worst = max(abs(luma(pixels, 420) - want(k)) for k, pixels in enumerate(frames))
+    assert worst <= 4, worst
+
+    def edge(pixels: bytes) -> float:
+        """The bar's left edge: where the row first falls through half its level."""
+        level = luma(pixels, 420)
+        for x in range(1, 320):
+            a, b = luma(pixels, x - 1), luma(pixels, x)
+            if b < level / 2 <= a:
+                return x - 1 + (a - level / 2) / (a - b) + 0.5
+        raise AssertionError("no edge")
+
+    assert abs(edge(frames[45]) - 150) <= 1.5, "B's first use is not punched"
+    assert abs(edge(frames[90]) - 150) <= 1.5, "the punch starts at the canvas"
+    for k in (100, 119):
+        assert abs(edge(frames[k]) - (320 - 170 * 1.1)) <= 1.5, (k, edge(frames[k]))
 
 
 @needs_ffprobe

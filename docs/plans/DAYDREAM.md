@@ -1066,10 +1066,10 @@ Most value per cost first, each with a recommendation. This replaces
    whether a server may open a second project for a footage split (a
    question, since `-C` binding is deliberate); the Resolve question above.
 
-**Items 1 to 4 are built**, each approved in turn: HISTORY.md § Caption
+**Items 1 to 5 are built**, each approved in turn: HISTORY.md § Caption
 reveal, caption spans and caption corrections, built; § Animated graphics,
 built (with item 4's graphics library); § Images in, built; § Saved caption
-looks, built. What is left open is the wiki's to track.
+looks, built; § Transitions and per-cut effects, built. What is left open is the wiki's to track.
 
 ---
 
@@ -1454,8 +1454,9 @@ Item 5 of § The gaps, re-ranked: a crossfade between picture cues, a
 vignette, and a scale punch. Written after reading it, HISTORY.md § A second
 recording follows the first, through a dissolve, § Overlays, built, and
 § Images in, built. The spike is `~/proofcut-work/spikes/transitions-probe/`
-(`probe.py`, run on both melts). **Designed and measured, not built: this
-waits for review.**
+(`probe.py`, run on both melts). **Approved and built the same day, on all
+four recommendations: HISTORY.md § Transitions and per-cut effects, built.**
+The one departure: both effects refuse under a retime.
 
 What the channel asked for, in its own words: *"can we add a scale punch per
 cut applied about canvas centre so it zooms into the word?"* and *"add

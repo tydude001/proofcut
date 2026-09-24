@@ -246,6 +246,16 @@
               <img id="picture-still" alt="">
               <p id="picture-note" class="picture-note" hidden></p>
             </div>
+            <!-- A crossfade's other shot, over the picture and under the
+                 overlays, where the writer puts its track: the incoming cue's
+                 frames before its in-point fading in, or the outgoing one's
+                 after its out-point fading out — and an Edit join's dissolve
+                 where no cue lane covers the Edit. player.js fills it from
+                 the view's `crossfade` and `edit_dissolves`. -->
+            <div id="dissolve-layer" hidden>
+              <video id="dissolve-video" preload="auto" muted playsinline hidden></video>
+              <img id="dissolve-still" alt="" hidden>
+            </div>
             <!-- Overlays over the picture, in stack order: the writer draws
                  them above every picture track. player.js fills it from the
                  view's `overlays` — one canvas-sized image each. -->
