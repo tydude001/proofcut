@@ -212,6 +212,7 @@ installed package or the upstream repo, not your memory.
   parity and tool registration
   - **Register tools with `@_tool()`, never `@mcp.tool()`**
   - **`_tool()` also refuses a tool with no row in `server._ANNOTATIONS`**
+  - **A derivation never holds what it creates (`derives=`)**
   - **`path` is optional everywhere (`str | None = None`) and defaults to the
     bound project**
   - **`list_media` is what hands an unattended agent source paths**
