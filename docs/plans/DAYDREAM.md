@@ -1064,7 +1064,9 @@ Most value per cost first, each with a recommendation. This replaces
    2026-09-24: each of card, graphic and image takes its own prefix, and a
    wrong one is refused by name);
    whether a server may open a second project for a footage split (a
-   question, since `-C` binding is deliberate); the Resolve question above.
+   question, since `-C` binding is deliberate; answered 2026-09-24 as a
+   derivation, one project per server, and designed in § Splitting a
+   footage dump, designed); the Resolve question above.
 
 **Items 1 to 5 are built**, each approved in turn: HISTORY.md § Caption
 reveal, caption spans and caption corrections, built; § Animated graphics,
@@ -1586,6 +1588,150 @@ same filter the reframe and every overlay already use, attached where the
 - **The preview.** Recommend: build it with the effects rather than after,
   including the Edit dissolve's missing fade, so no effect ships that only
   the render shows.
+
+---
+
+## Splitting a footage dump, designed: 2026-09-24
+
+The first question of item 6 in § The gaps, re-ranked, answered by Tyler:
+**yes, as an op that derives new projects from a source project the way
+`reel` does, one project per server, never a server opening a second
+project.** Written after reading HISTORY.md § `lucid reel`, the project-derivation
+op and § What parity does not import. The spike is
+`~/proofcut-work/spikes/split-probe/` (two recordings, the MCP probes, the
+derived projects). The second question, Resolve export, is not answered
+yet and this note does not touch it; there is no Resolve on this box
+(no flatpak, nothing in `/opt`, no desktop entry), so measuring an import
+into one starts with installing it.
+
+What the channel showed. `HBXUYaOPppI`: four reels of raw footage, one
+prompt (*"figure out how many shorts there are ... put every short into its
+own project and clean out all of the silences and duplicate takes"*), four
+projects back, each already cleaned. `CdnzkSSYDE0` is the same move on one
+long recording: three shorts, each its own edit, then reframed vertical.
+Choosing how many shorts there are and where each starts is the agent's
+reading of the transcripts, the rule `synopsis` keeps: proofcut does not
+choose.
+
+### The spike
+
+Two 18.5 s recordings at 640x360, one flat blue and one flat rust so a
+pixel says which is on screen, each carrying the demo voiceover and its
+retake (words 11 to 23), with the demo's transcript attached to both. The
+bound-server questions were asked over a real stdio `proofcut mcp -C dump`,
+because the CLI's `-C` binds without confining (only `serve()` confines).
+
+| # | What was asked | What happened |
+|---|---|---|
+| 1 | Can a dump be one timeline? | Yes: `seed reel1`, then `follow reel2 reel1`, 35.3 s in 5 segments. **But `follow` splices a whole span**: the seed silence-cut `reel1` to 16.8 s and `reel2` kept all 18.5 s, pauses included, and no op removes silences from a clip already on the timeline. `follow` also refuses an audio-only recording, by a stated reason and not a measured one |
+| 2 | Can it be cleaned in place? | Yes: `cut reel1 11:23` and `cut reel2 11:23` took both retakes out, 35.3 s to 25.83 s |
+| 3 | Does `reel` twice make the shorts? | Yes: 12.1 s and 13.73 s, `suspect_edges` empty on both. **Each short registers both recordings and carries both transcripts**, while short b's timeline holds only `reel2` |
+| 4 | A short across the join | `reel 9-16` gives `reel1` 15.4 to 18.5 then `reel2` 0 to 3.9. Rendered through melt: 210 frames of 210, `frames` agrees with delta 0, and the picture is blue (45, 78, 157) at 3.0 s and rust (158, 79, 45) at 3.2 s, the join being at 3.1 s |
+| 5 | Where can a bound server put a short? | Outside its project is refused (`reel`'s `dest` is confined). **Inside it is accepted, and then the dump's server edits the short**: `cut_by_time` with `path` naming `dump/shorts/b` wrote, 13.73 s to 12.73 s. A nested short is a second project the server can open |
+| 6 | Who holds a short after `reel` returns? | **The dump's server does, until it exits.** Its `agent.lock` stays in the short, and a second server bound to the short is refused on a plan and a write alike ("Another proofcut session holds this project"). This is a defect in `reel` today, not only in the design: the wrapper holds a `dest` it has just created (`_tool`'s "there was nothing to hold until the body ran") |
+| 7 | Does anything else see a nested short? | The picker does not: `scan_projects` never descends into a project, so `web --root` cannot list one. `list_media` on the dump does, wrongly: 8 files for 2 recordings, each short's `media/` link listed as a file already imported |
+
+So a split is buildable on what exists, and the three things standing in
+the way are all about where a short lives and who holds it, not about the
+edit.
+
+### The design
+
+1. **Clean first, then split, all in the dump.** The order is: import every
+   recording, seed them in order, clean the dump (`cut`, the cut report,
+   `verify`, over everything at once), then split. Every short inherits the
+   cleaned edit, so nothing is cleaned twice and the whole job is one agent
+   in one project, which is the only way it can be one prompt under one
+   project per server. Splitting first would leave N projects to clean, and
+   cleaning N projects is N sessions.
+
+2. **`seed` takes several recordings.** `seed reel1 reel2 reel3` silence-cuts
+   each on the way in, the same auto-editor pass `seed` runs today, and lays
+   them end to end in the order given. This is what finding 1 is missing;
+   `follow` stays what it is, the join between two recordings with its
+   dissolve. Audio-only recordings are refused the way `follow` refuses
+   them until someone measures what the writer does with two, rather than
+   carrying the refusal's reason over unmeasured in either direction.
+
+3. **`split` is `reel` N times in one call, addressed by words.** Each short
+   is a `name` and two edges, `from` (its first word) and `to` (its last),
+   each a `clip_id` with a word index or a phrase, resolved through
+   `_resolve_word_or_phrase`; the span kept is the first word's timeline
+   start to the last word's timeline end. Words and not seconds, because
+   the agent reads the shorts off the transcripts and a word survives the
+   cleaning cuts that come between reading and splitting; `start`/`end`
+   seconds are accepted too, `reel`'s own address, for a person working
+   from a watch. Every edge echoes its words and the three either side.
+   Edges in different recordings are fine (finding 4).
+   - **Two shorts sharing material are reported, never refused**
+     (`overlaps`): two versions of one short is a real request.
+   - **Material in no short is reported** (`unassigned`, as timeline
+     spans): a take the agent missed stays in the dump, and saying so is
+     what makes that visible.
+   - Everything else is `reel`'s, per short: the suspect-edge guard, cue
+     pruning and pinning, every `*_dropped`, `canvas` (one for the whole
+     split, since a batch of shorts is one delivery shape), cards
+     re-authored, media linked and never copied. `derived_from` gains the
+     short's name.
+
+4. **Shorts go beside the dump, named, never nested.** `split` takes names,
+   not paths: each is one path component (no separator, no `..`), must not
+   exist, and becomes `<the dump's parent>/<name>`. That is the one write a
+   bound server makes outside its own directory, and it is safe for the
+   reason nesting is not: once a short exists outside the bound root,
+   `_confine` refuses every later call that names it, so "never a server
+   opening a second project" holds by construction instead of by a rule
+   (finding 5). Nesting would also hide the shorts from the picker, put
+   them in the dump's `list_media` (finding 7), and take them with the dump
+   when it is moved or deleted. An unbound server or the CLI may pass
+   `into` for another parent; a bound one refuses any `into` but the
+   default.
+
+5. **A derivation never holds what it creates, and `reel` is fixed the same
+   way.** `split` and `reel` release the lock on each new project before
+   they return, so the person can open a short at once (finding 6). What
+   protects a short while it is built is that it must not exist yet, which
+   is `reel`'s rule already.
+
+6. **A short carries only the recordings it uses.** Once `reel`'s drops
+   have run, two things still place a recording in a short: being on its
+   timeline, and being a kept cue's `clip_id` or `asset`. A recording that
+   is neither is left out of that short, together with everything keyed by
+   its `clip_id` alone (its transcript, descriptions, framing windows,
+   unspoken marks, events), and named in `clips_dropped`. Not by calling
+   `clip_rm`: it refuses any transcribed clip, which is every recording in
+   a dump, and it does not look at framing windows. Finding 3 is why: four
+   reels in, every short would list all four in its assets pane and to its
+   agent. `reel` is left alone here: a film's derivation usually wants its
+   b-roll, and cues already keep what they name.
+
+7. **Opening a short is the person's step.** The reply lists each short's
+   path and duration, and `proofcut web --root <the dump's parent>` lists
+   them beside the dump. No new window work in the first build.
+
+8. The usual surface: `proofcut split` beside the MCP tool, a row in
+   `_ANNOTATIONS` (it creates, and refuses an existing directory, so
+   `destructive_hint=False`), `_PARAM_DOCS` rows, `plan` that resolves every
+   short and creates nothing, and a stdio test that a bound server makes the
+   shorts, can then reach none of them, and a second server bound to one
+   can write.
+
+### Decisions for Tyler
+
+- **Clean the dump, then split** (design 1). Recommend: yes. It is the only
+  order that stays one agent in one project.
+- **Shorts beside the dump, created by name** (design 4). Recommend: yes.
+  It is the one widening of what a bound server may write, and it is
+  narrow: a new sibling directory, never an existing one, never touched
+  again by that server.
+- **Fix `reel`'s held lock in the same build** (design 5). Recommend: yes;
+  it is a defect today, measured, and `split` shares the code.
+- **Drop unused recordings from each short** (design 6). Recommend: yes,
+  for `split` only.
+- **Several recordings in one `seed`** (design 2). Recommend: yes; without
+  it every recording after the first keeps its pauses.
+- **Resolve export.** Not answered in this round. Measuring it needs a
+  Resolve installed here first, which is your call.
 
 ---
 
