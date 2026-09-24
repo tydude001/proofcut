@@ -1004,7 +1004,9 @@ function paintCaption(t) {
   captionLayer.hidden = false;
   const edge = placeLine(look.position);
   captionLine.style.fontFamily = `"${look.font}", sans-serif`;
-  captionLine.style.fontSize = `${Math.max(1, look.size * scale)}px`;
+  // `size` is libass's: the face's win ascent+descent, not its em — so the
+  // em CSS sizes by is `em_scale` of it (captions.em_scale).
+  captionLine.style.fontSize = `${Math.max(1, look.size * (look.em_scale || 1) * scale)}px`;
   captionLine.style.fontWeight = look.bold ? "700" : "400";
   captionLine.style.paddingBottom = edge.bottom ? `${look.margin * scale}px` : "0";
   captionLine.style.paddingTop = edge.top ? `${look.margin * scale}px` : "0";

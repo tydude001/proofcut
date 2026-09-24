@@ -7,6 +7,23 @@ up fourfold, **credited to conversion**: more of the people already coming
 to the site went on to book. The question it raised was whether proofcut
 should have a free site of its own, such as `tydude001.github.io/proofcut`.
 
+## Their stack, and how it maps here
+
+What the story used, so it isn't looked up again:
+
+| Their tool | What it did for them | For proofcut |
+|---|---|---|
+| **Next.js**, built with Claude | The whole site, rebuilt from WordPress in a few hours | More than one page needs. Worth it only if the site grows past a landing page (docs, pricing, a gallery). |
+| **Vercel** | Hosting and deploys from GitHub | An alternative to GitHub Pages. Check its free tier's terms against commercial use before picking it for a paid product. |
+| **SEO skills from skills.sh** | Claude skills for search metadata and copy | Worth a look when writing the page. Read each skill before installing it, the same as any code. |
+| **skiper-ui** components | Animated React pieces (the figures walking across her page) | Needs React, so it comes with Next.js. The clip is proofcut's motion, so decoration would compete with it. |
+| **Calendly** | Booking, which is where her extra revenue came in | Its equivalent here is the page's one call to action: install today, a paid tier or a demo call later. |
+| **DNS moved to the new host** | Kept her existing domain | Only if proofcut gets a domain (below). |
+
+The lesson worth keeping is the last row but one: her gain came from **one
+clear next step for a visitor who already wanted to book**, not from the
+framework.
+
 ## Why not yet
 
 **A site converts traffic. It does not make any.** Her business had twenty

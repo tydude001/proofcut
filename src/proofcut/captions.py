@@ -548,6 +548,68 @@ def font_match(name: str, *, weight: int | None = None) -> dict[str, Any]:
     }
 
 
+def em_scale(name: str, *, bold: bool = False) -> float | None:
+    """How big libass draws an em, as a fraction of the style's `Fontsize`.
+
+    **libass does not size a font the way CSS does.** It mimics GDI: `Fontsize`
+    is the height of the face's OS/2 `usWinAscent + usWinDescent`, and the em
+    is whatever that leaves (`ass_font.c`, `set_font_metrics` and a
+    `REAL_DIM` size request). CSS `font-size` *is* the em. So a preview that
+    hands `size` straight to CSS draws every glyph `(winAscent + winDescent) /
+    unitsPerEm` too large — 1.26 for Outfit, measured 2026-09-24 as 291px
+    against the burn's 234 across the same words (HISTORY.md § The preview's
+    captions were a quarter too large).
+
+    Read off the file fontconfig hands libass for `name`, so a substituted
+    family scales by its substitute. None when there is no file to read, and
+    the caller then draws at 1:1, which is what it did before.
+    """
+    try:
+        found = subprocess.run(
+            ["fc-match", "--format=%{file}", _fc_pattern(name, 700 if bold else 400)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        data = Path(found.stdout.strip()).read_bytes() if found.stdout.strip() else b""
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return _win_em_scale(data)
+
+
+def _win_em_scale(data: bytes) -> float | None:
+    """`unitsPerEm / (usWinAscent + usWinDescent)` from a TrueType/OpenType file.
+
+    Only the two tables are read, by their offsets in the table directory, so
+    this needs no font library. A collection (`ttcf`) reads its first face. The
+    `hhea` pair is libass's fallback when the win pair sums to zero, and so is
+    it here.
+    """
+    import struct
+
+    try:
+        base = struct.unpack(">I", data[8:12])[0] if data[:4] == b"ttcf" else 0
+        count = struct.unpack(">H", data[base + 4 : base + 6])[0]
+        tables = {}
+        for n in range(count):
+            entry = base + 12 + 16 * n
+            tag, _, offset, _ = struct.unpack(">4sIII", data[entry : entry + 16])
+            tables[tag] = offset
+        upem = struct.unpack(">H", data[tables[b"head"] + 18 : tables[b"head"] + 20])[0]
+        height = 0
+        if b"OS/2" in tables:
+            # usWinAscent/usWinDescent sit at 74/76; libass reads them signed.
+            asc, desc = struct.unpack(">hh", data[tables[b"OS/2"] + 74 : tables[b"OS/2"] + 78])
+            height = asc + desc
+        if height <= 0 and b"hhea" in tables:
+            asc, desc = struct.unpack(">hh", data[tables[b"hhea"] + 4 : tables[b"hhea"] + 8])
+            height = asc - desc
+    except (struct.error, KeyError):
+        return None
+    return upem / height if height > 0 and upem else None
+
+
 # -- the style a project stores -------------------------------------------
 #
 # `Preset` above is ASS's vocabulary. What a person — or the agent — asks for

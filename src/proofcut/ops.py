@@ -18413,6 +18413,14 @@ def caption_view(
     # What each cue's `style` indexes: look 0 is `style.resolved` above, and a
     # caption span's own look follows. The preview draws a cue in its own.
     result["styles"] = [look.describe()["resolved"] for look in looks]
+    # libass sizes a font by its win ascent+descent and CSS by its em, so the
+    # preview multiplies by this or draws a quarter too large (Outfit).
+    scales: dict[tuple[str, bool], float | None] = {}
+    for resolved in [result["style"]["resolved"], *result["styles"]]:
+        key = (resolved["font"], bool(resolved["bold"]))
+        if key not in scales:
+            scales[key] = captions.em_scale(key[0], bold=key[1])
+        resolved["em_scale"] = scales[key]
     result["cues"] = [cue.as_dict() for cue in cues]
     result["words"] = len(placed)
     result["words_cut"] = cut
