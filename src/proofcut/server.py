@@ -69,7 +69,7 @@ INSTRUCTIONS = (
     "(a second recording after the first, dissolved)\n"
     "- sound: music (the bed), hold_add, vo_extend, vo_synth, sound_add (one-shots at events)\n"
     "- cards and ends: card_templates, card_new, overlay_add (type over the film), head, tail\n"
-    "- finish: add_captions, caption_style, lexicon_add (caption spelling), export "
+    "- finish: add_captions, caption_style, lexicon_add (caption spelling), caption_span_add (captions off or a big word), export "
     "(render with export_format=null)\n"
     "- checks: check_frames, verify, film_check, finish_check; changes (what the last edits did)\n\n"
     "Rules nothing will warn you about:\n"
@@ -353,7 +353,7 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "transcript_checks", "describe_ls", "card_templates", "card_safe_zones",
             "pack_show", "pack_status", "cue_ls", "assets", "unspoken_ls", "build_shots",
             "locate", "timeline_status", "timeline_view", "changes", "properties", "finish_report",
-            "caption_view", "lexicon_ls", "hold_ls", "hold_check", "overlay_ls", "sound_ls", "retime_ls", "inset_ls", "finish_check", "reframe_coverage",
+            "caption_view", "lexicon_ls", "caption_span_ls", "hold_ls", "hold_check", "overlay_ls", "sound_ls", "retime_ls", "inset_ls", "finish_check", "reframe_coverage",
             "continuity_check", "continuity_ls", "thumbnail", "contact_sheet",
             "broll_brief", "verify", "check_frames", "check_black", "spot_frames",
             "speech_overlap", "review_list",
@@ -365,6 +365,8 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "init", "import_media", "cue_add", "unspoken_add", "continuity_accept",
             # Inserts a record into the stack; never replaces one.
             "overlay_add",
+            # Appends a span; an overlap is decided by order, never merged.
+            "caption_span_add",
             # Appends a record; never replaces one.
             "sound_add",
             # Appends a stretch; one overlapping another is refused, never merged.
@@ -416,6 +418,8 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "review_add",
             # Refuses a key it lacks, so a repeat is not a no-op.
             "lexicon_rm",
+            # Positions renumber, so a repeat removes the next span.
+            "caption_span_rm",
             # Splices a second recording in; the timeline grows, as vo_extend's does.
             "follow",
         ],
@@ -1062,6 +1066,28 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "One template to return in full. The others come back as name and "
             "description only. Unset, every template in full."
         ),
+    },
+    "caption_span_add": {
+        "clip_id": (
+            "The clip whose words or events address the span — the transcript the "
+            "word indices index, or the recording the events belong to."
+        ),
+        "word_index": "The word the span starts on. One of word_index, phrase or event.",
+        "phrase": "Start on this phrase's FIRST word, resolved against clip_id's transcript.",
+        "event": "Start on this event of clip_id: `name`, or `name#k` when the name repeats.",
+        "until_word_index": "End as this word ends. One of until_word_index, until_phrase, until_event or seconds.",
+        "until_phrase": "End as this phrase's LAST word ends.",
+        "until_event": "End on this event of clip_id.",
+        "seconds": "End this long after the start.",
+        "off": "Draw no captions over the span. Give this or `style`.",
+        "style": (
+            "caption_style fields (any but `preset`) that differ over the span, on top of "
+            "the project's look: {\"max_words\": 1, \"size\": 150, \"position\": \"middle\"} "
+            "draws each word alone and large. Give this or `off`."
+        ),
+    },
+    "caption_span_rm": {
+        "position": "The span to remove, by its position in caption_span_ls.",
     },
     "lexicon_add": {
         "heard": (
@@ -3761,6 +3787,53 @@ def caption_view(
     find the cue at a moment rather than paging to it.
     """
     return ops.caption_view(path, clip_id=clip_id, first=first, limit=limit)
+
+
+@_tool()
+def caption_span_add(
+    path: ProjectPath = None,
+    *,
+    clip_id: str,
+    word_index: int | None = None,
+    phrase: str | None = None,
+    event: str | None = None,
+    until_word_index: int | None = None,
+    until_phrase: str | None = None,
+    until_event: str | None = None,
+    seconds: float | None = None,
+    after: int = -1,
+    occurrence: int | None = None,
+    off: bool = False,
+    style: dict[str, Any] | None = None,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Captions off over a stretch of the film, or a different look there.
+
+    `off=True` draws none (over an end card or logo). `style` changes
+    caption_style fields over the span only; `{"max_words": 1, "size": 150,
+    "position": "middle"}` over one word draws it alone and large, a beat
+    inside ordinary lines. Addressed like overlay_add: start at a word,
+    phrase or event; end at a word, phrase, event or length. A line never
+    crosses a span's edge; later spans win where two overlap. caption_view
+    draws the result; add_captions writes it.
+    """
+    return ops.caption_span_add(
+        path, clip_id, word_index, phrase=phrase, event=event, until_word_index=until_word_index,
+        until_phrase=until_phrase, until_event=until_event, seconds=seconds, after=after,
+        occurrence=occurrence, off=off, style=style, plan=plan,
+    )
+
+
+@_tool()
+def caption_span_ls(path: ProjectPath = None) -> dict[str, Any]:
+    """Every caption span, later ones winning, with where each plays now. Read-only."""
+    return ops.caption_span_ls(path)
+
+
+@_tool()
+def caption_span_rm(path: ProjectPath = None, *, position: int, plan: bool = False) -> dict[str, Any]:
+    """Remove the caption span at `position`, as caption_span_ls numbers it."""
+    return ops.caption_span_rm(path, position, plan=plan)
 
 
 @_tool()

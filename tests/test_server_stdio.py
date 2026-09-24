@@ -75,6 +75,9 @@ EXPECTED_TOOLS = {
     "lexicon_ls",
     "lexicon_add",
     "lexicon_rm",
+    "caption_span_add",
+    "caption_span_ls",
+    "caption_span_rm",
     "build_shots",
     "seed_timeline",
     "cut_by_transcript",
@@ -699,6 +702,9 @@ TOOL_TO_COMMAND = {
     "lexicon_ls": "lexicon",
     "lexicon_add": "lexicon",
     "lexicon_rm": "lexicon",
+    "caption_span_add": "caption-span",
+    "caption_span_ls": "caption-span",
+    "caption_span_rm": "caption-span",
     "unspoken_detect": "unspoken",
     "build_shots": "shots",
     "seed_timeline": "seed",
@@ -8700,7 +8706,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
             assert "no project" in description, tool.name
         else:
             assert "bound project" in description, tool.name
-    assert seen == 109
+    assert seen == 112
 
 
 def test_no_tool_advertises_an_argument_with_nothing_said_about_it() -> None:
@@ -10728,3 +10734,33 @@ def test_lexicon_round_trips_over_the_wire(tmp_path: Path) -> None:
     assert listed["hear"] == {"Pup BNB": "PupBnB"}
     assert removed["removed"] == {"heard": "Pup BNB", "canonical": "PupBnB"}
     assert not (project / "lexicon.json").exists()
+
+
+def test_caption_span_style_arrives_as_an_object_over_the_wire(tmp_path: Path) -> None:
+    """`style` is a JSON object on the wire; a schema that advertised a
+    string would make every agent call a refusal."""
+    from proofcut import timeline as tl
+    from proofcut import transcript as tx
+    from proofcut.project import Project
+
+    project = Project.create(tmp_path / "proj")
+    clip = {"clip_id": "vo", "source": "/tmp/vo.wav", "duration": 3.0, "has_video": False, "has_audio": True}
+    manifest = project.read_manifest()
+    manifest["clips"] = [clip]
+    project.write_manifest(manifest)
+    words = tuple(tx.Word(index=i, text=t, start=i * 0.5, end=i * 0.5 + 0.4) for i, t in enumerate("one two three".split()))
+    tx.save(tx.Transcript(clip_id="vo", words=words), project.transcript_path("vo"))
+    tl.write(tl.to_otio(tl.Edit([tl.Segment("vo", 0.0, 3.0)]), {"vo": clip}, rate=1000.0), project.timeline_path)
+
+    async def body(session: ClientSession) -> tuple[Any, Any]:
+        client = Client(session)
+        added = await client.call(
+            "caption_span_add", path=str(project.root), clip_id="vo", phrase="two", until_phrase="two",
+            style={"max_words": 1, "size": 150},
+        )
+        view = await client.call("caption_view", path=str(project.root))
+        return added, view
+
+    added, view = anyio.run(_with_server, body)
+    assert added["look"]["size"] == 150
+    assert [c["style"] for c in view["cues"] if c["text"] == "two"] == [1]

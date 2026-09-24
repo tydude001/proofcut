@@ -17348,18 +17348,301 @@ def caption_style(
     }
 
 
+CAPTION_SPANS_KEY = "caption_spans"
+
+
+def _stored_caption_spans(project: Project) -> list[dict[str, Any]]:
+    """Every caption span, validated — `_stored_overlays`' discipline.
+
+    A span is a stretch of the film whose captions are treated differently:
+    `off` draws none, and `style` is a partial `caption_style` layered on the
+    project's own (a single large word is `max_words: 1` and a bigger size).
+    Addressed by word, event or a length, exactly as an overlay is, and
+    resolved live every build. docs/plans/DAYDREAM.md § Caption reveal and
+    corrections, designed.
+    """
+    stored = project.read_manifest().get(CAPTION_SPANS_KEY, [])
+    if not isinstance(stored, list):
+        raise ProjectError(f"{project.manifest_path}'s {CAPTION_SPANS_KEY!r} must be a JSON array")
+    spans: list[dict[str, Any]] = []
+    for item in stored:
+        if not isinstance(item, dict):
+            raise ProjectError(f"{project.manifest_path}'s {CAPTION_SPANS_KEY!r} entries must be JSON objects")
+        try:
+            record: dict[str, Any] = {"clip_id": str(item["clip_id"])}
+            for key, kind in (
+                ("word_index", int),
+                ("event", str),
+                ("until_word_index", int),
+                ("until_event", str),
+                ("seconds", float),
+            ):
+                if item.get(key) is not None:
+                    record[key] = kind(item[key])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ProjectError(f"{project.manifest_path} has a caption span that is not (clip_id, a start and an end): {item!r} ({exc})") from None
+        if ("word_index" in record) == ("event" in record):
+            raise ProjectError(f"caption span {item!r} needs exactly one of word_index or event")
+        if sum(key in record for key in ("until_word_index", "until_event", "seconds")) != 1:
+            raise ProjectError(f"caption span {item!r} needs exactly one of until_word_index, until_event or seconds")
+        if bool(item.get("off")) == (item.get("style") is not None):
+            raise ProjectError(f"caption span {item!r} is either off or a style, and exactly one")
+        if item.get("off"):
+            record["off"] = True
+        else:
+            record["style"] = _span_style(item["style"])
+        spans.append(record)
+    return spans
+
+
+def _span_style(style: Any) -> dict[str, Any]:
+    """A span's partial caption style, canonicalised; `preset` is refused,
+    because a span changes fields of the project's look, not its base."""
+    if not isinstance(style, dict) or not style:
+        raise captions.CaptionError("a caption span's style is a non-empty object of caption_style fields")
+    if "preset" in style:
+        raise captions.CaptionError("a caption span's style cannot change the preset — set the fields it differs by")
+    return captions.normalise(style)
+
+
+def _caption_span_bounds(project: Project, edit: tl.Edit, record: dict[str, Any]) -> tuple[float, float]:
+    """Where a span plays, in Edit seconds — through `_overlay_instant`, the one
+    resolver for a word or an event."""
+    label = "a caption span"
+    start, _ = _overlay_instant(project, edit, record, word_key="word_index", event_key="event", edge=0, what="starts", label=label)
+    if record.get("seconds") is not None:
+        if record["seconds"] <= 0:
+            raise ProjectError(f"a caption span lasts {record['seconds']}s — a length is positive")
+        return start, start + record["seconds"]
+    end, _ = _overlay_instant(project, edit, record, word_key="until_word_index", event_key="until_event", edge=1, what="ends", label=label)
+    if end <= start:
+        raise ProjectError(f"a caption span starts at timeline {start:.3f}s and ends at {end:.3f}s — it has to end after it starts")
+    return start, end
+
+
+def _caption_span_plan(
+    project: Project, edit: tl.Edit, style: captions.Style, stored: list[dict[str, Any]] | None = None
+) -> tuple[list[tuple[float, float, int | None]], list[captions.Style]]:
+    """Every span as `(start, end, look)` — `look` None for off — and the looks.
+
+    Look 0 is `style`; each styled span adds its own, the project's stored
+    style with the span's fields on top, so a later restyle of the project
+    still reaches every span that did not override that field.
+    """
+    spans = _stored_caption_spans(project) if stored is None else stored
+    looks = [style]
+    planned: list[tuple[float, float, int | None]] = []
+    for record in spans:
+        start, end = _caption_span_bounds(project, edit, record)
+        if record.get("off"):
+            planned.append((start, end, None))
+            continue
+        looks.append(captions.resolve({**style.stored, **record["style"]}))
+        planned.append((start, end, len(looks) - 1))
+    return planned, looks
+
+
+def _group_by_span(
+    placed: list[captions.CueWord],
+    spans: list[tuple[float, float, int | None]],
+    looks: list[captions.Style],
+) -> tuple[list[captions.Cue], int]:
+    """Group each run of words under one span (or none) with that span's look.
+
+    A word belongs to the last span its middle falls inside, list order being
+    the tie-break, and runs are split **before** grouping so a line never
+    crosses a span edge. Returns the cues and how many words an off span hid.
+    """
+    def owner(word: captions.CueWord) -> int | None:
+        middle = (word.start + word.end) / 2
+        found = None
+        for n, (start, end, _look) in enumerate(spans):
+            if start <= middle < end:
+                found = n
+        return found
+
+    runs: list[tuple[int | None, list[captions.CueWord]]] = []
+    for word in placed:
+        key = owner(word)
+        if runs and runs[-1][0] == key:
+            runs[-1][1].append(word)
+        else:
+            runs.append((key, [word]))
+
+    cues: list[captions.Cue] = []
+    hidden = 0
+    for key, words in runs:
+        look = 0 if key is None else spans[key][2]
+        if look is None:
+            hidden += len(words)
+            continue
+        drawn = looks[look]
+        cues.extend(
+            replace(cue, look=look)
+            for cue in captions.group(
+                words,
+                max_words=drawn.max_words,
+                max_gap=drawn.max_gap,
+                max_duration=drawn.max_duration,
+                hold=drawn.hold,
+            )
+        )
+    # An off span means nothing drawn there, so a line's hold stops where one
+    # begins rather than lingering over the card it was switched off for.
+    offs = sorted(start for start, _end, look in spans if look is None)
+    cues = [
+        replace(cue, end=min(cue.end, next((s for s in offs if s > cue.start), cue.end)))
+        for cue in cues
+    ]
+    return captions.settle(cues), hidden
+
+
+def _caption_span_view(record: dict[str, Any], bounds: tuple[float, float] | None) -> dict[str, Any]:
+    return {**record, "start": None if bounds is None else bounds[0], "end": None if bounds is None else bounds[1]}
+
+
+def caption_span_add(
+    path: Path | str,
+    clip_id: str,
+    word_index: int | None = None,
+    *,
+    phrase: str | None = None,
+    event: str | None = None,
+    until_word_index: int | None = None,
+    until_phrase: str | None = None,
+    until_event: str | None = None,
+    seconds: float | None = None,
+    after: int = -1,
+    occurrence: int | None = None,
+    off: bool = False,
+    style: dict[str, Any] | None = None,
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Treat the captions over a stretch of the film differently: `off`, or a `style`.
+
+    Addressed as `overlay_add` is: the start is one of `word_index`, `phrase`
+    (its first word) or `event`, the end one of `until_word_index`,
+    `until_phrase` (its last word), `until_event` or `seconds`. A word
+    belongs to a span when its middle falls inside it, and a line never
+    crosses a span's edge.
+
+    `off=True` draws no captions there — over an end card, say. `style` is a
+    partial `caption_style` (any field but `preset`) layered on the project's
+    own look: `{"max_words": 1, "size": 150, "position": "middle"}` over one
+    word draws it alone and large, the beat inside ordinary lines. Later
+    spans win where two overlap. `plan=True` writes nothing.
+    """
+    project = Project.open(path)
+    if sum(x is not None for x in (word_index, phrase, event)) != 1:
+        raise ProjectError("a caption span starts at one of word_index, phrase or event")
+    if sum(x is not None for x in (until_word_index, until_phrase, until_event, seconds)) != 1:
+        raise ProjectError("a caption span ends at one of until_word_index, until_phrase, until_event or seconds")
+    if bool(off) == (style is not None):
+        raise ProjectError("a caption span is either off=True or a style, and exactly one")
+
+    record: dict[str, Any] = {"clip_id": clip_id}
+    if event is not None:
+        record["event"] = event
+    else:
+        record["word_index"], _ = _resolve_word_or_phrase(
+            _transcript(project, clip_id) if phrase is not None else None,
+            word_index=word_index,
+            phrase=phrase,
+            after=after,
+            occurrence=occurrence,
+            edge="first",
+        )
+    if until_event is not None:
+        record["until_event"] = until_event
+    elif seconds is not None:
+        record["seconds"] = float(seconds)
+    else:
+        _, record["until_word_index"] = _resolve_word_or_phrase(
+            _transcript(project, clip_id) if until_phrase is not None else None,
+            word_index=until_word_index,
+            phrase=until_phrase,
+            after=after,
+            occurrence=occurrence,
+            edge="last",
+        )
+    if off:
+        record["off"] = True
+    else:
+        record["style"] = _span_style(style)
+
+    stored = _stored_caption_spans(project)
+    updated = [*stored, record]
+    edit = _load_edit(project)
+    base = captions.resolve(_stored_caption_style(project))
+    planned, looks = _caption_span_plan(project, edit, base, stored=updated)
+    start, end, look = planned[-1]
+    if not plan:
+        manifest = project.read_manifest()
+        manifest[CAPTION_SPANS_KEY] = updated
+        project.write_manifest(manifest)
+    return {
+        "span": _caption_span_view(record, (start, end)),
+        "position": len(updated) - 1,
+        "count": len(updated),
+        "look": None if look is None else looks[look].describe()["resolved"],
+        "plan": bool(plan),
+        "written": not plan,
+    }
+
+
+def caption_span_ls(path: Path | str) -> dict[str, Any]:
+    """Every caption span, in the order later ones win, with where each plays now.
+
+    Read-only. A span that cannot resolve is reported rather than raised
+    (`caption_spans_error`), with the stored records, so the one to remove can
+    still be found.
+    """
+    project = Project.open(path)
+    stored = _stored_caption_spans(project)
+    try:
+        edit = _load_edit(project)
+        bounds = [_caption_span_bounds(project, edit, record) for record in stored]
+    except (ProjectError, tl.TimelineError, tx.TranscriptError, media.MediaError) as exc:
+        return {"spans": [_caption_span_view(r, None) for r in stored], "caption_spans_error": str(exc)}
+    return {"spans": [_caption_span_view(r, b) for r, b in zip(stored, bounds, strict=True)], "caption_spans_error": None}
+
+
+def caption_span_rm(path: Path | str, position: int, *, plan: bool = False) -> dict[str, Any]:
+    """Remove the caption span at `position`, as `caption_span_ls` numbers it."""
+    project = Project.open(path)
+    stored = _stored_caption_spans(project)
+    if not 0 <= int(position) < len(stored):
+        raise ProjectError(
+            f"there is no caption span at position {position} — there are {len(stored)}"
+            + (f" (0 to {len(stored) - 1})" if stored else "")
+        )
+    removed = stored[int(position)]
+    remaining = [item for n, item in enumerate(stored) if n != int(position)]
+    if not plan:
+        manifest = project.read_manifest()
+        if remaining:
+            manifest[CAPTION_SPANS_KEY] = remaining
+        else:
+            manifest.pop(CAPTION_SPANS_KEY, None)
+        project.write_manifest(manifest)
+    return {"removed": removed, "count": len(remaining), "plan": bool(plan), "written": not plan}
+
+
 def _caption_cues(
     project: Project,
     edit: tl.Edit,
     style: captions.Style,
     clip_id: str | None,
-) -> tuple[list[captions.Cue], list[captions.CueWord], int, dict[str, Any]]:
+) -> tuple[list[captions.Cue], list[captions.CueWord], int, dict[str, Any], list[captions.Style]]:
     """Place and group every transcribed word — the one derivation.
 
     Shared by `caption_view` and `add_captions` so that what the window draws
     and what the subtitle file contains cannot be two different groupings of
     the same words. The grouping numbers come off the style for the same
-    reason the font does: line breaks are part of the look.
+    reason the font does: line breaks are part of the look. The last item is
+    the looks each cue's `look` indexes, `style` first; caption spans add the
+    rest. A span that cannot resolve is `caption_spans_error` and no span is
+    applied — `add_captions` refuses on it, and the view reports it.
     """
     transcripts = _transcripts_for(project, clip_id)
     transcripts, unspoken = _spoken_transcripts(project, transcripts)
@@ -17374,14 +17657,15 @@ def _caption_cues(
         placed, corrections["corrected"] = captions.fold(placed, lexicon_mod.load(None, project.root)[0])
     except lexicon_mod.LexiconError as exc:
         corrections = {"corrected": [], "lexicon_error": str(exc)}
-    cues = captions.group(
-        placed,
-        max_words=style.max_words,
-        max_gap=style.max_gap,
-        max_duration=style.max_duration,
-        hold=style.hold,
-    )
-    return cues, placed, cut, {"clips": sorted(transcripts), **unspoken, **placed_audio, **corrections}
+    spans_meta: dict[str, Any] = {}
+    try:
+        spans, looks = _caption_span_plan(project, edit, style)
+    except (ProjectError, captions.CaptionError, tx.TranscriptError, media.MediaError) as exc:
+        spans, looks = [], [style]
+        spans_meta["caption_spans_error"] = str(exc)
+    cues, hidden = _group_by_span(placed, spans, looks)
+    meta = {"clips": sorted(transcripts), **unspoken, **placed_audio, **corrections, **spans_meta, "caption_off_words": hidden}
+    return cues, placed, cut, meta, looks
 
 
 def _placed_audio_cue_words(
@@ -18100,11 +18384,14 @@ def caption_view(
         "font": captions.font_match(style.ass.font),
     }
     try:
-        cues, placed, cut, meta = _caption_cues(project, edit, style, clip_id)
+        cues, placed, cut, meta, looks = _caption_cues(project, edit, style, clip_id)
     except tx.TranscriptError as exc:
         return {**result, "cues": [], "words": 0, "words_cut": 0, "cues_error": str(exc)}
 
     result.update(meta)
+    # What each cue's `style` indexes: look 0 is `style.resolved` above, and a
+    # caption span's own look follows. The preview draws a cue in its own.
+    result["styles"] = [look.describe()["resolved"] for look in looks]
     result["cues"] = [cue.as_dict() for cue in cues]
     result["words"] = len(placed)
     result["words_cut"] = cut
@@ -18112,7 +18399,11 @@ def caption_view(
     # the retime and leaves out the muted words (`add_captions`).
     result["retime"] = _retime_summary(project, edit, _export_fps(_clips_by_id(project)))
     if not cues:
-        result["cues_error"] = "no transcribed word survives on the timeline"
+        result["cues_error"] = (
+            "every word is inside a captions-off span"
+            if placed and meta.get("caption_off_words")
+            else "no transcribed word survives on the timeline"
+        )
     return window_list(result, "cues", first, limit)
 
 
@@ -18192,7 +18483,9 @@ def add_captions(
     overrides = {field: value for field, value in overrides.items() if value is not None}
     style = captions.resolve({**stored, **overrides})
 
-    cues, placed, cut, meta = _caption_cues(project, edit, style, clip_id)
+    cues, placed, cut, meta, looks = _caption_cues(project, edit, style, clip_id)
+    if meta.get("caption_spans_error"):
+        raise captions.CaptionError(f"{meta['caption_spans_error']} — captions are not written without their spans")
     if meta.get("lexicon_error"):
         # The view reports it; a file does not ship with the corrections
         # silently missing.
@@ -18200,6 +18493,10 @@ def add_captions(
     if not placed:
         raise captions.CaptionError(
             "no transcribed word survives on the timeline — nothing to caption"
+        )
+    if not cues:
+        raise captions.CaptionError(
+            f"every word is inside a captions-off span ({meta['caption_off_words']} hidden) — nothing to caption"
         )
 
     # The one render-facing shift this op owns: the burn target is the real
@@ -18222,6 +18519,7 @@ def add_captions(
         captions.to_ass(
             ass_cues,
             style=style.ass,
+            extra=[look.ass for look in looks[1:]],
             resolution=_caption_canvas(project),
             title=project.read_manifest().get("name", "proofcut"),
         ),

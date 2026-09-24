@@ -28,7 +28,8 @@ from __future__ import annotations
 import re
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -95,6 +96,10 @@ class Cue:
     words: tuple[CueWord, ...]
     #: When the line leaves the screen. Not `words[-1].end` — see `_hold`.
     end: float
+    #: Which look draws it: 0 is the project's caption style, and a caption
+    #: span's own look is 1 on (`ops._caption_cues`), each an ASS `Style:`
+    #: line of its own (`to_ass`).
+    look: int = 0
 
     @property
     def start(self) -> float:
@@ -126,6 +131,7 @@ class Cue:
             "start": self.start,
             "end": self.end,
             "text": self.text,
+            "style": self.look,
             "words": [
                 {**word.as_dict(), "highlight_start": lit, "highlight_end": until}
                 for word, lit, until in self.karaoke_spans()
@@ -259,6 +265,21 @@ def group(
     return [
         Cue(words=tuple(line), end=_hold(line, lines[n + 1] if n + 1 < len(lines) else None, hold))
         for n, line in enumerate(lines)
+    ]
+
+
+def settle(cues: list[Cue]) -> list[Cue]:
+    """Cues from several `group` calls, in order, with no two on screen at once.
+
+    `group` keeps a line's hold off the next line it grouped, but a caption
+    span groups its own words, so the line before a span edge can hold over
+    the first line after it — and libass draws both, stacked. `_hold`'s rule,
+    across the join.
+    """
+    ordered = sorted(cues, key=lambda c: c.start)
+    return [
+        replace(cue, end=min(cue.end, ordered[n + 1].start)) if n + 1 < len(ordered) else cue
+        for n, cue in enumerate(ordered)
     ]
 
 
@@ -856,14 +877,40 @@ def _dialogue_text(cue: Cue, style: Preset) -> str:
     )
 
 
+def _style_name(look: int) -> str:
+    return "proofcut" if look == 0 else f"proofcut-{look}"
+
+
+def _style_line(name: str, style: Preset, width: int) -> str:
+    return (
+        f"Style: {name},{style.font},{style.size},{style.primary},{style.secondary},"
+        f"{style.outline_colour},{style.back},{style.bold},0,0,0,100,100,0,0,"
+        f"{style.border_style},{style.outline:g},{style.shadow:g},{style.alignment},"
+        f"{round(width * 0.08)},{round(width * 0.08)},{style.margin_v},1"
+    )
+
+
 def to_ass(
     cues: list[Cue],
     *,
     style: Preset,
     resolution: tuple[int, int] = DEFAULT_RESOLUTION,
     title: str = "proofcut",
+    extra: Sequence[Preset] = (),
 ) -> str:
-    """Render cues as an ASS subtitle file."""
+    """Render cues as an ASS subtitle file.
+
+    `style` is look 0; `extra` are looks 1 on, each written as its own
+    `Style:` line (`proofcut-1`, …) and named by the cues drawn in it. Two
+    Style lines in one burn each draw their own, measured
+    (docs/plans/DAYDREAM.md § Caption reveal and corrections, designed, P4);
+    per-event override tags would not do, because the box and `MarginV` are
+    style-level.
+    """
+    looks = [style, *extra]
+    for cue in cues:
+        if not 0 <= cue.look < len(looks):
+            raise CaptionError(f"a cue draws in look {cue.look}, and there are {len(looks)}")
     width, height = resolution
     lines = [
         "[Script Info]",
@@ -881,19 +928,14 @@ def to_ass(
             "ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, "
             "MarginL, MarginR, MarginV, Encoding"
         ),
-        (
-            f"Style: proofcut,{style.font},{style.size},{style.primary},{style.secondary},"
-            f"{style.outline_colour},{style.back},{style.bold},0,0,0,100,100,0,0,"
-            f"{style.border_style},{style.outline:g},{style.shadow:g},{style.alignment},"
-            f"{round(width * 0.08)},{round(width * 0.08)},{style.margin_v},1"
-        ),
+        *(_style_line(_style_name(n), look, width) for n, look in enumerate(looks)),
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
     lines.extend(
-        f"Dialogue: 0,{_ass_time(cue.start)},{_ass_time(cue.end)},proofcut,,0,0,0,,"
-        f"{_dialogue_text(cue, style)}"
+        f"Dialogue: 0,{_ass_time(cue.start)},{_ass_time(cue.end)},{_style_name(cue.look)},,0,0,0,,"
+        f"{_dialogue_text(cue, looks[cue.look])}"
         for cue in cues
     )
     return "\n".join(lines) + "\n"

@@ -953,7 +953,9 @@ function paintCaption(t) {
     return;
   }
 
-  const look = captionState.style.resolved;
+  // A caption span draws its cues in a look of its own; `cue.style` indexes
+  // `caption_view`'s `styles`, and look 0 is the project's.
+  const look = (captionState.styles && captionState.styles[cue.style]) || captionState.style.resolved;
   // The layer's geometry is the frame's, held by CSS — only the scale is
   // computed here, and it is against the caption reference rather than the
   // canvas: a size is quoted at 1080 tall whatever the footage is.

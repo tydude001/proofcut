@@ -1515,6 +1515,37 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_overlay_add.add_argument("--plan", action="store_true", help="resolve and report without writing")
     overlay_sub.add_parser("ls", help="list overlays, bottom of the stack first, with where each plays")
+    p_cspan = sub.add_parser(
+        "caption-span", help="captions off, or a different look, over a stretch of the film"
+    )
+    cspan_sub = p_cspan.add_subparsers(dest="caption_span_command", required=True)
+    p_cspan_add = cspan_sub.add_parser(
+        "add", help="from a word or event to a word, event or length: --off, or --style JSON"
+    )
+    p_cspan_add.add_argument("clip_id", help="the clip whose words or events address the span")
+    p_cspan_add.add_argument("word_index", type=int, nargs="?", help="the word it starts on")
+    p_cspan_add.add_argument("--phrase", help="start on this phrase's first word")
+    p_cspan_add.add_argument("--event", help="start on this event (name or name#k)")
+    p_cspan_add.add_argument("--until-word", type=int, dest="until_word_index", help="end with this word")
+    p_cspan_add.add_argument("--until-phrase", help="end with this phrase's last word")
+    p_cspan_add.add_argument("--until-event", help="end on this event")
+    p_cspan_add.add_argument("--for", type=float, dest="seconds", help="end this many seconds after the start")
+    p_cspan_add.add_argument("--after", type=int, default=-1, help="only match a phrase forward of this word index")
+    p_cspan_add.add_argument("--occurrence", type=int, help="pick the Nth phrase match")
+    look = p_cspan_add.add_mutually_exclusive_group(required=True)
+    look.add_argument("--off", action="store_true", help="draw no captions over the span")
+    look.add_argument(
+        "--style",
+        type=json.loads,
+        help='caption-style fields over the span, as JSON — \'{"max_words": 1, "size": 150, "position": "middle"}\' '
+        "draws each word alone and large",
+    )
+    p_cspan_add.add_argument("--plan", action="store_true", help="resolve and report without writing")
+    cspan_sub.add_parser("ls", help="list caption spans, later ones winning, with where each plays")
+    p_cspan_rm = cspan_sub.add_parser("rm", help="remove a caption span")
+    p_cspan_rm.add_argument("position", type=int, help="its position in `caption-span ls`")
+    p_cspan_rm.add_argument("--plan", action="store_true", help="report without writing")
+
     p_follow = sub.add_parser("follow", help="put a second recording on the timeline after the first, cut or dissolved")
     p_follow.add_argument("clip_id", help="the incoming recording")
     p_follow.add_argument("after", help="the clip on the timeline it follows")
@@ -3094,6 +3125,31 @@ def _cmd_overlay(args: argparse.Namespace) -> int:
     return _emit(ops.overlay_rm(args.project, args.position, plan=args.plan))
 
 
+def _cmd_caption_span(args: argparse.Namespace) -> int:
+    if args.caption_span_command == "add":
+        return _emit(
+            ops.caption_span_add(
+                args.project,
+                args.clip_id,
+                args.word_index,
+                phrase=args.phrase,
+                event=args.event,
+                until_word_index=args.until_word_index,
+                until_phrase=args.until_phrase,
+                until_event=args.until_event,
+                seconds=args.seconds,
+                after=args.after,
+                occurrence=args.occurrence,
+                off=args.off,
+                style=args.style,
+                plan=args.plan,
+            )
+        )
+    if args.caption_span_command == "ls":
+        return _emit(ops.caption_span_ls(args.project))
+    return _emit(ops.caption_span_rm(args.project, args.position, plan=args.plan))
+
+
 def _cmd_follow(args: argparse.Namespace) -> int:
     return _emit(
         ops.follow(
@@ -3656,6 +3712,7 @@ _COMMANDS = {
     "cue": _cmd_cue,
     "unspoken": _cmd_unspoken,
     "lexicon": _cmd_lexicon,
+    "caption-span": _cmd_caption_span,
     "shots": _cmd_shots,
     "seed": _cmd_seed,
     "cut": _cmd_cut,
