@@ -115,10 +115,10 @@ written and built 2026-09-20 but for the panel's button.
 Whether a person's own b-roll picks could pick the next ones — checked and
 not built 2026-09-20 — is [docs/plans/PICKS-PRIOR.md](docs/plans/PICKS-PRIOR.md).
 **Competitor research and anything copied from another product follows
-docs/plans/DAYDREAM.md § Copyright, the DMCA, and this work**: never download
-a streaming site's videos, never commit another product's frames, templates or
-copy, copy the idea and never the expression, and proofcut never fetches
-media it was not handed. Open-item status lives in the wiki, not here. **This repo is public: a
+docs/plans/DAYDREAM.md § Copyright, the DMCA, and this work**: a research
+download stays private and is deleted once its notes are checked, never commit
+another product's frames, templates or copy, copy the idea and never the
+expression, and proofcut never fetches media it was not handed. Open-item status lives in the wiki, not here. **This repo is public: a
 goodsometimes video's production record (versions, renders, creative calls,
 release state) goes in `goodsometimes/ideas/<video>.md`**, and HISTORY.md
 keeps only what the film showed about proofcut. The rule and the reason are in

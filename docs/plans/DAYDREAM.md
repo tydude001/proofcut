@@ -1090,12 +1090,14 @@ real notice behind it goes to a lawyer.
   YouTube videos were fetched with `yt-dlp`, which YouTube's terms forbid and
   whose status under § 1201 has been argued both ways (the 2020 takedown of
   youtube-dl on GitHub, reversed; a 2021 German lower-court ruling against the host of its website).
-  That copy is private research that nobody receives, and it is the one
-  exposure this work has.
-
-**The rules.**
-
-1. **Never download a streaming site's videos for research again.** Watch in
+  That copy was private research that nobody received, and it was the one
+  exposure this work had: a breach of You1. **Downloading videos for research is allowed, and Tyler chose that on
+   2026-09-23**, knowing the trade: it breaks YouTube's terms, and its § 1201
+   status is unsettled. So a download stays private, is used only for
+   analysis, is never shared or committed, and is deleted once its notes are
+   written and checked. The notes, in our own words with short quotations,
+   are what is kept.
+reaming site's videos for research again.** Watch in
    a browser and take notes, or use files a site serves in the open. The
    2026-09-23 downloads are deleted once Tyler has reviewed the notes;
    `NOTES.md` (our words, short quotations) is what is kept.
