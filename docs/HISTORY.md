@@ -18451,3 +18451,17 @@ measured 1402 to 1672 against the render's 1402 to 1670 mid-pop, and 156 to
 617 against 156 to 616 mid-slide. The `@` popover completed `image:dog` from
 `@do` and inserted it by Enter and by a click at 0 and 120 ms dwell; a pasted
 PNG came back as `@image:sun-sticker` with the upload not kept.
+
+## Saved caption looks, built — 2026-09-24
+
+The rest of docs/plans/DAYDREAM.md § The gaps, re-ranked, item 4: the
+graphics library shipped with animated graphics, and caption looks join it
+(Daydream's "Your captions" tab). `caption_style_save`,
+`caption_style_library` and `caption_style_load`, with `proofcut caption-look`
+as their CLI. A look is the project's *stored* style, the preset and every
+override on it with the grouping rules, saved as JSON beside the graphics
+library (`PROOFCUT_LIBRARY`, else the per-user data folder). A load resolves
+the saved look through `captions.resolve` before writing it, so one this
+proofcut cannot read is refused rather than stored, and the load is an
+ordinary manifest write: undo reverts it (a test holds that). Loading into a
+second project reproduces the first's resolved look exactly.

@@ -1065,8 +1065,8 @@ Most value per cost first, each with a recommendation. This replaces
 
 **Items 1 to 4 are built**, each approved in turn: HISTORY.md § Caption
 reveal, caption spans and caption corrections, built; § Animated graphics,
-built (with item 4's graphics library); § Images in, built. Item 4's saved
-caption styles, item 5 and item 6 wait on Tyler's go.
+built (with item 4's graphics library); § Images in, built; § Saved caption
+looks, built. Items 5 and 6 wait on Tyler's go.
 
 ---
 

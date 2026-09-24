@@ -80,6 +80,9 @@ EXPECTED_TOOLS = {
     "image_add",
     "image_ls",
     "image_rm",
+    "caption_style_save",
+    "caption_style_library",
+    "caption_style_load",
     "card_safe_zones",
     "pack_apply",
     "pack_activate",
@@ -714,6 +717,7 @@ TOOL_TO_COMMAND = {
         "graphic",
     ),
     **dict.fromkeys(["image_add", "image_ls", "image_rm"], "image"),
+    **dict.fromkeys(["caption_style_save", "caption_style_library", "caption_style_load"], "caption-look"),
     "card_render": "card",
     "card_reauthor": "card",
     "card_safe_zones": "card",
@@ -8761,7 +8765,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
             assert "no project" in description, tool.name
         else:
             assert "bound project" in description, tool.name
-    assert seen == 122
+    assert seen == 124
 
 
 def test_no_tool_advertises_an_argument_with_nothing_said_about_it() -> None:

@@ -23,7 +23,7 @@ from proofcut import ops
 from proofcut import timeline as tl
 from proofcut import transcript as tx
 from proofcut.captions import CaptionError, ass_colour
-from proofcut.project import Project
+from proofcut.project import Project, ProjectError
 
 CLIP = {
     "clip_id": "vo",
@@ -320,3 +320,44 @@ def test_a_span_can_switch_the_projects_reveal_off(project: Project) -> None:
     ops.caption_style(project.root, reveal="blur", reveal_blur=8)
     ops.caption_span_add(project.root, "vo", 0, seconds=1.0, style={"reveal": "none"})
     assert ops.caption_view(project.root)["styles"][1]["reveal"] == "none"
+
+
+# -- the saved caption looks (DAYDREAM.md § The gaps, re-ranked, item 4) ----
+
+
+def test_a_saved_look_loads_into_another_project_exactly(
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PROOFCUT_LIBRARY", str(tmp_path / "lib"))
+    ops.caption_style(project.root, preset="karaoke", max_words=3, highlight="#ffd84a", position="middle")
+    saved = ops.caption_style_save(project.root, "brand")
+    assert [look["name"] for look in ops.caption_style_library()["looks"]] == ["brand"]
+    other = Project.create(tmp_path / "other")
+    ops.caption_style_load(other.root, "brand")
+    assert other.read_manifest()["caption_style"] == saved["style"]
+    assert ops.caption_style(other.root)["resolved"] == ops.caption_style(project.root)["resolved"]
+
+
+def test_saving_needs_a_look_and_a_free_name(project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PROOFCUT_LIBRARY", str(tmp_path / "lib"))
+    bare = Project.create(tmp_path / "bare")
+    with pytest.raises(ProjectError, match="no caption look of its own"):
+        ops.caption_style_save(bare.root, "x")
+    ops.caption_style(project.root, preset="boxed")
+    ops.caption_style_save(project.root, "x")
+    with pytest.raises(ProjectError, match="saved already"):
+        ops.caption_style_save(project.root, "x")
+    with pytest.raises(ProjectError, match="no caption look 'y'"):
+        ops.caption_style_load(project.root, "y")
+
+
+def test_loading_a_look_is_undone_by_undo(project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PROOFCUT_LIBRARY", str(tmp_path / "lib"))
+    ops.caption_style(project.root, preset="boxed")
+    ops.caption_style_save(project.root, "boxed-look")
+    ops.caption_style(project.root, reset=True, preset="karaoke")
+    ops.caption_style_load(project.root, "boxed-look")
+    assert project.read_manifest()["caption_style"]["preset"] == "boxed"
+    ops.undo(project.root)
+    assert project.read_manifest()["caption_style"]["preset"] == "karaoke"
+

@@ -114,7 +114,7 @@ Beyond those stages:
   full frame or ride over the film as stickers: placed, sized, turned, framed
   as a photo card, popping or sliding in. Paste one into the agent's prompt
   and it is added.
-- **Built for agents.** 127 MCP tools with typed inputs, structured returns
+- **Built for agents.** 130 MCP tools with typed inputs, structured returns
   and read/write annotations, so Claude Code, Codex or your own agent can
   drive it and a permission layer can tell a look from a change.
 - **No lock-in.** The timeline is OpenTimelineIO, the manifest is JSON, and

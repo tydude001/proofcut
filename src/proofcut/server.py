@@ -360,6 +360,7 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "speech_overlap", "review_list",
             # The sheet lands in the project's own sheet cache and nowhere asked.
             "graphic_templates", "graphic_ls", "graphic_sheet", "graphic_library", "image_ls",
+            "caption_style_library",
         ],
         _READ,
     ),
@@ -400,7 +401,9 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             # same page. The library copies are keyed by name the same way.
             "graphic_new", "graphic_edit", "graphic_capture", "graphic_save", "graphic_load",
             # Refused if the name is taken unless `replace`, which replaces it.
-            "image_add",
+            "image_add", "caption_style_save",
+            # Replaces the project's caption look with the saved one, whole.
+            "caption_style_load",
             # Replaces the dissolve at its join, or clears it.
             "dissolve",
             # Rewrites the generated WAVs with the same bytes; imports only
@@ -1756,6 +1759,13 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         ),
         "clear": "Remove every event on this clip.",
     },
+    "caption_style_save": {
+        "name": "What to call the look in this machine's library: lowercase letters, digits, - and _.",
+        "replace": "Replace a saved look of this name. Unset, a taken name is refused.",
+    },
+    "caption_style_load": {
+        "name": "The saved look to use (caption_style_library lists them).",
+    },
     "image_add": {
         "source": (
             "The image file: PNG, JPEG, WebP, HEIC, GIF (its first frame), AVIF, TIFF or BMP. "
@@ -2892,6 +2902,27 @@ def card_templates(name: str | None = None) -> dict[str, Any]:
     template's slots — the whole table is long.
     """
     return ops.card_templates(name)
+
+
+@_tool()
+def caption_style_save(path: ProjectPath = None, *, name: str, replace: bool = False) -> dict[str, Any]:
+    """Save this project's caption look to this machine's library, so any project can load it.
+
+    The preset and every override on it are saved, grouping rules included.
+    """
+    return ops.caption_style_save(path, name, replace=replace)
+
+
+@_tool()
+def caption_style_library() -> dict[str, Any]:
+    """Every caption look saved to this machine's library, each with what it resolves to."""
+    return ops.caption_style_library()
+
+
+@_tool()
+def caption_style_load(path: ProjectPath = None, *, name: str, plan: bool = False) -> dict[str, Any]:
+    """Make a saved caption look this project's, replacing the one it has. Undo reverts it."""
+    return ops.caption_style_load(path, name, plan=plan)
 
 
 @_tool()

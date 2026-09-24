@@ -345,6 +345,15 @@ proofcut lexicon ls
 proofcut lexicon rm rough
 ```
 
+A look worth keeping is saved to this machine's library and loaded into any
+other project, preset, overrides and grouping rules together:
+
+```sh
+proofcut caption-look save brand          # this project's look, as `brand`
+proofcut caption-look library             # every saved look, resolved
+proofcut -C other caption-look load brand  # replaces that project's look; undo reverts it
+```
+
 ## Transcript checks and `unspoken`
 
 Attaching a transcript checks it against itself and reports four findings —

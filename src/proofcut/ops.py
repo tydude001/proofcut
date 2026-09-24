@@ -17944,6 +17944,71 @@ def lexicon_rm(path: Path | str, heard: str, *, kind: str = "hear", plan: bool =
     return result
 
 
+def _caption_library() -> Path:
+    """Saved caption looks, beside the graphics library (`anim.library_root`)."""
+    return anim.library_root().parent / "captions"
+
+
+def caption_style_save(path: Path | str, name: str, *, replace: bool = False) -> dict[str, Any]:
+    """Save this project's caption look under `name`, for every project on this machine.
+
+    What is saved is the stored look — the preset and every override on it —
+    so a load reproduces the look exactly, grouping rules included.
+    """
+    project = Project.open(path)
+    with _graphic_errors():
+        anim.check_name(name)
+    stored = _stored_caption_style(project)
+    if not stored:
+        raise ProjectError("this project has no caption look of its own to save — set one with caption_style")
+    target = _caption_library() / f"{name}.json"
+    if target.exists() and not replace:
+        raise ProjectError(f"a caption look called {name!r} is saved already — pass replace to overwrite it")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(stored, indent=2, sort_keys=True) + "\n")
+    return {"saved": name, "library": str(target.parent), "style": stored}
+
+
+def caption_style_library() -> dict[str, Any]:
+    """Every caption look saved to this machine's library, with what it resolves to."""
+    folder = _caption_library()
+    looks = []
+    for file in sorted(folder.glob("*.json")) if folder.is_dir() else []:
+        try:
+            stored = json.loads(file.read_text())
+            looks.append({"name": file.stem, **captions.resolve(stored).describe()})
+        except (OSError, ValueError, captions.CaptionError) as exc:
+            looks.append({"name": file.stem, "error": str(exc)})
+    return {"library": str(folder), "looks": looks}
+
+
+def caption_style_load(path: Path | str, name: str, *, plan: bool = False) -> dict[str, Any]:
+    """Make a saved caption look this project's, replacing the one it has.
+
+    The saved look is resolved before anything is written, so one an older or
+    newer proofcut cannot read is refused rather than stored. Undo reverts it.
+    """
+    project = Project.open(path)
+    with _graphic_errors():
+        anim.check_name(name)
+    source = _caption_library() / f"{name}.json"
+    if not source.is_file():
+        known = [look["name"] for look in caption_style_library()["looks"]]
+        raise ProjectError(
+            f"no caption look {name!r} is saved" + (f" — the library has {', '.join(known)}" if known else " — the library is empty")
+        )
+    try:
+        stored = json.loads(source.read_text())
+        resolved = captions.resolve(stored)
+    except (ValueError, captions.CaptionError) as exc:
+        raise ProjectError(f"the saved look {name!r} cannot be read: {exc}") from None
+    if not plan:
+        manifest = project.read_manifest()
+        manifest[CAPTION_STYLE_KEY] = stored
+        project.write_manifest(manifest)
+    return {"loaded": name, "plan": bool(plan), **resolved.describe()}
+
+
 def caption_style(
     path: Path | str,
     *,

@@ -578,6 +578,16 @@ def _build_parser() -> argparse.ArgumentParser:
     p_graphic_load.add_argument("--no-capture", action="store_true", help="copy only")
     p_graphic_load.add_argument("--pages", type=int, default=2, help="browser pages capturing side by side (1-8)")
 
+    p_look = sub.add_parser("caption-look", help="caption looks saved to this machine's library, across projects")
+    look_sub = p_look.add_subparsers(dest="look_command", required=True)
+    p_look_save = look_sub.add_parser("save", help="save this project's caption look")
+    p_look_save.add_argument("name")
+    p_look_save.add_argument("--replace", action="store_true", help="replace a saved look of this name")
+    look_sub.add_parser("library", help="every saved caption look")
+    p_look_load = look_sub.add_parser("load", help="make a saved look this project's")
+    p_look_load.add_argument("name")
+    p_look_load.add_argument("--plan", action="store_true", help="report the look without writing it")
+
     p_image = sub.add_parser("image", help="still images: added once, shown full frame (image:NAME) or as stickers")
     image_sub = p_image.add_subparsers(dest="image_command", required=True)
     p_image_add = image_sub.add_parser("add", help="add a still, upright and in a format everything reads")
@@ -2604,6 +2614,14 @@ def _cmd_card(args: argparse.Namespace) -> int:
     return _emit(ops.card_render(args.project, args.name, width=args.width, height=args.height))
 
 
+def _cmd_caption_look(args: argparse.Namespace) -> int:
+    if args.look_command == "save":
+        return _emit(ops.caption_style_save(args.project, args.name, replace=args.replace))
+    if args.look_command == "library":
+        return _emit(ops.caption_style_library())
+    return _emit(ops.caption_style_load(args.project, args.name, plan=args.plan))
+
+
 def _cmd_image(args: argparse.Namespace) -> int:
     if args.image_command == "add":
         return _emit(ops.image_add(args.project, args.source, name=args.name, replace=args.replace))
@@ -3845,6 +3863,7 @@ _COMMANDS = {
     "card": _cmd_card,
     "graphic": _cmd_graphic,
     "image": _cmd_image,
+    "caption-look": _cmd_caption_look,
     "pack": _cmd_pack,
     "cue": _cmd_cue,
     "unspoken": _cmd_unspoken,
