@@ -18285,7 +18285,8 @@ is timeline time. Driven through the page's own Home key, it matched.
 
 **Still open from the browser pass.** The window draws caption type about 10%
 larger than the burn at the same frame. That predates this work and the
-reveal does not touch size.
+reveal does not touch size. (Closed the next day, and it was 24%: § The
+preview's captions were a quarter too large.)
 
 **The watch.** Two review rounds over Tailscale from
 `~/proofcut-work/spikes/caption-reveal/`: `round-arrive` (the rebuild's
@@ -18299,3 +18300,33 @@ and no default moves (a project with no `reveal` still has none; the `reveal`
 preset keeps its fade). Round 2: he likes the big word but would not use it
 every time, which is what a span already is: opt-in, one beat at a time,
 never a default. Verdicts are recorded in the two rounds' review lists.
+
+## The preview's captions were a quarter too large — 2026-09-24
+
+The window drew caption type larger than the burn. The note above estimated
+10%. On a copy of the Pup BNB rebuild (Outfit Bold, size 110, at t = 6.0 s),
+the same words "Pup BNB," measured 292 px wide in the page against the burn's
+234 px scaled to the same 693 px frame: **1.25x**.
+
+**The cause is libass's size semantics, not the scale.** libass mimics GDI:
+`Fontsize` is the height of the face's OS/2 `usWinAscent + usWinDescent`, and
+the em is whatever that leaves (`set_font_metrics` and a `REAL_DIM` size
+request in `ass_font.c`). CSS `font-size` *is* the em. Outfit's win pair is
+1000 + 260 on a 1000-unit em, so the page drew every glyph 1260/1000 too
+large. The ratio is per face, so it is not a constant to hard-code: Zilla Slab
+is 1/1.2 and this box's Noto Sans substitute is 1/1.52.
+
+**The fix.** `captions.em_scale` asks fontconfig for the file libass would
+get and reads `unitsPerEm / (winAscent + winDescent)` off its tables (no font
+library; `hhea` when the win pair sums to zero, which is libass's own
+fallback). `caption_view` hands it to the page on every look as `em_scale`,
+and `player.js` multiplies the font size by it. No file means `None`, and the
+page then draws 1:1 as it did before.
+
+**Measured in a real browser, with a control on a second face.** Outfit after
+the fix: 232 px wide against 234, the P's cap 40 px against 40.4, its top at
+326 against 326.6. Zilla Slab, burned fresh as the control because its ratio
+differs: ink x 424–664 against the burn's 423–665, the P's rows 328–366
+against 328.5–367. Both land within a pixel or two of the burn in size and in
+vertical placement. Spike: `~/proofcut-work/spikes/caption-preview-size/`.
+

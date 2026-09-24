@@ -245,6 +245,32 @@ def test_caption_view_carries_the_reference_canvas(project: Project) -> None:
     assert ops.caption_view(project.root)["resolution"] == [1920, 1080]
 
 
+def test_caption_view_carries_the_em_scale_of_each_look(
+    project: Project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """libass's `Fontsize` is the face's win ascent+descent and CSS's is its
+    em, so the preview scales by this or draws Outfit a quarter too large
+    (HISTORY.md § The preview's captions were a quarter too large)."""
+    from proofcut import captions
+
+    monkeypatch.setattr(captions, "em_scale", lambda name, *, bold=False: 0.5 if bold else 0.25)
+    view = ops.caption_view(project.root)
+
+    assert view["style"]["resolved"]["em_scale"] in (0.5, 0.25)
+    assert [look["em_scale"] for look in view["styles"]] == [view["style"]["resolved"]["em_scale"]]
+
+
+def test_the_vendored_caption_face_draws_its_em_at_1000_of_1260() -> None:
+    """Outfit's win ascent+descent is 1000+260 on a 1000-unit em, read off the
+    file itself — no fontconfig, so every CI runner asks the same question."""
+    from proofcut import captions, fonts
+
+    for face in ("Outfit[wght].ttf", "static/Outfit-Bold.ttf", "static/Outfit-Regular.ttf"):
+        data = (fonts.VENDORED_DIR / face).read_bytes()
+        assert captions._win_em_scale(data) == pytest.approx(1000 / 1260), face
+    assert captions._win_em_scale(b"not a font") is None
+
+
 def test_cues_are_in_timeline_seconds(project: Project) -> None:
     """The clock a viewer has. A cut before a cue moves it earlier."""
     before = ops.caption_view(project.root)["cues"][0]["start"]

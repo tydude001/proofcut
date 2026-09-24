@@ -26,6 +26,7 @@ sidecar `.ass` stays editable there while burned pixels do not.
 from __future__ import annotations
 
 import re
+import struct
 import subprocess
 import tempfile
 from collections.abc import Sequence
@@ -586,8 +587,6 @@ def _win_em_scale(data: bytes) -> float | None:
     `hhea` pair is libass's fallback when the win pair sums to zero, and so is
     it here.
     """
-    import struct
-
     try:
         base = struct.unpack(">I", data[8:12])[0] if data[:4] == b"ttcf" else 0
         count = struct.unpack(">H", data[base + 4 : base + 6])[0]
