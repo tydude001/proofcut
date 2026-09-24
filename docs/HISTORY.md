@@ -18400,3 +18400,54 @@ and refuses it with the packages to install when `ldd` finds a library
 missing. Installed on this box with `proofcut setup --yes`: doctor then found
 it in setup's folder with no environment variable, and the 36 graphic tests
 ran with none skipped.
+
+## Images in, built — 2026-09-24
+
+docs/plans/DAYDREAM.md § The gaps, re-ranked, item 3, approved the same day
+("proceed with your recommendations"): stills at import, `@` an asset in the
+prompt, and image overlays with pop and slide entrances.
+
+**What shipped.** `stills.py` and three tools with CLI twins (`image_add`,
+`image_ls`, `image_rm`). A still lands at `assets/images/<name>.png|.jpg`
+with a sidecar saying where it came from, and is used two ways: full frame as
+a picture cue's `image:<name>`, or over the film as a sticker,
+`overlay_add(image=, x=, y=, width=, rotate=, style=)`. `list_media` lists a
+folder's stills under `images`, so an agent with no directory listing finds
+them. The window completes `@` over clips, cards, images and graphics, and an
+image pasted or dropped into the agent's prompt is added (`POST /api/image`)
+and named in the prompt as `@image:<name>`.
+
+**A still is made upright once, at add.** A phone photo's EXIF orientation is
+honoured by some of melt, the browser and magick and ignored by others, which
+draws it on its side in one of them at exit 0. So a PNG or an upright JPEG is
+copied untouched and anything else is written once, upright: a PNG, or a JPEG
+for a camera format. Checked on a JPEG tagged "rotate 90 clockwise": it landed
+200x400 with its red quarter on top and its tag reset.
+
+**A sticker is a canvas-sized PNG with a box.** `compose_sticker` sizes the
+still, frames it as a photo card if asked (a white border and a soft shadow),
+turns it, and places it on a transparent canvas, cached by its inputs. That
+makes it an ordinary overlay piece, and its box is what the new motions need:
+`pop` scales about the sticker's own centre from 0.3 through 1.08 to rest,
+and the four `slide-` motions travel just far enough to clear their edge.
+
+**The preview interpolates the writer's keys and derives no motion.**
+`mlt.overlay_keys` is the one list of an overlay's keys; `overlay_rect`
+formats it into the document, and `timeline_view` hands the same list to the
+window, which draws each key's rect as a translate and a scale of the
+canvas-sized image from its top left, exactly what `qtblend` does. Every
+existing fade and rise document is byte-identical (the overlay tests pin it).
+
+**Read back through melt, and against the preview.** On the Pup BNB copy, a
+round sticker popping in and a tilted photo card sliding in from the left and
+out to the right rendered 242 of 242 frames. The pop's ink edges sat within a
+pixel or two of the keys at every sampled frame (1434 to 1638 at frame 3 of
+the entrance, against about 1435 to 1638, allowing for the image's own 20px
+transparent margin), the slide's frame 0 differed from the render without it
+only by H.264 noise (47 scattered pixels, the photo fully off the frame), and
+an `image:` cue of the upright photo drew at x 690 to 1230, full height,
+contained. In a real browser at the same instants the preview's sticker ink
+measured 1402 to 1672 against the render's 1402 to 1670 mid-pop, and 156 to
+617 against 156 to 616 mid-slide. The `@` popover completed `image:dog` from
+`@do` and inserted it by Enter and by a click at 0 and 120 ms dwell; a pasted
+PNG came back as `@image:sun-sticker` with the upload not kept.

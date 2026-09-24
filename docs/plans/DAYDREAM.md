@@ -1063,7 +1063,10 @@ Most value per cost first, each with a recommendation. This replaces
    whether a server may open a second project for a footage split (a
    question, since `-C` binding is deliberate); the Resolve question above.
 
-**Nothing here is built.** The order waits on Tyler's review.
+**Items 1 to 4 are built**, each approved in turn: HISTORY.md § Caption
+reveal, caption spans and caption corrections, built; § Animated graphics,
+built (with item 4's graphics library); § Images in, built. Item 4's saved
+caption styles, item 5 and item 6 wait on Tyler's go.
 
 ---
 

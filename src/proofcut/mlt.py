@@ -154,7 +154,13 @@ class Entry:
 #: `overlay_add` takes. `rise` travels `OVERLAY_RISE` (at 1080 lines, scaled
 #: to the canvas) while it fades; `fade` only fades; `none` is a cut.
 #: docs/plans/NATIVE.md § B3, designed.
-OVERLAY_MOTIONS = ("fade", "rise", "none")
+OVERLAY_MOTIONS = ("fade", "rise", "none", "pop", "slide-left", "slide-right", "slide-top", "slide-bottom")
+
+#: A `pop`: in from this scale, fading up, past full size to the overshoot at
+#: this share of the entrance, then settling — about the overlay's own box.
+POP_FROM = 0.3
+POP_OVERSHOOT = 1.08
+POP_PEAK = 0.7
 
 #: How far a `rise` travels, in pixels of a 1080-line canvas — the launch
 #: clip's headline (`clip.py` § overlay).
@@ -185,6 +191,10 @@ class Overlay:
     #: How far a `rise` travels, in pixels at 1080 lines — a lower third's
     #: footnote layer rises less than its headline (RECUT.md step 7).
     rise: int = OVERLAY_RISE
+    #: Where on the canvas the overlay's ink is, `(x0, y0, x1, y1)` — a
+    #: sticker's box. A pop scales about its centre and a slide travels just
+    #: far enough to clear the frame; None is the whole canvas.
+    box: tuple[int, int, int, int] | None = None
 
     @property
     def end(self) -> int:
@@ -218,8 +228,12 @@ def overlay_lanes(overlays: list[Overlay]) -> list[int]:
     return lanes
 
 
-def overlay_rect(overlay: Overlay, resolution: tuple[int, int]) -> str | None:
-    """The overlay's `qtblend` `rect` keys, or None where it never moves or fades.
+def overlay_keys(overlay: Overlay, resolution: tuple[int, int]) -> list[dict[str, Any]]:
+    """The overlay's `qtblend` keys as data: frame, the curve leaving it, rect, opacity.
+
+    One list, read by two consumers — `overlay_rect` writes it into the
+    document, and `timeline_view` hands it to the preview, which interpolates
+    it rather than deriving a motion of its own.
 
     Keys count from the *producer's* frame, and the entry reads its still
     from frame 0, so they are the overlay's own frame numbers. **A moving key
@@ -228,33 +242,70 @@ def overlay_rect(overlay: Overlay, resolution: tuple[int, int]) -> str | None:
     key too leaves the type sub-pixel off and resampled. With only the moving
     key nudged the scale reaches unity gradually, so the move is continuous
     and lands on the exact row (spike `rise-mixed`). One operator shapes both
-    position and opacity, on the key that leaves.
+    position and opacity, on the key that leaves. A `pop` is never 1:1 while
+    it moves, so it needs no nudge.
     """
     width, height = resolution
     rest = (0, 0, width, height)
     travel = round(overlay.rise * height / 1080)
+    x0, y0, x1, y1 = overlay.box or (0, 0, width, height)
 
-    def key(frame: int, operator: str, rect: tuple[int, int, int, int], opacity: int) -> str:
-        return f"{frame}{operator}={rect[0]} {rect[1]} {rect[2]} {rect[3]} {opacity}"
+    def scaled(factor: float) -> tuple[int, int, int, int]:
+        ax, ay = (x0 + x1) / 2, (y0 + y1) / 2
+        return (round(ax * (1 - factor)), round(ay * (1 - factor)), round(width * factor), round(height * factor))
 
-    def away(motion: str) -> tuple[int, int, int, int]:
+    def away(motion: str) -> tuple[tuple[int, int, int, int], int]:
+        """Where a motion starts from (or ends at), and its opacity there."""
         if motion == "rise":
-            return _off_unity((0, travel, width, height))
-        return rest
+            return _off_unity((0, travel, width, height)), 0
+        if motion == "slide-left":
+            return _off_unity((-x1 - 2, 0, width, height)), 1
+        if motion == "slide-right":
+            return _off_unity((width - x0 + 2, 0, width, height)), 1
+        if motion == "slide-top":
+            return _off_unity((0, -y1 - 2, width, height)), 1
+        if motion == "slide-bottom":
+            return _off_unity((0, height - y0 + 2, width, height)), 1
+        return rest, 0
+
+    def k(frame: int, ease: str | None, rect: tuple[int, int, int, int], opacity: int) -> dict[str, Any]:
+        return {"frame": frame, "ease": ease, "rect": rect, "opacity": opacity}
 
     last = overlay.frames - 1
-    keys: list[str] = []
+    keys: list[dict[str, Any]] = []
     if overlay.in_motion != "none" and overlay.in_frames:
-        keys.append(key(0, EASINGS[overlay.in_ease], away(overlay.in_motion), 0))
-        keys.append(key(overlay.in_frames, "", rest, 1))
+        n = overlay.in_frames
+        if overlay.in_motion == "pop":
+            peak = min(n - 1, max(1, round(n * POP_PEAK)))
+            keys += [k(0, overlay.in_ease, scaled(POP_FROM), 0), k(peak, "ease", scaled(POP_OVERSHOOT), 1)]
+        else:
+            rect, opacity = away(overlay.in_motion)
+            keys.append(k(0, overlay.in_ease, rect, opacity))
+        keys.append(k(n, None, rest, 1))
     if overlay.out_motion != "none" and overlay.out_frames:
         leave = last - overlay.out_frames
-        if keys and leave == overlay.in_frames:
-            keys[-1] = key(leave, EASINGS[overlay.out_ease], rest, 1)
+        if keys and keys[-1]["frame"] == leave:
+            keys.pop()
+        if overlay.out_motion == "pop":
+            peak = leave + min(overlay.out_frames - 1, max(1, round(overlay.out_frames * (1 - POP_PEAK))))
+            keys += [
+                k(leave, "ease", rest, 1),
+                k(peak, overlay.out_ease, scaled(POP_OVERSHOOT), 1),
+                k(last, None, scaled(POP_FROM), 0),
+            ]
         else:
-            keys.append(key(leave, EASINGS[overlay.out_ease], rest, 1))
-        keys.append(key(last, "", away(overlay.out_motion), 0))
-    return ";".join(keys) or None
+            rect, opacity = away(overlay.out_motion)
+            keys += [k(leave, overlay.out_ease, rest, 1), k(last, None, rect, opacity)]
+    return keys
+
+
+def overlay_rect(overlay: Overlay, resolution: tuple[int, int]) -> str | None:
+    """The overlay's `qtblend` `rect` keys, or None where it never moves or fades."""
+    return ";".join(
+        f"{key['frame']}{EASINGS[key['ease']] if key['ease'] else ''}="
+        f"{key['rect'][0]} {key['rect'][1]} {key['rect'][2]} {key['rect'][3]} {key['opacity']}"
+        for key in overlay_keys(overlay, resolution)
+    ) or None
 
 
 def _check_overlay(overlay: Overlay, total_frames: int) -> None:

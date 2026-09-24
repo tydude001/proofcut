@@ -12,6 +12,7 @@ import http.client
 import json
 import math
 import re
+import base64
 import shutil
 import struct
 import subprocess
@@ -1483,6 +1484,23 @@ def test_a_graphic_frame_is_served_and_nothing_beside_it_is(project: Path, serve
     assert status == 200 and body == frame.read_bytes()
     for bad in ("graphic:..%2Fhl/intro/7", "graphic:hl/..%2F..%2Fcards/7", "graphic:hl/intro/7%2F..", "graphic:hl/capture/0"):
         assert _get(f"{server}/api/asset/{bad}")[0] == 400, bad
+
+
+@pytest.mark.skipif(shutil.which("magick") is None, reason="ImageMagick is not installed")
+def test_an_image_pasted_into_the_prompt_is_added_and_named(project: Path, server: str, tmp_path: Path) -> None:
+    """`POST /api/image` is `ops.image_add` behind the JSON guard: a taken name
+    gets a number rather than a refusal, and a non-image is a 400."""
+    png = tmp_path / "s.png"
+    subprocess.run(["magick", "-size", "8x8", "xc:red", str(png)], check=True)
+    data = base64.b64encode(png.read_bytes()).decode()
+    first = _post(f"{server}/api/image", {"filename": "Sun Sticker.png", "data": data})
+    second = _post(f"{server}/api/image", {"filename": "Sun Sticker.png", "data": data})
+    assert first[0] == 200 and first[1]["asset"] == "image:sun-sticker"
+    assert second[1]["asset"] == "image:sun-sticker-2"
+    assert "pasted" in first[1]["image"]["source"]
+    assert _post(f"{server}/api/image", {"filename": "notes.txt", "data": data})[0] == 400
+    assert _post(f"{server}/api/image", {"filename": "a.png", "data": data}, content_type="text/plain")[0] == 400
+    assert not list((Project.open(project).root / "cache" / "uploads").iterdir()), "the upload is not kept"
 
 
 def test_a_card_name_cannot_climb_out_of_the_cards_directory(server: str) -> None:

@@ -68,8 +68,8 @@ INSTRUCTIONS = (
     "reframe, reframe_sheet, inset_add (a clip inside the recording), follow "
     "(a second recording after the first, dissolved)\n"
     "- sound: music (the bed), hold_add, vo_extend, vo_synth, sound_add (one-shots at events)\n"
-    "- cards and ends: card_templates, card_new, graphic_templates, graphic_new (animated), "
-    "overlay_add (a card or graphic over the film), head, tail\n"
+    "- cards, graphics, stills: card_new, graphic_new (animated), image_add, overlay_add "
+    "(any of them over the film), head, tail\n"
     "- finish: add_captions, caption_style, lexicon_add (caption spelling), caption_span_add (captions off or a big word), export "
     "(render with export_format=null)\n"
     "- checks: check_frames, verify, film_check, finish_check; changes (what the last edits did)\n\n"
@@ -359,7 +359,7 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "broll_brief", "verify", "check_frames", "check_black", "spot_frames",
             "speech_overlap", "review_list",
             # The sheet lands in the project's own sheet cache and nowhere asked.
-            "graphic_templates", "graphic_ls", "graphic_sheet", "graphic_library",
+            "graphic_templates", "graphic_ls", "graphic_sheet", "graphic_library", "image_ls",
         ],
         _READ,
     ),
@@ -399,6 +399,8 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             # replaces it whole; a capture rewrites the same cache from the
             # same page. The library copies are keyed by name the same way.
             "graphic_new", "graphic_edit", "graphic_capture", "graphic_save", "graphic_load",
+            # Refused if the name is taken unless `replace`, which replaces it.
+            "image_add",
             # Replaces the dissolve at its join, or clears it.
             "dissolve",
             # Rewrites the generated WAVs with the same bytes; imports only
@@ -421,7 +423,7 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "clip_rm", "transcribe", "cue_rm", "unspoken_rm", "unspoken_detect",
             "cut_by_transcript", "cut_by_time", "undo", "vo_extend", "vo_synth",
             "hold_add", "hold_rm", "hold_under_rm", "reel", "continuity_reject",
-            "overlay_rm", "sound_rm", "retime_rm", "inset_rm",
+            "overlay_rm", "sound_rm", "retime_rm", "inset_rm", "image_rm",
             "review_add",
             # Refuses a key it lacks, so a repeat is not a no-op.
             "lexicon_rm",
@@ -1754,6 +1756,17 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         ),
         "clear": "Remove every event on this clip.",
     },
+    "image_add": {
+        "source": (
+            "The image file: PNG, JPEG, WebP, HEIC, GIF (its first frame), AVIF, TIFF or BMP. "
+            "list_media lists the ones in a folder under `images`."
+        ),
+        "name": "What to call it; `image:<name>` is how a cue names it. Unset, from the filename.",
+        "replace": "Replace an image of this name. Unset, a taken name is refused.",
+    },
+    "image_rm": {
+        "name": "The image to remove. Refused while a cue or overlay places it.",
+    },
     "overlay_add": {
         "card": (
             "The overlay card to place: one made by card_new from an overlay template "
@@ -1766,6 +1779,15 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "a span shorter than intro plus outro is refused. It enters and leaves with no "
             "motion of its own unless enter/leave say so."
         ),
+        "image": (
+            "A still (image_add) to place as a sticker, instead of a card or graphic. It pops "
+            "in and fades out unless enter/leave say otherwise."
+        ),
+        "x": "A sticker's centre across the frame: 0 is the left edge, 1 the right. Default 0.5.",
+        "y": "A sticker's centre down the frame: 0 is the top, 1 the bottom. Default 0.5.",
+        "width": "A sticker's width, as a fraction of the frame's width. Default 0.3.",
+        "rotate": "Degrees to turn a sticker, clockwise; negative turns it the other way.",
+        "style": "`plain`, or `photo`: a white border and a soft shadow, a photo card.",
         "clip_id": (
             "The clip whose words or events address the span — the transcript the "
             "word indices index, or the recording the events belong to."
@@ -1781,10 +1803,17 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         "seconds": (
             "End this long after the start. A length, so a cut inside the span does not shorten it."
         ),
-        "enter": "How it appears: `rise` (moves up while fading in), `fade`, or `none` (a cut). Default rise for a card, none for a graphic.",
+        "enter": (
+            "How it appears: `rise` (moves up while fading in), `fade`, `pop` (scales up past full "
+            "size and settles), `slide-left`/`slide-right`/`slide-top`/`slide-bottom` (in from "
+            "that edge), or `none` (a cut). Default rise for a card, pop for an image, none for a graphic."
+        ),
         "enter_seconds": "How long the entrance takes. Default 0.45.",
         "enter_ease": "The entrance's curve: linear, ease, ease-in or ease-out. Default ease-out.",
-        "leave": "How it goes: `fade`, `rise` (moves down while fading out), or `none`. Default fade for a card, none for a graphic.",
+        "leave": (
+            "How it goes: `fade`, `rise` (moves down while fading out), `pop`, a `slide-` out to "
+            "that edge, or `none`. Default fade for a card or image, none for a graphic."
+        ),
         "leave_seconds": "How long the exit takes. Default 0.3.",
         "leave_ease": "The exit's curve: linear, ease, ease-in or ease-out. Default ease-in.",
         "position": (
@@ -2863,6 +2892,32 @@ def card_templates(name: str | None = None) -> dict[str, Any]:
     template's slots — the whole table is long.
     """
     return ops.card_templates(name)
+
+
+@_tool()
+def image_add(
+    path: ProjectPath = None, *, source: str, name: str | None = None, replace: bool = False
+) -> dict[str, Any]:
+    """Add a still image to the project: a photo, a logo, a cut-out sticker.
+
+    It lands upright (a phone photo's EXIF rotation applied) in a format the
+    render and the window both read. Then show it full frame with
+    cue_add(asset="image:<name>"), or place it over the film as a sticker
+    with overlay_add(image=name, x=, y=, width=, rotate=, style="photo").
+    """
+    return ops.image_add(path, source, name=name, replace=replace)
+
+
+@_tool()
+def image_ls(path: ProjectPath = None) -> dict[str, Any]:
+    """Every still in the project, where it came from, its size, and the cues and overlays placing it."""
+    return ops.image_ls(path)
+
+
+@_tool()
+def image_rm(path: ProjectPath = None, *, name: str) -> dict[str, Any]:
+    """Remove a still nothing places. A cue or overlay using it is named instead."""
+    return ops.image_rm(path, name)
 
 
 @_tool()
@@ -5267,6 +5322,12 @@ def overlay_add(
     *,
     card: str | None = None,
     graphic: str | None = None,
+    image: str | None = None,
+    x: float | None = None,
+    y: float | None = None,
+    width: float | None = None,
+    rotate: float | None = None,
+    style: str | None = None,
     clip_id: str,
     word_index: int | None = None,
     phrase: str | None = None,
@@ -5286,7 +5347,7 @@ def overlay_add(
     position: int | None = None,
     plan: bool = False,
 ) -> dict[str, Any]:
-    """Draw a transparent card or an animated graphic over the film — a lower third, the scrim under one, a graphic.
+    """Draw a transparent card, an animated graphic or a still over the film — a lower third, a graphic, a sticker.
 
     Make the card first with card_new from `lowerthird` (a headline and an
     optional footnote, bottom left) or `scrim` (a dark gradient for type to sit
@@ -5308,6 +5369,12 @@ def overlay_add(
         clip_id,
         word_index,
         graphic=graphic,
+        image=image,
+        x=x,
+        y=y,
+        width=width,
+        rotate=rotate,
+        style=style,
         phrase=phrase,
         event=event,
         until_word_index=until_word_index,

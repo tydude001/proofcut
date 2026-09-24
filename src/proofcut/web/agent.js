@@ -733,14 +733,11 @@ function describeOp(payload) {
 // -- @-mentions of assets (item 3) -------------------------------------------
 //
 // Pure composer sugar: the agent already reaches media through its own MCP
-// tools, so this adds no capability and no endpoint — it only inserts text.
-// Completion is over `ctx.getView().clips` (already shipped by
-// `ops.timeline_view`, read fresh on every keystroke rather than cached,
-// matching player.js/transcript.js's own "read the view through
-// `ctx.getView()`" convention), scoped to "the project's registered
-// clips/media" per the task's own wording — not the separate, unlisted
-// card-asset registry (`cue_ls` only enumerates *placed* cues, never
-// unplaced cards; completing over them would need a new endpoint).
+// tools, so this adds no capability — it only inserts text. Completion is
+// over `ctx.getView().clips` and `ctx.getView().mentionable` (the cards,
+// images and graphics `ops._mentionable` lists by name), read fresh on every
+// keystroke rather than cached, matching player.js/transcript.js's own "read
+// the view through `ctx.getView()`" convention.
 //
 // Not caret-precise: the popover anchors to the composer box
 // (`.agent-composer { position: relative }`), not the exact caret pixel — a
@@ -773,9 +770,24 @@ function updateMentionState() {
     closeMention();
     return;
   }
-  const clips = ctx.getView()?.clips || [];
+  // Clips by id, and the view's `mentionable` stills and graphics by their
+  // asset key (`image:dog`, `graphic:title`, `card:outro`) — matched on the
+  // whole key or on the name after its prefix, so `@do` finds `image:dog`.
+  const view = ctx.getView() || {};
+  const candidates = [
+    ...(view.clips || []).map((c) => ({
+      token: c.clip_id,
+      label: c.clip_id + (c.has_transcript ? "" : " (no transcript)"),
+    })),
+    ...(view.mentionable || []).map((key) => ({ token: key, label: key })),
+  ];
   const q = active.query.toLowerCase();
-  const matches = clips.filter((c) => c.clip_id.toLowerCase().startsWith(q)).slice(0, 8);
+  const matches = candidates
+    .filter((c) => {
+      const token = c.token.toLowerCase();
+      return token.startsWith(q) || token.slice(token.indexOf(":") + 1).startsWith(q);
+    })
+    .slice(0, 8);
   if (matches.length === 0) {
     // Nothing to complete — degrade to plain text, per this feature's own
     // contract: no popover, Enter still sends, "@text" goes to the agent
@@ -787,14 +799,14 @@ function updateMentionState() {
   renderMentionPopover();
 }
 
-function insertMention(clipId) {
+function insertMention(token) {
   const promptBox = $("agent-prompt");
   const { start, query } = mentionState;
   const end = start + 1 + query.length;
   const before = promptBox.value.slice(0, start);
   const after = promptBox.value.slice(end);
-  promptBox.value = `${before}@${clipId} ${after}`;
-  const caret = before.length + clipId.length + 2;
+  promptBox.value = `${before}@${token} ${after}`;
+  const caret = before.length + token.length + 2;
   promptBox.focus();
   promptBox.setSelectionRange(caret, caret);
   closeMention();
@@ -808,20 +820,55 @@ function renderMentionPopover() {
     $("agent-composer").append(box);
   }
   box.textContent = "";
-  mentionState.matches.forEach((clip, i) => {
-    const item = el(
-      "div",
-      `mention-item${i === mentionState.activeIndex ? " active" : ""}`,
-      clip.clip_id + (clip.has_transcript ? "" : " (no transcript)"),
-    );
+  mentionState.matches.forEach((match, i) => {
+    const item = el("div", `mention-item${i === mentionState.activeIndex ? " active" : ""}`, match.label);
     // mousedown + preventDefault, not click: stops the textarea blurring
     // (and closeMention() firing on that blur) before the insert runs.
     item.addEventListener("mousedown", (event) => {
       event.preventDefault();
-      insertMention(clip.clip_id);
+      insertMention(match.token);
     });
     box.append(item);
   });
+}
+
+// -- an image pasted or dropped into the prompt ------------------------------
+//
+// The file goes to `POST /api/image`, which is `ops.image_add` behind the
+// window's usual JSON guard, and the prompt gets `@image:<name>` where the
+// caret was — so the agent is handed a name its tools already resolve,
+// never a path or the bytes.
+
+function readAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",", 2)[1] || "");
+    reader.onerror = () => reject(reader.error || new Error("could not read the file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function addImages(files) {
+  const promptBox = $("agent-prompt");
+  for (const file of files) {
+    try {
+      const data = await readAsBase64(file);
+      const added = await ctx.api("/api/image", { filename: file.name || "pasted.png", data });
+      const at = promptBox.selectionStart ?? promptBox.value.length;
+      const before = promptBox.value.slice(0, at);
+      const token = `${/\s$|^$/.test(before) ? "" : " "}@${added.asset} `;
+      promptBox.value = before + token + promptBox.value.slice(at);
+      promptBox.setSelectionRange(at + token.length, at + token.length);
+      append(entry("agent-entry--system", `Added ${added.asset} (${added.image.width}×${added.image.height}).`));
+    } catch (err) {
+      append(entry("agent-entry--system bad", err.message));
+    }
+  }
+  promptBox.focus();
+}
+
+function imageFiles(list) {
+  return [...(list || [])].filter((f) => f && f.type && f.type.startsWith("image/"));
 }
 
 // -- wiring -------------------------------------------------------------
@@ -883,6 +930,22 @@ export function init(passedCtx) {
   // shift-Enter still inserts a newline for a multi-line prompt. When a
   // mention popover is open, arrow/Enter/Tab/Escape drive it instead —
   // folded into this one listener rather than a second one on the same key.
+  promptBox.addEventListener("paste", (event) => {
+    const files = imageFiles(event.clipboardData?.files);
+    if (!files.length) return; // text pastes as text
+    event.preventDefault();
+    addImages(files);
+  });
+  composer.addEventListener("dragover", (event) => {
+    if ([...(event.dataTransfer?.items || [])].some((i) => i.kind === "file")) event.preventDefault();
+  });
+  composer.addEventListener("drop", (event) => {
+    const files = imageFiles(event.dataTransfer?.files);
+    if (!files.length) return;
+    event.preventDefault();
+    addImages(files);
+  });
+
   promptBox.addEventListener("keydown", (event) => {
     if (mentionState) {
       if (event.key === "ArrowDown") {
@@ -900,7 +963,7 @@ export function init(passedCtx) {
       }
       if (event.key === "Enter" || event.key === "Tab") {
         event.preventDefault();
-        insertMention(mentionState.matches[mentionState.activeIndex].clip_id);
+        insertMention(mentionState.matches[mentionState.activeIndex].token);
         return;
       }
       if (event.key === "Escape") {

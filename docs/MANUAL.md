@@ -711,6 +711,30 @@ the stale frames until `graphic capture` redraws them. A full-frame graphic is
 one whose page has an opaque background. Undo moves the overlay that places a
 graphic, never the page, which lives beside the manifest like a card's PNG.
 
+### Stills and stickers
+
+A photo, a logo or a cut-out is added once, then shown full frame or placed
+over the film:
+
+```sh
+proofcut -C myproject image add ~/Pictures/dog.png            # lands as image:dog, upright
+proofcut -C myproject image add IMG_2041.HEIC --name beach     # converted once, for every renderer
+proofcut -C myproject cue add vo 12 image:beach                 # full frame, contained like a card
+proofcut -C myproject overlay add image:dog vo --phrase "ruff" --for 2 --x 0.8 --y 0.7 --width 0.15
+proofcut -C myproject overlay add image:beach vo 20 --for 3 --x 0.3 --width 0.25 --rotate -6 \
+    --style photo --enter slide-left --leave slide-right
+proofcut -C myproject image ls                                  # and what places each
+```
+
+`x` and `y` are the sticker's centre as fractions of the frame, `width` a
+fraction of its width, `rotate` degrees clockwise, and `--style photo` gives
+it a white border and a soft shadow. A sticker pops in (scaling up past full
+size about its own centre, then settling) and fades out unless `--enter` and
+`--leave` say otherwise; the `slide-left`, `slide-right`, `slide-top` and
+`slide-bottom` motions come in from, or go out to, that edge, and cards and
+graphics take them too. In the window, type `@` in the agent's prompt to name
+a clip, card, image or graphic, and paste or drop an image there to add it.
+
 A card can also go *after* the last frame, as a `tail` — an end card or a
 bumper, which every earlier cut applied downstream of `export` and so lost on
 any re-cut, silently:

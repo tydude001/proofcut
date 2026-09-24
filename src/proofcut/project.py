@@ -90,6 +90,11 @@ GRAPHICS_DIR = "assets/graphics"
 #: A graphic's captured frames, one folder per graphic. Cache: re-derivable
 #: from the page, the canvas and the rate, and stamped with all three.
 GRAPHIC_FRAMES_DIR = "cache/graphics"
+#: Still images (`stills.py`): `<name>.png|.jpg` and a `<name>.json` saying
+#: where it came from. Created on demand.
+IMAGES_DIR = "assets/images"
+#: A sticker composed onto a canvas-sized PNG, keyed by its inputs. Cache.
+STICKERS_DIR = "cache/stickers"
 #: The silent WAV a `tail` renders its audio-track entry from (PLAN.md § Tail
 #: time — the design note). Cache, the `SHEET_DIR` precedent rather than
 #: `PROXY_DIR`'s: it is re-derivable from the manifest's own `tail.seconds`
@@ -515,6 +520,14 @@ class Project:
     @property
     def graphic_frames_dir(self) -> Path:
         return self.root / GRAPHIC_FRAMES_DIR
+
+    @property
+    def images_dir(self) -> Path:
+        return self.root / IMAGES_DIR
+
+    @property
+    def stickers_dir(self) -> Path:
+        return self.root / STICKERS_DIR
 
     @property
     def tail_dir(self) -> Path:

@@ -47,6 +47,7 @@ from proofcut import (
     picture,
     progress,
     renderlog,
+    stills,
     tts,
 )
 
@@ -250,12 +251,21 @@ def list_media(path: Path | str, source_dir: Path | str, *, recursive: bool = Tr
         {"path": str(p), "size": p.stat().st_size, "already_imported": str(p) in imported}
         for p in found
     ]
+    # Stills too, for image_add: an unattended agent has no other listing.
+    root = Path(source_dir).expanduser()
+    added = {i.get("source") for i in stills.listing(project.images_dir)} if project.images_dir.is_dir() else set()
+    images = [
+        {"path": str(p), "size": p.stat().st_size, "already_added": str(p) in added}
+        for p in sorted(q.resolve() for q in root.glob("**/*" if recursive else "*"))
+        if p.is_file() and p.suffix.lower() in stills.IMAGE_EXTENSIONS
+    ]
     return {
-        "source_dir": str(Path(source_dir).expanduser().resolve()),
+        "source_dir": str(root.resolve()),
         "recursive": recursive,
         "count": len(files),
         "new": sum(1 for f in files if not f["already_imported"]),
         "files": files,
+        "images": images,
     }
 
 
@@ -2675,9 +2685,9 @@ def cue_add(
                 f"src_start {src_start} is before the start of {asset!r} — an "
                 "in-point is seconds into the asset, in its own source time"
             )
-        if asset.startswith("card:"):
+        if asset.startswith(("card:", "image:")):
             raise tx.TranscriptError(
-                f"asset {asset!r} is a card, and a still has no playhead to move — "
+                f"asset {asset!r} is a still, and a still has no playhead to move — "
                 "drop src_start, or point the cue at a video clip_id"
             )
         cue["src_start"] = src_start
@@ -3224,6 +3234,7 @@ def broll_brief(path: Path | str, *, fps: float | None = None) -> dict[str, Any]
                 "word_index": shot["word_index"],
                 "asset": shot["asset"],
                 "card": bool(shot["asset"].startswith("card:")),
+                "image": bool(shot["asset"].startswith("image:")),
                 "start": start,
                 "duration": shot["duration"],
                 "narration": " ".join(
@@ -3290,6 +3301,13 @@ def _resolve_asset(project: Project, asset: str) -> dict[str, Any]:
                 "picture it would draw its type over black; place it over the film "
                 "with overlay_add"
             )
+        is_image = True
+        duration = None
+    elif asset.startswith("image:"):
+        # A still added with image_add, held full frame the way a card is,
+        # and contained by MLT the way every still is (CLAUDE.md, #frame).
+        with _still_errors():
+            resolved = Path(stills.read(project.images_dir, stills.check_name(asset.removeprefix("image:")))["path"])
         is_image = True
         duration = None
     else:
@@ -4762,11 +4780,12 @@ def timeline_view(
             # two, the footnote's starting later and rising less, so the
             # preview staggers where the render does (RECUT.md step 7).
             overlays_view = []
+            canvas = _mlt_resolution(project)
             for plan in overlay_plans:
                 base = {
                     key: plan.get(key)
                     for key in (
-                        "position", "card", "graphic", "clip_id", "timeline_start", "timeline_end",
+                        "position", "card", "graphic", "image", "clip_id", "timeline_start", "timeline_end",
                         "frames", "lane", "enter", "enter_seconds", "enter_ease",
                         "leave", "leave_seconds", "leave_ease",
                     )
@@ -4794,11 +4813,29 @@ def timeline_view(
                                 "enter": base["enter"] if n == 0 else "none",
                                 "leave": base["leave"] if n == last else "none",
                                 "rise_px": mlt.OVERLAY_RISE,
+                                "keys": _view_keys(plan["drawn"][n], canvas, shots_rate),
                             }
                         )
                     continue
+                if plan.get("image") is not None:
+                    overlays_view.append(
+                        {
+                            **base,
+                            "asset": f"sticker:{Path(plan['png']).stem}",
+                            "rise_px": mlt.OVERLAY_RISE,
+                            "keys": _view_keys(plan["drawn"][0], canvas, shots_rate),
+                        }
+                    )
+                    continue
                 if plan["layers"] is None:
-                    overlays_view.append({**base, "asset": f"card:{plan['card']}", "rise_px": mlt.OVERLAY_RISE})
+                    overlays_view.append(
+                        {
+                            **base,
+                            "asset": f"card:{plan['card']}",
+                            "rise_px": mlt.OVERLAY_RISE,
+                            "keys": _view_keys(plan["drawn"][0], canvas, shots_rate),
+                        }
+                    )
                     continue
                 for piece, (layer, lane) in zip(plan["drawn"], zip(("headline", "footnote"), plan["lanes"])):
                     overlays_view.append(
@@ -4810,6 +4847,7 @@ def timeline_view(
                             "rise_px": piece.rise,
                             "timeline_start": round(base["timeline_start"] + (piece.start - plan["start_frame"]) / shots_rate, 3),
                             "enter_seconds": piece.in_frames / shots_rate if piece.in_motion != "none" else base["enter_seconds"],
+                            "keys": _view_keys(piece, canvas, shots_rate),
                         }
                     )
         except (ProjectError, tx.TranscriptError, media.MediaError) as exc:
@@ -4991,6 +5029,7 @@ def timeline_view(
         result["sounds_error"] = sounds_error
     if insets_error is not None:
         result["insets_error"] = insets_error
+    result["mentionable"] = _mentionable(project)
     # A clip can be registered, transcribed, and still not be in the edit — and
     # then every one of its words comes back `present: false`, which is exactly
     # what a clip somebody cut entirely looks like. Reported rather than left to
@@ -6075,6 +6114,15 @@ def preview_source(path: Path | str, asset: str) -> dict[str, Any]:
             source = _card_layer_path(project, card, layer)
         else:
             source = project.cards_dir / f"{name}.png"
+    elif asset.startswith("image:"):
+        with _still_errors():
+            source = Path(stills.read(project.images_dir, stills.check_name(asset.removeprefix("image:")))["path"])
+    elif asset.startswith("sticker:"):
+        # A composed sticker, by its cache key alone: 24 hex characters.
+        key = asset.removeprefix("sticker:")
+        if not re.fullmatch(r"[0-9a-f]{24}", key):
+            raise ProjectError(f"asset {asset!r} does not name a sticker")
+        source = project.stickers_dir / f"{key}.png"
     elif asset.startswith("graphic:"):
         # `graphic:<name>/<phase>/<frame>` — one captured frame. Every part is
         # held to its shape before a path is built from it, since this key is
@@ -14138,6 +14186,88 @@ def _resolved_hold_spans(
 # cut cannot leave one pointing at the wrong moment. List order is stacking
 # order — the writer draws a later overlay above an earlier one it overlaps.
 
+# -- still images -------------------------------------------------------------
+#
+# DAYDREAM.md § The gaps, re-ranked, item 3. A still is added once
+# (`image_add`), then drawn full frame as a cue's `image:<name>` or placed over
+# the film as a sticker (`overlay_add(image=...)`). `stills.py` holds the rules.
+
+
+@contextlib.contextmanager
+def _still_errors() -> Iterator[None]:
+    try:
+        yield
+    except (stills.StillError, graphics.GraphicsError) as exc:
+        raise ProjectError(str(exc)) from None
+
+
+def _mentionable(project: Project) -> list[str]:
+    """Every asset a prompt can `@`-name that is not a clip: cards, images,
+    graphics — by directory listing alone, since the view is rebuilt on every
+    change and a probe here would be paid on every keystroke's reload."""
+    names = [f"card:{p.stem}" for p in sorted(project.cards_dir.glob("*.png"))] if project.cards_dir.is_dir() else []
+    if project.images_dir.is_dir():
+        names += [f"image:{p.stem}" for p in sorted(project.images_dir.glob("*.json"))]
+    if project.graphics_dir.is_dir():
+        names += [f"graphic:{p.name}" for p in sorted(project.graphics_dir.iterdir()) if (p / anim.SPEC_NAME).is_file()]
+    return names
+
+
+def image_add(
+    path: Path | str,
+    source: Path | str,
+    *,
+    name: str | None = None,
+    replace: bool = False,
+    label: str | None = None,
+) -> dict[str, Any]:
+    """Add a still image to the project, upright and in a format every renderer reads.
+
+    PNG and upright JPEG are copied as they are; a photo whose EXIF says it is
+    turned is written upright, and anything else (WebP, HEIC, GIF's first
+    frame) is converted once. Use it as a picture cue's `image:<name>`, or as
+    a sticker with overlay_add(image=name).
+    """
+    project = Project.open(path)
+    source_path = Path(source).expanduser()
+    with _still_errors():
+        chosen = stills.check_name(name) if name else stills.name_for(source_path)
+        record = stills.add(source_path, project.images_dir, chosen, replace=replace, label=label)
+    return {"image": record, "asset": f"image:{record['name']}"}
+
+
+def image_ls(path: Path | str) -> dict[str, Any]:
+    """Every still in the project, where it came from, its size, and what uses it."""
+    project = Project.open(path)
+    with _still_errors():
+        images = stills.listing(project.images_dir)
+    cues = [c.get("asset") for c in project.read_manifest().get("cues", [])]
+    used_by_overlay: dict[str, list[int]] = {}
+    for position, record in enumerate(_stored_overlays(project)):
+        if "image" in record:
+            used_by_overlay.setdefault(record["image"], []).append(position)
+    for image in images:
+        image["cues"] = sum(1 for asset in cues if asset == f"image:{image['name']}")
+        image["overlays"] = used_by_overlay.get(image["name"], [])
+    return {"images": images}
+
+
+def image_rm(path: Path | str, name: str) -> dict[str, Any]:
+    """Remove a still that nothing uses. A cue or overlay placing it is named instead."""
+    project = Project.open(path)
+    listed = {i["name"]: i for i in image_ls(path)["images"]}
+    if name not in listed:
+        raise ProjectError(f"there is no image {name!r}")
+    image = listed[name]
+    if image["cues"] or image["overlays"]:
+        raise ProjectError(
+            f"image {name!r} is placed by {image['cues']} cue(s) and overlay(s) at {image['overlays']} — remove those first"
+        )
+    Path(image["path"]).unlink()
+    (project.images_dir / f"{name}.json").unlink(missing_ok=True)
+    return {"removed": name}
+
+
 # -- animated graphics ------------------------------------------------------
 #
 # docs/plans/DAYDREAM.md § Animated graphics, designed and spiked. A graphic is
@@ -14549,12 +14679,24 @@ OVERLAY_LEAVE = ("fade", 0.3, "ease-in")
 #: A graphic's own: none, since its page already animates in and out.
 GRAPHIC_ENTER = ("none", 0.0, "ease-out")
 GRAPHIC_LEAVE = ("none", 0.0, "ease-in")
+#: A sticker's: it pops in about its own box and fades out.
+IMAGE_ENTER = ("pop", 0.4, "ease-out")
+IMAGE_LEAVE = ("fade", 0.3, "ease-in")
+#: What an overlay can draw, and each one's entrance and exit by default.
+OVERLAY_DRAWN = ("card", "graphic", "image")
+OVERLAY_DEFAULT_MOTIONS = {
+    "card": (OVERLAY_ENTER, OVERLAY_LEAVE),
+    "graphic": (GRAPHIC_ENTER, GRAPHIC_LEAVE),
+    "image": (IMAGE_ENTER, IMAGE_LEAVE),
+}
 
 
 def _overlay_label(record: dict[str, Any]) -> str:
     """How a refusal names an overlay: its card, or `graphic:<name>`."""
     if "graphic" in record:
         return repr(f"graphic:{record['graphic']}")
+    if "image" in record:
+        return repr(f"image:{record['image']}")
     return repr(record.get("card"))
 
 
@@ -14567,12 +14709,13 @@ def _stored_overlays(project: Project) -> list[dict[str, Any]]:
     for item in stored:
         if not isinstance(item, dict):
             raise ProjectError(f"{project.manifest_path}'s {OVERLAYS_KEY!r} entries must be JSON objects")
-        if ("card" in item) == ("graphic" in item):
-            raise ProjectError(f"overlay {item!r} needs exactly one of card or graphic")
-        drawn_key = "card" if "card" in item else "graphic"
+        drawn_keys = [key for key in OVERLAY_DRAWN if key in item]
+        if len(drawn_keys) != 1:
+            raise ProjectError(f"overlay {item!r} needs exactly one of {', '.join(OVERLAY_DRAWN)}")
+        drawn_key = drawn_keys[0]
         # A graphic animates itself, so it enters and leaves with no motion of
-        # its own unless asked; a card rises in and fades out.
-        motions = (OVERLAY_ENTER, OVERLAY_LEAVE) if drawn_key == "card" else (GRAPHIC_ENTER, GRAPHIC_LEAVE)
+        # its own unless asked; a card rises in and fades out; a sticker pops.
+        motions = OVERLAY_DEFAULT_MOTIONS[drawn_key]
         try:
             record: dict[str, Any] = {drawn_key: str(item[drawn_key]), "clip_id": str(item["clip_id"])}
             for key, kind in (
@@ -14588,10 +14731,13 @@ def _stored_overlays(project: Project) -> list[dict[str, Any]]:
                 record[side] = str(item.get(side, motion))
                 record[f"{side}_seconds"] = float(item.get(f"{side}_seconds", seconds))
                 record[f"{side}_ease"] = str(item.get(f"{side}_ease", ease))
+            if drawn_key == "image":
+                with _still_errors():
+                    record.update(stills.check_placement(item))
         except (KeyError, TypeError, ValueError) as exc:
             raise ProjectError(
                 f"{project.manifest_path} has an overlay that is not "
-                f"(card or graphic, clip_id, a start and an end): {item!r} ({exc})"
+                f"(card, graphic or image, clip_id, a start and an end): {item!r} ({exc})"
             ) from None
         if ("word_index" in record) == ("event" in record):
             raise ProjectError(f"overlay {item!r} needs exactly one of word_index or event")
@@ -14602,6 +14748,14 @@ def _stored_overlays(project: Project) -> list[dict[str, Any]]:
             )
         overlays.append(record)
     return overlays
+
+
+def _overlay_sticker(project: Project, record: dict[str, Any]) -> tuple[Path, tuple[int, int, int, int]]:
+    """A sticker's canvas-sized PNG and its box, composed at the project's canvas."""
+    placement = {key: record[key] for key in ("x", "y", "width", "rotate", "style")}
+    with _still_errors():
+        image = Path(stills.read(project.images_dir, stills.check_name(record["image"]))["path"])
+        return stills.compose_sticker(image, project.stickers_dir, _mlt_resolution(project), placement)
 
 
 def _overlay_card(project: Project, card: str) -> Path:
@@ -14700,7 +14854,11 @@ def _overlay_plan(
     overlays = _stored_overlays(project) if stored is None else stored
     plans: list[dict[str, Any]] = []
     for index, record in enumerate(overlays):
-        png = _overlay_card(project, record["card"]) if "card" in record else None
+        box = None
+        if "image" in record:
+            png, box = _overlay_sticker(project, record)
+        else:
+            png = _overlay_card(project, record["card"]) if "card" in record else None
         start, start_echo = _overlay_instant(
             project, edit, record, word_key="word_index", event_key="event", edge=0, what="starts"
         )
@@ -14761,6 +14919,7 @@ def _overlay_plan(
             )
             continue
         overlay = mlt.Overlay(
+            box=box,
             resource=str(png),
             start=start_frame,
             frames=frames,
@@ -14775,7 +14934,7 @@ def _overlay_plan(
         # the overlay's own timing, the footnote `delay` later with its own
         # rise, both leaving together (RECUT.md step 7).
         drawn = [overlay]
-        layered = _card_layers(project, record["card"])
+        layered = _card_layers(project, record["card"]) if "card" in record else None
         if layered is not None:
             delay = round(layered["delay"] * rate)
             if delay >= frames:
@@ -14830,6 +14989,25 @@ def _overlay_plan(
     return plans
 
 
+def _view_keys(piece: mlt.Overlay, canvas: tuple[int, int], rate: float) -> list[dict[str, Any]]:
+    """The writer's own keys for one drawn piece, in seconds from its start and
+    fractions of the canvas, so the preview interpolates what melt draws and
+    derives no motion of its own. Empty where the piece never moves."""
+    width, height = canvas
+    return [
+        {
+            "t": round(key["frame"] / rate, 4),
+            "ease": key["ease"] or "linear",
+            "x": key["rect"][0] / width,
+            "y": key["rect"][1] / height,
+            "w": key["rect"][2] / width,
+            "h": key["rect"][3] / height,
+            "opacity": key["opacity"],
+        }
+        for key in mlt.overlay_keys(piece, canvas)
+    ]
+
+
 def _overlay_view(plan: dict[str, Any]) -> dict[str, Any]:
     """An overlay plan as JSON — everything but the writer's own objects."""
     return {key: value for key, value in plan.items() if key not in ("overlay", "drawn")}
@@ -14846,6 +15024,12 @@ def overlay_add(
     word_index: int | None = None,
     *,
     graphic: str | None = None,
+    image: str | None = None,
+    x: float | None = None,
+    y: float | None = None,
+    width: float | None = None,
+    rotate: float | None = None,
+    style: str | None = None,
     phrase: str | None = None,
     event: str | None = None,
     until_word_index: int | None = None,
@@ -14884,14 +15068,25 @@ def overlay_add(
     `plan=True` writes nothing.
     """
     project = Project.open(path)
-    if (card is None) == (graphic is None):
-        raise ProjectError("an overlay draws exactly one of a card or a graphic")
+    if sum(v is not None for v in (card, graphic, image)) != 1:
+        raise ProjectError("an overlay draws exactly one of a card, a graphic or an image")
+    placement = {"x": x, "y": y, "width": width, "rotate": rotate, "style": style}
+    if image is None and any(v is not None for v in placement.values()):
+        raise ProjectError("x, y, width, rotate and style place an image; a card or graphic is the whole frame")
     if sum(x is not None for x in (word_index, phrase, event)) != 1:
         raise ProjectError("an overlay starts at one of word_index, phrase or event")
     if sum(x is not None for x in (until_word_index, until_phrase, until_event, seconds)) != 1:
         raise ProjectError("an overlay ends at one of until_word_index, until_phrase, until_event or seconds")
 
-    record: dict[str, Any] = {"card": card} if card is not None else {"graphic": graphic}
+    if card is not None:
+        record: dict[str, Any] = {"card": card}
+    elif graphic is not None:
+        record = {"graphic": graphic}
+    else:
+        with _still_errors():
+            record = {"image": stills.check_name(str(image)), **stills.check_placement(
+                {key: value for key, value in placement.items() if value is not None}
+            )}  # fmt: skip
     record["clip_id"] = clip_id
     if event is not None:
         record["event"] = event
@@ -14917,7 +15112,7 @@ def overlay_add(
             occurrence=occurrence,
             edge="last",
         )
-    defaults = (OVERLAY_ENTER, OVERLAY_LEAVE) if card is not None else (GRAPHIC_ENTER, GRAPHIC_LEAVE)
+    defaults = OVERLAY_DEFAULT_MOTIONS["card" if card is not None else "graphic" if graphic is not None else "image"]
     for side, (motion, length, ease), values in (
         ("enter", defaults[0], (enter, enter_seconds, enter_ease)),
         ("leave", defaults[1], (leave, leave_seconds, leave_ease)),
@@ -16926,7 +17121,7 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         {
             key: plan.get(key)
             for key in (
-                "position", "card", "graphic", "clip_id", "timeline_start", "timeline_end", "frames", "lane",
+                "position", "card", "graphic", "image", "clip_id", "timeline_start", "timeline_end", "frames", "lane",
                 "enter", "leave", "layers", "phases",
             )
             if key in plan

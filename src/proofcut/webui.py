@@ -52,6 +52,8 @@ browser spend it, which is the CSRF half loopback+Host used to cover.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hmac
 import json
 import mimetypes
@@ -73,7 +75,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from proofcut import captions, media, ops, progress, projectlock, renderlog
+from proofcut import captions, media, ops, progress, projectlock, renderlog, stills
 from proofcut.asr import ASRError
 from proofcut.autoeditor import AutoEditorError
 from proofcut.energy import EnergyError
@@ -3575,6 +3577,47 @@ def _reframe(root: str, payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+#: The largest image the window accepts pasted or dropped, decoded.
+IMAGE_UPLOAD_MAX = 40 * 1024 * 1024
+
+
+def _image_upload(root: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """`POST /api/image` — an image pasted or dropped into the agent's prompt.
+
+    JSON like every mutation here (`{filename, data}`, `data` base64), so the
+    content-type guard holds; decoded into the project's own cache and handed
+    to `ops.image_add`, which decides everything else. The name comes from the
+    filename unless `name` is given, and a name already taken gets a number.
+    """
+    filename = payload.get("filename")
+    data = payload.get("data")
+    if not isinstance(filename, str) or not isinstance(data, str) or not data:
+        raise WebUIError("'filename' and 'data' (base64) are required")
+    suffix = Path(filename).suffix.lower()
+    if suffix not in stills.IMAGE_EXTENSIONS:
+        raise WebUIError(f"{filename!r} is not an image proofcut takes")
+    try:
+        raw = base64.b64decode(data, validate=True)
+    except (ValueError, binascii.Error):
+        raise WebUIError("'data' is not base64") from None
+    if len(raw) > IMAGE_UPLOAD_MAX:
+        raise WebUIError(f"that image is {len(raw) // 2**20} MB; the window takes up to {IMAGE_UPLOAD_MAX // 2**20}")
+    project = Project.open(root)
+    base = payload.get("name") or stills.name_for(Path(filename))
+    taken = {i["name"] for i in stills.listing(project.images_dir)}
+    name, n = base, 2
+    while name in taken:
+        name, n = f"{base[:44]}-{n}", n + 1
+    uploads = project.root / "cache" / "uploads"
+    uploads.mkdir(parents=True, exist_ok=True)
+    staged = uploads / f"{name}{suffix}"
+    staged.write_bytes(raw)
+    try:
+        return ops.image_add(root, staged, name=name, label=f"pasted into the window as {Path(filename).name}")
+    finally:
+        staged.unlink(missing_ok=True)
+
+
 #: `plan` is a field on the request rather than a separate endpoint, because
 #: it is one flag on one op — giving preview its own URL would invite the two
 #: paths to drift, which is the whole thing `plan=True` exists to prevent.
@@ -3598,6 +3641,7 @@ _POST_ROUTES: dict[str, Callable[[str, dict[str, Any]], dict[str, Any]]] = {
     "/api/unlock": _unlock,
     "/api/cue": _cue_add,
     "/api/music": _music,
+    "/api/image": _image_upload,
     "/api/clip-role": _clip_role,
     "/api/agent/thumbs": _agent_thumb,
     "/api/reframe": _reframe,

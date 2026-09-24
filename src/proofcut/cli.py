@@ -578,6 +578,16 @@ def _build_parser() -> argparse.ArgumentParser:
     p_graphic_load.add_argument("--no-capture", action="store_true", help="copy only")
     p_graphic_load.add_argument("--pages", type=int, default=2, help="browser pages capturing side by side (1-8)")
 
+    p_image = sub.add_parser("image", help="still images: added once, shown full frame (image:NAME) or as stickers")
+    image_sub = p_image.add_subparsers(dest="image_command", required=True)
+    p_image_add = image_sub.add_parser("add", help="add a still, upright and in a format everything reads")
+    p_image_add.add_argument("source", help="PNG, JPEG, WebP, HEIC, GIF, AVIF, TIFF or BMP")
+    p_image_add.add_argument("--name", help="what to call it (default: from the filename)")
+    p_image_add.add_argument("--replace", action="store_true", help="replace an image of this name")
+    image_sub.add_parser("ls", help="every still, where it came from, and what places it")
+    p_image_rm = image_sub.add_parser("rm", help="remove a still nothing places")
+    p_image_rm.add_argument("name")
+
     p_pack = sub.add_parser("pack", help="load, activate and inspect a channel preset pack")
     pack_sub = p_pack.add_subparsers(dest="pack_command", required=True)
 
@@ -1549,7 +1559,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "add", help="place an overlay card from a word or event to a word, event or length"
     )
     p_overlay_add.add_argument(
-        "card", help="a card made from an overlay template (card new … lowerthird), or graphic:NAME (graphic new)"
+        "card",
+        help="a card made from an overlay template (card new … lowerthird), graphic:NAME (graphic new) "
+        "or image:NAME (image add), which places the still as a sticker",
     )
     p_overlay_add.add_argument("clip_id", help="the clip whose words or events address the span")
     p_overlay_add.add_argument("word_index", type=int, nargs="?", help="the word it starts on")
@@ -1576,6 +1588,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_overlay_add.add_argument(
         "--position", type=int, help="where in the stack (0 = bottom; default the top) — a scrim goes under its type"
     )
+    p_overlay_add.add_argument("--x", type=float, help="an image's centre across the frame, 0 to 1 (default 0.5)")
+    p_overlay_add.add_argument("--y", type=float, help="an image's centre down the frame, 0 to 1 (default 0.5)")
+    p_overlay_add.add_argument("--width", type=float, help="an image's width as a fraction of the frame's (default 0.3)")
+    p_overlay_add.add_argument("--rotate", type=float, help="degrees to turn an image, clockwise")
+    p_overlay_add.add_argument("--style", choices=("plain", "photo"), help="photo: a white border and a soft shadow")
     p_overlay_add.add_argument("--plan", action="store_true", help="resolve and report without writing")
     overlay_sub.add_parser("ls", help="list overlays, bottom of the stack first, with where each plays")
     p_cspan = sub.add_parser(
@@ -2587,6 +2604,14 @@ def _cmd_card(args: argparse.Namespace) -> int:
     return _emit(ops.card_render(args.project, args.name, width=args.width, height=args.height))
 
 
+def _cmd_image(args: argparse.Namespace) -> int:
+    if args.image_command == "add":
+        return _emit(ops.image_add(args.project, args.source, name=args.name, replace=args.replace))
+    if args.image_command == "ls":
+        return _emit(ops.image_ls(args.project))
+    return _emit(ops.image_rm(args.project, args.name))
+
+
 def _cmd_graphic(args: argparse.Namespace) -> int:
     command = args.graphic_command
     if command == "templates":
@@ -3202,10 +3227,16 @@ def _cmd_overlay(args: argparse.Namespace) -> int:
         return _emit(
             ops.overlay_add(
                 args.project,
-                None if args.card.startswith("graphic:") else args.card,
+                None if args.card.startswith(("graphic:", "image:")) else args.card,
                 args.clip_id,
                 args.word_index,
                 graphic=args.card.removeprefix("graphic:") if args.card.startswith("graphic:") else None,
+                image=args.card.removeprefix("image:") if args.card.startswith("image:") else None,
+                x=args.x,
+                y=args.y,
+                width=args.width,
+                rotate=args.rotate,
+                style=args.style,
                 phrase=args.phrase,
                 event=args.event,
                 until_word_index=args.until_word_index,
@@ -3813,6 +3844,7 @@ _COMMANDS = {
     "describe-ls": _cmd_describe_ls,
     "card": _cmd_card,
     "graphic": _cmd_graphic,
+    "image": _cmd_image,
     "pack": _cmd_pack,
     "cue": _cmd_cue,
     "unspoken": _cmd_unspoken,

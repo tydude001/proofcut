@@ -1649,6 +1649,19 @@ built; docs/plans/INSTALL.md):
     overlay code. The stdio tests reach the browser through `PROOFCUT_CHROME`
     in `tests/conftest.py`'s pass-through; setup's `chrome` piece rides
     doctor's *optional* browser row, never a ✗.
+- **A still (`stills.py`) is made upright once, at `image_add`, and a
+  sticker is a canvas-sized PNG with a box** — `image:<name>` as a picture
+  cue, `overlay_add(image=...)` over the film. HISTORY.md § Images in, built.
+  - A phone photo's EXIF rotation is honoured by some of melt, the browser
+    and magick and not others, so it is applied at add and never left in the
+    file; anything but PNG and an upright JPEG is converted there too.
+  - **`mlt.overlay_keys` is the only statement of an overlay's motion**: the
+    writer formats it and `timeline_view` hands it to the preview, which
+    draws each rect as a translate and scale from the top left. A motion
+    added to one and derived in JS is two motions.
+  - `pop` scales about `Overlay.box`'s centre and a `slide-` clears its edge
+    by the box; a card or graphic has no box, so it moves as the whole
+    canvas.
 - **A one-shot sound (`SOUNDS_KEY`, `_is_layered`'s tenth trigger) never
   plays its own file — it plays a padded copy from `cache/sounds/`.**
   - melt has two exit-0 traps for a short file: a file it counts as one

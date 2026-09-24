@@ -744,7 +744,29 @@ function easeFraction(name, t) {
   return x;
 }
 
-/* Opacity and downward offset (as a fraction of the rise) at `u` seconds in. */
+/* The writer's own keys (`ops._view_keys`, `mlt.overlay_keys`), interpolated
+ * at `u` seconds in: the curve leaving each key shapes the segment after it,
+ * as MLT's operator does. A rect is fractions of the canvas, drawn as a
+ * translate and a scale of the canvas-sized image from its top left — which
+ * is what `qtblend` does with it — so a pop scales about the sticker and a
+ * slide clears the frame exactly as the render does. */
+function keyedMotion(keys, u) {
+  if (!keys.length) return { x: 0, y: 0, w: 1, h: 1, opacity: 1 };
+  if (u <= keys[0].t) return keys[0];
+  for (let i = 0; i + 1 < keys.length; i += 1) {
+    const a = keys[i];
+    const b = keys[i + 1];
+    if (u <= b.t) {
+      const f = easeFraction(a.ease, b.t > a.t ? (u - a.t) / (b.t - a.t) : 1);
+      const mix = (k) => a[k] + (b[k] - a[k]) * f;
+      return { x: mix("x"), y: mix("y"), w: mix("w"), h: mix("h"), opacity: mix("opacity") };
+    }
+  }
+  return keys[keys.length - 1];
+}
+
+/* Opacity and downward offset (as a fraction of the rise) at `u` seconds in.
+ * Only for a view without keys; every overlay the view draws now carries them. */
 function overlayMotion(overlay, u) {
   const span = overlay.timeline_end - overlay.timeline_start;
   const enter = overlay.enter === "none" ? 0 : overlay.enter_seconds || 0;
@@ -811,10 +833,20 @@ function paintOverlays(t) {
       img.dataset.src = url;
       img.src = url;
     }
-    const { opacity, drop } = overlayMotion(overlay, t - overlay.timeline_start);
-    const travel = ((overlay.rise_px || 0) * (box.height || 0)) / 1080;
-    img.style.opacity = opacity.toFixed(3);
-    img.style.transform = drop ? `translateY(${(travel * drop).toFixed(2)}px)` : "";
+    if (Array.isArray(overlay.keys)) {
+      const m = keyedMotion(overlay.keys, t - overlay.timeline_start);
+      const moved = m.x || m.y || m.w !== 1 || m.h !== 1;
+      img.style.opacity = m.opacity.toFixed(3);
+      img.style.transformOrigin = "0 0";
+      img.style.transform = moved
+        ? `translate(${(m.x * (box.width || 0)).toFixed(2)}px, ${(m.y * (box.height || 0)).toFixed(2)}px) scale(${m.w.toFixed(4)}, ${m.h.toFixed(4)})`
+        : "";
+    } else {
+      const { opacity, drop } = overlayMotion(overlay, t - overlay.timeline_start);
+      const travel = ((overlay.rise_px || 0) * (box.height || 0)) / 1080;
+      img.style.opacity = opacity.toFixed(3);
+      img.style.transform = drop ? `translateY(${(travel * drop).toFixed(2)}px)` : "";
+    }
     if (img.hidden) img.hidden = false;
   }
 }
