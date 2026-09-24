@@ -70,7 +70,7 @@ walks it.
 | [Score it: placed passages, crossfaded, levelled under the voice](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#the-music-bed) | `music` |
 | [Pull breaths down without cutting them](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#attenuation) | `attenuate` |
 | [Render](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#renders-presets-undo-migration) and [master to a loudness target](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#the-master) | `export --render --loudness -16` |
-| [Burn in captions](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#captions) | `captions --burn` |
+| [Burn in captions](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#captions), words fading or blurring in, spelled your way | `captions --burn`, `caption-style --reveal`, `lexicon add` |
 | [Check the render says what the edit says](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#verifying-a-render) | `verify`, [`frames`](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#frames-film-check-black-spots), [`hold check`](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#holds-the-films-own-lines) |
 
 Two video essays of five to six minutes, first finished in Kdenlive, have
@@ -100,7 +100,7 @@ Beyond those stages:
 - **Screen recordings.** Named instants (`events`) that a crop, a sound or a
   speed change can hang off, a clip inset into the recording, and a retime
   for the slow parts.
-- **Built for agents.** 109 MCP tools with typed inputs, structured returns
+- **Built for agents.** 115 MCP tools with typed inputs, structured returns
   and read/write annotations, so Claude Code, Codex or your own agent can
   drive it and a permission layer can tell a look from a change.
 - **No lock-in.** The timeline is OpenTimelineIO, the manifest is JSON, and
