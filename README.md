@@ -114,7 +114,7 @@ Beyond those stages:
   full frame or ride over the film as stickers: placed, sized, turned, framed
   as a photo card, popping or sliding in. Paste one into the agent's prompt
   and it is added.
-- **Built for agents.** 130 MCP tools with typed inputs, structured returns
+- **Built for agents.** 132 MCP tools with typed inputs, structured returns
   and read/write annotations, so Claude Code, Codex or your own agent can
   drive it and a permission layer can tell a look from a change.
 - **No lock-in.** The timeline is OpenTimelineIO, the manifest is JSON, and
@@ -182,8 +182,18 @@ the source's own frames.
 uv run proofcut -C myproject reel ../teaser 1:32+44 --canvas 1080x1920
 ```
 
-The first three are walked in [§ Try it](#try-it); the reel and the
-round-trip are in the
+**Split a pile of recordings into shorts.** Seed every recording as one
+timeline, cut the retakes once, then `split` it by first and last word. Each
+short becomes its own project beside the pile, holding only the recordings
+it uses, and any stretch no short took is named rather than lost.
+
+```sh
+uv run proofcut -C dump seed reel1 reel2 reel3
+uv run proofcut -C dump split intro=reel1:0..reel1:46 demo=reel2:0..reel3:88
+```
+
+The first three are walked in [§ Try it](#try-it); the reel, the split and
+the round-trip are in the
 [manual](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md#the-reel--a-derived-vertical-cut).
 
 ![The proofcut workspace on the demo project: the transcript with a retake struck
