@@ -1058,7 +1058,8 @@ Most value per cost first, each with a recommendation. This replaces
 4. **Saved libraries across projects**, for graphics and caption styles.
    **Recommend: design with 2**, since a saved graphic is the thing 2 makes.
 5. **Per-cut effects and transitions**: a crossfade between cues, vignette,
-   scale punch. Small once 2 exists.
+   scale punch. Small once 2 exists. Designed and spiked 2026-09-24:
+   § Transitions and per-cut effects, designed and spiked.
 6. **Small and independent**: the `overlay add card:NAME` refusal (fixed
    2026-09-24: each of card, graphic and image takes its own prefix, and a
    wrong one is refused by name);
@@ -1444,6 +1445,146 @@ no new producer type**, only `qimage` pointed at a pattern.
 - **The determinism flags off Linux.** They were measured only on this box.
   **Recommend: the macOS and Windows CI jobs capture the spike's page twice
   and compare, before any public claim.**
+
+---
+
+## Transitions and per-cut effects, designed and spiked: 2026-09-24
+
+Item 5 of § The gaps, re-ranked: a crossfade between picture cues, a
+vignette, and a scale punch. Written after reading it, HISTORY.md § A second
+recording follows the first, through a dissolve, § Overlays, built, and
+§ Images in, built. The spike is `~/proofcut-work/spikes/transitions-probe/`
+(`probe.py`, run on both melts). **Designed and measured, not built: this
+waits for review.**
+
+What the channel asked for, in its own words: *"can we add a scale punch per
+cut applied about canvas centre so it zooms into the word?"* and *"add
+vignetting and blur"* (`hHKO_bJgawQ`, the one-word montage), plus five films
+fading one graphic into the next. A quick zoom with a hold (`cM-vA5q_eQM`)
+is already `reframe` windows with an easing.
+
+### The spike
+
+Every source names its own frame in luma, so one sampled patch says which
+source frame is drawn and how strongly (the dissolve spike's rule). A is
+flat `40 + N`, B is flat `230 - N` with a black bar at x 150 to 169 for the
+punch to move, S is a grey-200 still. The picture lane is A[0..59] at render
+frames 0 to 59, B[40..99] at 60 to 119, and B again [100..129] at 120 to 149,
+the same node's second entry. 640x360 at 30 fps. Documents are built by
+`mlt.document` and edited only where the probe says; frames are read back
+off a lossless render.
+
+| Probe | What it is | Worst error, flatpak melt and Shotcut 7.41 (identical) |
+|---|---|---|
+| 1. Pre-roll | B's 12 frames before its in-point, on its own track **directly over the picture lane**, alpha 0 to 1 ending on the join (`mlt.Dissolve` unchanged) | 1.33 luma levels over all 150 frames: the blend, then B's source frames running on unbroken across the join |
+| 1c. Control | the same track left where `document()` puts a dissolve today, **under** the picture lane | the blend is absent: A to B is a hard cut. The track's place in the stack is the whole mechanism |
+| 2. Post-roll | A carrying on 12 frames past its out-point, over B, alpha 1 to 0 starting on the join | 1.00 |
+| 3. Into a still | the card's pre-roll is itself (`is_image`, `src_in` 0) | 1.42 |
+| 4. Punch, keyed from the entry's `src_in` | a `qtblend` filter **on B's playlist entry**, `rect` 1.1 at its first frame easing out to 1.0 at +9, about the canvas centre | 0.08 px on the bar's edge at every frame once the edge estimator's fixed half pixel is taken off; luma untouched |
+| 4c. Punch, keyed from 0 | the same keys counted from the entry's first frame | never moves: 16.5 px off on the first frame. Keys count in the producer's frames, the A2 fade trap again |
+| 5. Held punch on a reframed source | 1.0 to 1.15 over 6 frames and held, on a B whose node crops `(40, 0, 560, 315)` | 0.36 px: the punch composes over the node's crop, and **B's second entry on the same node shows the crop alone**, so a punch is per shot, not per clip |
+| 6. Vignette as an overlay | a black canvas-sized PNG, alpha 0 at the centre rising to 0.58 at the corners, as an ordinary `mlt.Overlay` | 0.6 luma levels against `base × (1 − alpha)` at four points and two frames |
+
+So nothing here needs a new MLT concept. A crossfade is today's `Dissolve`
+on a track one place higher, a punch is an entry-attached `qtblend` (the
+same filter the reframe and every overlay already use, attached where the
+`volume` fade already attaches), and a vignette is a card.
+
+### The design
+
+1. **A crossfade is the incoming cue's, and it is its pre-roll.** A cue
+   gains an optional `dissolve: {seconds, ease}`, stored on the cue record
+   and not under `dissolves`: that key addresses an Edit join by a
+   recording's in-point, and a cue already has its address, its word, which
+   is what keeps it right across cuts. The writer draws it as a
+   `mlt.Dissolve` on its own track **directly over the picture lane and its
+   pane, under every overlay**, so the dissolve ends on the cue's word and
+   the incoming shot is fully in at the moment the cue names. The film's
+   length and every declared length are unchanged, as with the Edit's
+   dissolve. No new `_is_layered` trigger: a cue table already routes to
+   the MLT writer.
+   - **When the incoming has no frames before its in-point**, which is any
+     unpinned first use of a clip (its cursor starts at 0), it falls back to
+     the outgoing shot's post-roll (probe 2, equally exact), and the view
+     says `dissolve_from: "outgoing"`, because the fade then starts on the
+     word instead of ending on it. Neither available refuses by name. A
+     still always has a pre-roll.
+   - **The first shot has nothing to dissolve from.** Since any cut can make
+     any cue first, that is reported (`dissolves_skipped`, naming the cue),
+     never refused at export.
+   - **A dissolve into or out of a split or blur-filled window is refused**
+     in the first build: the pre-roll would draw only the main rect, over a
+     picture that has two, at exit 0.
+   - `reel` keeps a survivor's dissolve, since its address survives with it;
+     a survivor that becomes the reel's first shot is skipped as above.
+
+2. **A scale punch is a cue's too, drawn on its own playlist entry.** A cue
+   gains an optional `punch: {scale, seconds, ease, mode}`. `mode: "in"`
+   (the channel's "zooms into the word") goes from 1.0 to `scale` over
+   `seconds` and holds for the shot; `"settle"` starts at `scale` and eases
+   back to 1.0. About the canvas centre, which is what the prompt asked for;
+   an anchor is an addition for later, not a need today. The keys count from
+   the entry's `src_in` (probe 4c is the trap), and **`mlt.punch_keys` is the
+   one statement of them**: the writer formats it into the entry's filter,
+   `timeline_view` hands the same list to the window, and the preview draws
+   it as a CSS scale on the picture layer, `overlay_keys`' rule. A punch is
+   never 1:1 while it moves, so `_off_unity` has nothing to nudge; the
+   resting key of a settle is exactly the canvas.
+   - **A punch and a dissolve on one cue are refused.** A punch is an effect
+     on a cut, and a dissolve removes the cut: the pre-roll arrives at 1.0
+     and the shot would jump to `scale` on the word.
+   - **The recording's own jump cuts need nothing new.** A punch on the
+     Edit's track is a `reframe` window at the cut's `src_start` with an
+     easing, which is built. A `punch` convenience that writes that window
+     can come later if an agent keeps reaching for it.
+
+3. **"Per cut" is a range, set in one call: `cue_set`.** There is no op that
+   changes a cue in place today (`cue_rm` then `cue_add`). `cue_set` takes a
+   cue or a range of them (by position, or `all`) and sets or clears
+   `dissolve` and `punch`, with `plan` and one undo, echoing each cue's word.
+   `cue_add` takes the same two fields. **Not a project-wide default**: a
+   default would change every cue added later without anyone asking, and the
+   montage prompt was about the cuts that exist.
+
+4. **A vignette is an overlay template, `vignette`, and nothing more.** A
+   radial gradient on a transparent canvas with `strength` and `softness`
+   slots, drawn by `magick` like every card, placed with `overlay_add` over
+   whatever span it should darken. Probe 6 says the composite is what the
+   PNG says, and the preview already draws overlays. melt ships native
+   vignette filters (`vignette`, `frei0r.vignette`, `avfilter.vignette`), and
+   **they are the wrong route**: the preview would have to re-derive their
+   curve in CSS, a second renderer beside the render, the rule § Animated
+   graphics design item 6 keeps.
+   - **The blur half of the montage prompt is not in this gap.** A blur the
+     preview must match is blur-fill's three traps again (`box_blur`'s radius
+     is a share of the width, CSS blur fades its own edges); it gets its own
+     note if a film asks for it.
+
+5. **The window draws all three.** The Edit dissolve's preview still
+   hard-cuts (HISTORY.md § A second recording follows the first), and this
+   is the moment to stop adding render-only effects: the preview takes a
+   second picture element for the incoming shot during a dissolve, its
+   opacity from `mlt.dissolve_alpha` (one statement, like the punch keys),
+   and the Edit join can share it. Judged by canvas readback against the
+   render at the same instants, never by screenshot.
+
+6. **A wipe stays a graphic** (§ Animated graphics, what is left open): a
+   full-frame page with a transparent hole, over a cut. Out of this gap.
+
+### Decisions for Tyler
+
+- **Build all three in one pass, in the order crossfade, punch, vignette.**
+  Recommend: yes. Each is small once measured, and they share `cue_set` and
+  the preview work.
+- **The crossfade's fallback to the outgoing post-roll.** Recommend: take
+  it, reported as `dissolve_from`. Refusing instead would refuse the most
+  common case, a b-roll clip's first use.
+- **The punch's default.** Recommend: `mode: "in"`, `scale` 1.1, `seconds`
+  0.2, `ease-out`: the channel's zoom into the word, and small enough that a
+  punch on every cut of a montage does not wander.
+- **The preview.** Recommend: build it with the effects rather than after,
+  including the Edit dissolve's missing fade, so no effect ships that only
+  the render shows.
 
 ---
 
