@@ -624,7 +624,7 @@ proofcut -C myproject export assembly.kdenlive         # both lanes, written as 
 A card is an SVG under `assets/cards/` and the PNG `card:<name>` resolves to;
 both are kept, so a card is re-edited rather than redrawn. `card new` fills one
 of six full-frame templates — `receipt`, `reveal`, `rerate`, `chapter`,
-`endcard`, `bumper` — or one of the two overlay templates below, and `card
+`endcard`, `bumper` — or one of the three overlay templates below, and `card
 render` re-rasterises after a hand edit. Five of the six full-frame ones
 carry a `mark` slot (`chapter` does not) and every one of them defaults to
 empty: proofcut stays generic and the channel supplies its own mark, usually
@@ -647,10 +647,28 @@ A card whose files predate the record — drawn elsewhere and copied in — is
 reported by name rather than guessed at, because nothing on disk says what
 made it.
 
-Two more templates, `lowerthird` and `scrim`, draw **overlays**: cards with no
-background, placed *over* the film rather than instead of it. A lower third
-is a headline and an optional amber footnote, bottom left; a scrim is the
-dark gradient the type sits on.
+A cut between two cues can **crossfade** or **punch**. Both ride the cue, so
+they stay on the right word through every cut:
+
+```sh
+proofcut -C myproject cue add vo 318 s1996-billy-stu --src-start 12 --dissolve 0.4
+proofcut -C myproject cue set --every --punch 1.1        # a punch on every cut
+proofcut -C myproject cue set vo 503 --punch 1           # 1 clears a punch, 0 a dissolve
+```
+
+A crossfade fades the incoming shot in so it is fully there on the cue's word.
+A clip with nothing before its in-point (its first unpinned use) fades the
+outgoing shot out from the word instead, and the reply says `from: outgoing`;
+pin the cue later into its clip to move it. A punch zooms about the centre of
+the frame over `--punch-seconds` (0.2) and holds, or with `--punch-mode settle`
+starts zoomed and eases back. One cue cannot do both, and neither works on a
+split or blur-filled window or under a retime.
+
+Three more templates, `lowerthird`, `scrim` and `vignette`, draw **overlays**:
+cards with no background, placed *over* the film rather than instead of it. A
+lower third is a headline and an optional amber footnote, bottom left; a scrim
+is the dark gradient the type sits on; a vignette darkens the frame towards its
+corners (`--set strength=0.6`).
 
 ```sh
 proofcut -C myproject card new scrim --template scrim
