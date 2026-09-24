@@ -3867,9 +3867,6 @@ def test_shot_sheet_pages_and_refuses_a_bad_page_size(
     assert out["past"]["pages"] == 2
 
 
-@needs_ffmpeg
-@needs_ffprobe
-@pytest.mark.skipif(shutil.which("magick") is None, reason="ImageMagick is not installed")
 @pytest.mark.skipif(
     browser.chrome_path() is None or shutil.which("magick") is None,
     reason="needs a headless browser (PROOFCUT_CHROME) and magick",
@@ -3895,6 +3892,9 @@ def test_a_graphic_is_made_captured_and_looked_at_over_stdio(tmp_path: Path) -> 
     assert "ImageContent" in result["kinds"]
 
 
+@needs_ffmpeg
+@needs_ffprobe
+@pytest.mark.skipif(shutil.which("magick") is None, reason="ImageMagick is not installed")
 def test_footage_sheet_returns_the_image_and_needs_no_edit(
     tmp_path: Path, sources: tuple[Path, Path]
 ) -> None:

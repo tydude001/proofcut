@@ -254,6 +254,7 @@ def capture(
                             shots[(phase, index)] = png
                 progress.report(min(batch_start + len(batch), len(jobs)), len(jobs), f"capturing {folder.name}")
             served_fonts = sorted(set(chrome.fonts))
+            sandboxed = chrome.sandboxed
         if layout["loop"] and shots[("loop-check", 0)] != shots[("hold", 0)]:
             raise GraphicError(
                 f"{folder.name}'s loop does not come back to where it started: the page at "
@@ -269,6 +270,7 @@ def capture(
             "hold_at": layout["hold_at"],
             "fonts": [f for f in fonts if f.get("status") == "loaded"],
             "vendored_fonts": served_fonts,
+            "sandboxed": sandboxed,
             "seconds": round(time.monotonic() - started, 2),
             "pages": len(tabs),
         }

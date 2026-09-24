@@ -18401,6 +18401,21 @@ missing. Installed on this box with `proofcut setup --yes`: doctor then found
 it in setup's folder with no environment variable, and the 36 graphic tests
 ran with none skipped.
 
+**The first CI run, and the sandbox Ubuntu refuses.** On macOS every capture
+test passed, determinism included, on the pinned arm64 build. On the Ubuntu
+24.04 runner every capture died before DevTools opened, with SIGTRAP: Ubuntu
+23.10 and later refuse unprivileged user namespaces to a binary with no
+AppArmor profile, and Chrome for Testing ships none, so it cannot build its
+sandbox. That is every Ubuntu 24.04 desktop too, not only CI. `browser.launch`
+now keeps the browser's stderr, and when it says `No usable sandbox` launches
+once more with `--no-sandbox` (the page it serves reaches nothing but its own
+folder and the vendored fonts), and the capture records `sandboxed`. Any other
+death is reported in the browser's own last words, never retried. The same
+run caught one of this build's own test edits: the new stdio graphic test had
+been inserted between `test_footage_sheet_returns_the_image_and_needs_no_edit`
+and its three skip decorators, so the footage test ran on runners without
+ImageMagick. The decorators are back on it.
+
 ## Images in, built — 2026-09-24
 
 docs/plans/DAYDREAM.md § The gaps, re-ranked, item 3, approved the same day

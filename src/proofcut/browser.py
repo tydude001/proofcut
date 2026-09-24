@@ -125,8 +125,16 @@ def chrome_path() -> str | None:
     return None
 
 
-def launch_args(binary: str, profile: Path) -> list[str]:
-    """The browser's argv. `--no-sandbox` only where a root user needs it."""
+#: What Chrome prints when Linux will not let it build its sandbox — Ubuntu
+#: 23.10 and later refuse unprivileged user namespaces to any binary without
+#: an AppArmor profile, and Chrome for Testing ships none, so it dies with
+#: SIGTRAP before DevTools opens. Measured on CI's Ubuntu 24.04 runner.
+NO_SANDBOX_MESSAGE = "No usable sandbox"
+
+
+def launch_args(binary: str, profile: Path, *, sandbox: bool = True) -> list[str]:
+    """The browser's argv. `--no-sandbox` where a root user needs it, or where
+    the system refused the sandbox (`launch`)."""
     args = [
         binary,
         *QUIET_FLAGS,
@@ -134,7 +142,7 @@ def launch_args(binary: str, profile: Path) -> list[str]:
         "--remote-debugging-port=0",
         f"--user-data-dir={profile}",
     ]
-    if sys.platform.startswith("linux") and hasattr(os, "geteuid") and os.geteuid() == 0:
+    if not sandbox or (sys.platform.startswith("linux") and hasattr(os, "geteuid") and os.geteuid() == 0):
         args.append("--no-sandbox")
     return [*args, "about:blank"]
 
@@ -253,6 +261,7 @@ class Browser:
         self.next_id = 0
         self.pending: dict[int, dict[str, Any]] = {}
         self.fonts: list[str] = []  # every font path a page asked for
+        self.sandboxed = True  # False when Linux refused the sandbox (`launch`)
 
     # A command is answered in order with whatever events arrive between; the
     # one event this module acts on is a paused request, answered inline.
@@ -365,28 +374,17 @@ def launch(root: Path | None = None) -> Iterator[Browser]:
             "PROOFCUT_CHROME to a Chrome, Chromium or chrome-headless-shell binary"
         )
     profile = Path(tempfile.mkdtemp(prefix="proofcut-browser-"))
-    proc = subprocess.Popen(
-        launch_args(binary, profile),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
     try:
-        port_file = profile / "DevToolsActivePort"
-        deadline = time.monotonic() + START_TIMEOUT
-        lines: list[str] = []
-        while len(lines) < 2:
-            if proc.poll() is not None:
-                raise BrowserError(f"{binary} exited ({proc.returncode}) before it opened DevTools")
-            if time.monotonic() > deadline:
-                raise BrowserError(f"{binary} did not open DevTools in {START_TIMEOUT:g}s")
-            with contextlib.suppress(OSError):
-                lines = port_file.read_text().split()
-            time.sleep(0.05)
-        browser = Browser(proc, _Socket("127.0.0.1", int(lines[0]), lines[1]), root)
+        try:
+            browser = _start(binary, profile, root, sandbox=True)
+        except _SandboxRefused:
+            # The page is the graphic's own folder, served with no network and
+            # no disk, so this is the case the sandbox matters least in — and
+            # the capture records that it ran without one (`Browser.sandboxed`).
+            shutil.rmtree(profile, ignore_errors=True)
+            profile.mkdir()
+            browser = _start(binary, profile, root, sandbox=False)
     except BaseException:
-        proc.kill()
-        proc.wait(timeout=10)
         shutil.rmtree(profile, ignore_errors=True)
         raise
     try:
@@ -394,6 +392,51 @@ def launch(root: Path | None = None) -> Iterator[Browser]:
     finally:
         browser.close()
         shutil.rmtree(profile, ignore_errors=True)
+
+
+class _SandboxRefused(BrowserError):
+    """Linux refused the browser its sandbox (`NO_SANDBOX_MESSAGE`)."""
+
+
+def _start(binary: str, profile: Path, root: Path | None, *, sandbox: bool) -> Browser:
+    """Run the browser and connect to it, or raise with what it said on the way down."""
+    # Inside the profile, which is removed only once the browser has closed:
+    # a running browser holds this file open, and Windows will not delete it.
+    log = profile / "proofcut-stderr.log"
+    with log.open("wb") as err:
+        proc = subprocess.Popen(
+            launch_args(binary, profile, sandbox=sandbox),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=err,
+        )
+    try:
+        port_file = profile / "DevToolsActivePort"
+        deadline = time.monotonic() + START_TIMEOUT
+        lines: list[str] = []
+        while len(lines) < 2:
+            if proc.poll() is not None:
+                said = log.read_text(errors="replace")
+                if sandbox and NO_SANDBOX_MESSAGE in said:
+                    raise _SandboxRefused(said[-400:])
+                tail = " ".join(said.strip().splitlines()[-3:])[-400:]
+                raise BrowserError(
+                    f"{binary} exited ({proc.returncode}) before it opened DevTools"
+                    + (f": {tail}" if tail else "")
+                )
+            if time.monotonic() > deadline:
+                raise BrowserError(f"{binary} did not open DevTools in {START_TIMEOUT:g}s")
+            with contextlib.suppress(OSError):
+                lines = port_file.read_text().split()
+            time.sleep(0.05)
+        browser = Browser(proc, _Socket("127.0.0.1", int(lines[0]), lines[1]), root)
+        browser.sandboxed = sandbox
+        return browser
+    except BaseException:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(timeout=10)
+        raise
 
 
 def load(page: Page, path: str = "/index.html") -> list[dict[str, Any]]:

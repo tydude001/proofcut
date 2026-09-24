@@ -21,6 +21,7 @@ import os
 from pathlib import Path
 
 import pytest
+from stubs import write_stub
 
 from proofcut import browser, mlt, motion, ops
 from proofcut import timeline as tl
@@ -168,6 +169,42 @@ def test_the_launch_carries_the_measured_deterministic_flags() -> None:
     args = browser.launch_args("/bin/chrome", Path("/tmp/p"))
     assert set(browser.DETERMINISTIC_FLAGS) <= set(args)
     assert "--remote-debugging-port=0" in args
+
+
+def _stub_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, refuse_sandbox: bool) -> Path:
+    """A browser that records its argv and dies: sandboxed with Chrome's own
+    sandbox refusal (or another fault), and without one with a plain exit."""
+    calls = tmp_path / "calls.txt"
+    body = (
+        "import sys\n"
+        f"open({str(calls)!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
+        "if '--no-sandbox' not in sys.argv:\n"
+        f"    sys.stderr.write({(browser.NO_SANDBOX_MESSAGE + '! see AppArmor') if refuse_sandbox else 'GPU process crashed'!r})\n"
+        "    sys.exit(5)\n"
+        "sys.stderr.write('ran without a sandbox')\n"
+        "sys.exit(3)\n"
+    )
+    monkeypatch.setenv("PROOFCUT_CHROME", str(write_stub(tmp_path / "chrome", body)))
+    return calls
+
+
+def test_a_refused_sandbox_is_retried_once_without_one(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ubuntu 23.10+ refuses Chrome for Testing a sandbox (SIGTRAP before
+    DevTools, measured on CI's 24.04 runner); proofcut retries without it."""
+    calls = _stub_browser(tmp_path, monkeypatch, refuse_sandbox=True)
+    with pytest.raises(browser.BrowserError, match="ran without a sandbox"), browser.launch(tmp_path):
+        pass
+    launches = calls.read_text().splitlines()
+    assert len(launches) == 2 and "--no-sandbox" not in launches[0] and "--no-sandbox" in launches[1]
+
+
+def test_any_other_death_is_reported_in_its_own_words_and_not_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _stub_browser(tmp_path, monkeypatch, refuse_sandbox=False)
+    with pytest.raises(browser.BrowserError, match="GPU process crashed"), browser.launch(tmp_path):
+        pass
+    assert len(calls.read_text().splitlines()) == 1
 
 
 # -- placing a graphic -----------------------------------------------------------
