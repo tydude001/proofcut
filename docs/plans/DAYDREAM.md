@@ -738,3 +738,119 @@ item is unchanged — real Scream VO, real browser (wiki `tooling.md`
    MCP transport and filmstrip thumbnails are **all built** (their own rows
    above); what is left is aspect swap and snap/lock lane toggles as their
    gates clear.
+
+---
+
+## The gallery, watched: 2026-09-23
+
+Daydream's docs are unchanged since the August capture: the same nine pages,
+and no new workflow. The homepage added one claim (CapCut as an export
+target, outside what parity imports) and a **"Made with Daydream" gallery of
+seven finished films**, 5 to 41 s, which the capture above never took apart.
+Tyler's prompt for this pass was that the demo videos show how good the app
+looks and how well it works, so the films were the thing to read, not the
+feature list.
+
+All seven plus the homepage's `product_motiongraphics.mp4` were downloaded
+and tiled with burnt-in timestamps, at 1 to 4 frames a second. The work is at
+`~/proofcut-work/spikes/daydream-gallery/`. None of it goes in the repo: the
+footage is not proofcut's. **Every file is served with its audio stripped**,
+so sound design, music and voice are unobservable, and nothing below is a
+claim about them.
+
+### What the films are made of
+
+Six of the eight are animated graphics with little or no footage. The one
+talking-head film and the one footage-led essay use the same graphic
+vocabulary on top. Counted by film:
+
+| technique | films | proofcut today |
+|---|---|---|
+| Words appear as spoken, fading in, accumulating into a centred line | 6 | **yes, with no new code**: a karaoke caption whose unspoken colour is transparent (below) |
+| A single word alone and large in the centre ("well", "ruff.", "rut") | 3 | no; PLAN.md § Per-word caption animation, finding 3 measured this as a different construction and did not build it |
+| Emphasis inside a line: weight sweep, highlighter bar, drawn underline | 3 | no |
+| Cut-out image stickers (outlined PNGs) sliding or popping in | 4 | no: an overlay must be a recorded card from `lowerthird` or `scrim`, and import takes no still images |
+| A tilted photo card with a drop shadow, a hand-drawn circle and arrow drawing on | 1 | no |
+| A UI graphic animating: a field that types, then the camera pulls back | 3 | no |
+| A letter-by-letter logo build, a spinning circular text badge, a stack of repeating words | 3 | no |
+| A graphic-to-graphic transition: phrase fade-out, organic colour wipe | 5 | no: a cue change is a hard cut, and `dissolve` joins recordings only |
+| Stills sliding across as a strip; staggered pill chips | 2 | no |
+| Footage full frame with a line of type over it | 2 | yes (cue plus overlay or caption) |
+| A screen recording inside a device frame | 2 | partly: insets and the eased reframe camera, no device frame |
+
+The pattern: **every film moves something inside a graphic on every beat,
+and proofcut's graphics are stills that move only as a whole** (an overlay's
+rise and fade). That is exactly the piece § Motion graphics + templates
+parked on 2026-08-09, *"Animation gets its own note, after a watch of a real
+card-heavy cut"*. The gallery is that watch, and it says animation is most of
+what makes these films look finished.
+
+### The rebuild, and what it found
+
+The 10 s dog-hotel ad (`example_airbnbfordogs.mp4`) was rebuilt natively with
+proofcut's own commands only: an espeak-ng voice (the demo's route), `seed`,
+two `bumper` cards cued by word, one `lowerthird` overlay, and captions. The
+project is `rebuild-pupbnb/` in the spike. It renders and burns clean.
+
+1. **Kinetic type is already there, and it is close.** `caption-style
+   --preset karaoke --text '#3d414400' --highlight '#3d4144' --position middle
+   --max-words 4` makes each word appear as it is spoken and stay until the
+   line ends, which is the first four seconds of the original, frame for
+   frame in structure. What it lacks is Daydream's short fade on each word.
+   PLAN.md § Per-word caption animation, finding 4 already measured that
+   `\alpha`, `\blur` and `\frz` animate one word without moving the rest of the
+   line, so a per-word fade-in is one `\t` tag per word inside the event
+   `to_ass` already writes.
+2. **Captions cannot be switched off for a span.** They drew over the logo
+   card ("Pup BNB, fetch" sitting under "PupBnB"). The original has no
+   captions over its end card, and proofcut has no way to say so.
+3. **A caption shows whisper's spelling, and nothing corrects it.** "ruff."
+   burned as "rough." and the brand as "Pup BNB,". `lexicon.json` is read by
+   `vo_synth` only.
+4. **The logo is a hard cut to a static card**, where the original builds the
+   letters in, bursts a mark behind them and writes the tagline on.
+5. **No stickers.** The palm tree, surfboard and dog have no route in; the
+   `lowerthird` stood in for the dog's "ruff!" label and nothing stood in for
+   the images.
+6. Papercut: `overlay add card:ruff` refuses with *"card 'card:ruff' has no
+   record"*, while `overlay add ruff` works, and `cue add` wants the
+   `card:` prefix. The refusal names the wrong fault.
+
+The airplane-windows essay was read and not rebuilt: it needs real footage,
+and its gaps are the same rows as the table (stickers, the photo card, drawn
+annotations, highlighter emphasis, transitions).
+
+### The gaps, ranked
+
+Each with the recommendation, most value per cost first.
+
+1. **Caption reveal, as a preset.** Transparent-until-spoken, a per-word
+   fade (`\alpha`, optionally `\blur`) and the single-large-word style,
+   plus a caption-off span and a per-word display spelling. **Recommend:
+   build first.** Days, not weeks; the metrics were measured in August; it is
+   the technique in six of eight films; and the preview must draw the same
+   fade, which § Per-word caption animation, finding 5 already warns about.
+2. **Image overlays.** An overlay that takes a transparent PNG (a cut-out, or
+   a photo proofcut frames with a border, shadow and tilt) placed by rect,
+   with pop and slide entrances, and still images accepted at import.
+   **Recommend: build second.** The writer already composites alpha PNGs with
+   eased `rect` keys (HISTORY.md § Overlays, built); what is missing is the
+   route in, not the drawing.
+3. **Animated graphics.** Typing fields, drawn strokes, highlighter sweeps,
+   letter builds, wipes, staggered chips. **Recommend: a design note, not a
+   build.** § Animation is a length problem already settled the constraint
+   (intro-then-hold or loop, refuse a fixed length at authoring) and named the
+   cheapest mechanism (an SVG frame sequence rendered to a clip, no `mlt.py`
+   change). What is open is the renderer: animated SVG or HTML needs a
+   headless browser, a new runtime dependency, against per-frame SVG through
+   `magick`, whose cost per frame is unmeasured. Daydream's own agent is asked
+   for *"a 6s graphic"*, a fixed length, which is the build this repo's note
+   refuses; the note should say why proofcut's answer differs.
+4. **Graphic-to-graphic transitions.** A fade between cues, and a wipe. Small
+   once 3 exists; a plain cue crossfade could come first on its own.
+5. **Device frames for screen recordings.** Low: insets and the eased camera
+   cover most of it.
+6. **The `overlay add card:NAME` refusal**, fixed to accept the prefix or
+   name the real fault. Minutes.
+
+**Nothing here is built.** The order above waits on Tyler's review.
