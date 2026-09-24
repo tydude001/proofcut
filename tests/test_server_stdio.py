@@ -8641,6 +8641,38 @@ def test_a_bound_server_takes_a_reel_destination_inside_its_project(
 
 
 @needs_ffprobe
+def test_a_second_server_bound_to_a_fresh_reel_can_write_while_the_first_runs(
+    tmp_path: Path, sources: tuple[Path, Path]
+) -> None:
+    """DAYDREAM.md § Splitting a footage dump, designed, finding 6: the server
+    that derived a reel held the reel's lock until it exited, so the person
+    opening it was refused a plan and a write alike. A derivation never holds
+    what it creates; the server keeps the project it was bound to."""
+    audio, transcript = sources
+    project = tmp_path / "proj"
+    teaser = project / "reels" / "teaser"
+
+    async def seed(session: ClientSession) -> Any:
+        return await _seeded(Client(session), project, audio, transcript)
+
+    async def body(first: ClientSession) -> Any:
+        derived = await Client(first).call("reel", dest="reels/teaser", start=2.0, end=6.0)
+        held = (project / "cache" / "agent.lock").is_dir(), (teaser / "cache" / "agent.lock").exists()
+
+        async def second(session: ClientSession) -> Any:
+            return await Client(session).call("cut_by_time", spans=[[0.0, 0.5]])
+
+        return derived, held, await _with_server(second, _bound(teaser))
+
+    anyio.run(_with_server, seed)
+    derived, held, cut = anyio.run(_with_server, body, _bound(project))
+
+    assert "lock_notice" not in derived
+    assert held == (True, False), "the film is held and the reel is not"
+    assert cut["duration_after"] == pytest.approx(3.5, abs=0.01)
+
+
+@needs_ffprobe
 def test_reel_derives_a_project_over_the_wire(
     tmp_path: Path, sources: tuple[Path, Path]
 ) -> None:

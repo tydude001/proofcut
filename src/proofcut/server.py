@@ -268,7 +268,7 @@ def _confine(path: str | None) -> str | None:
     `reel`'s `dest` is the one argument that is a *second* selector rather
     than a file: it names a whole project, and an unconfined one would let a
     bound panel write a project anywhere on disk. It is confined by being
-    named at the registration site (`@_tool("path", "dest")`) rather than by
+    named at the registration site (`@_tool("path", "dest", ...)`) rather than by
     a line in the body, for the reason the decorator exists.
 
     A relative path resolves against the bound root rather than the process
@@ -2341,6 +2341,7 @@ ALWAYS_LOAD_META = "anthropic/alwaysLoad"
 
 def _tool(
     *selectors: str,
+    derives: tuple[str, ...] = (),
     projectless: bool = False,
     always_load: bool = False,
     max_result_chars: int | None = None,
@@ -2365,6 +2366,14 @@ def _tool(
     "no project, proofcut's default" rather than "which project", so an omitted
     `path` there stays `None` — not confined, not defaulted — in every bind
     state, exactly as it always has.
+
+    `derives` names a selector that is confined like any other and never
+    locked: `reel`'s `dest`, the new project a derivation builds. **A
+    derivation never holds what it creates** (DAYDREAM.md § Splitting a
+    footage dump, designed, design 5): holding it kept the person out of a
+    reel until the deriving server exited, "Another proofcut session holds
+    this project" on a project that session would never touch again. What
+    protects it while it is built is that it must not exist yet.
 
     `always_load=True` sets `ALWAYS_LOAD_META`; read that constant's comment
     before reaching for it. `max_result_chars` sets `MAX_RESULT_META`, for a
@@ -2417,13 +2426,17 @@ def _tool(
             # the few that address none (`ping`, `fonts`' default) write
             # nothing under one.
             with refusing_path_too_long(), progress.reporting(reporter):
-                roots = _lock_roots(bound, present) if writes and _LOCKING else []
+                roots = (
+                    _lock_roots(bound, [name for name in present if name not in derives])
+                    if writes and _LOCKING
+                    else []
+                )
                 notices = [_hold(root) for root in roots if _is_project(root)]
                 if reporter is not None:
                     progress.report(0, None, fn.__name__)
                 result = fn(*bound.args, **bound.kwargs)
-                # `init`, and `reel`'s `dest`, make the project they address:
-                # there was nothing to hold until the body ran.
+                # `init` makes the project it addresses: there was nothing to
+                # hold until the body ran.
                 notices += [_hold(root) for root in roots if root not in projectlock.held_roots() and _is_project(root)]
                 notice = next((n for n in notices if n), None)
                 if notice is not None and isinstance(result, dict):
@@ -4918,7 +4931,7 @@ def finish_check(
     )
 
 
-@_tool("path", "dest")
+@_tool("path", "dest", derives=("dest",))
 def reel(
     path: ProjectPath = None,
     *,
