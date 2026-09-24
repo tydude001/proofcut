@@ -1,6 +1,6 @@
 [project]
 name = "proofcut"
-version = "0.40.0"
+version = "0.41.0"
 description = "Source-available, local-first AI video editor and MCP server: recordings to a finished film, cut by transcript, then verified"
 readme = "README.md"
 license = "LicenseRef-PolyForm-Shield-1.0.0"
