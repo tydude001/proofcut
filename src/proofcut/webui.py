@@ -702,12 +702,21 @@ def _revision(project_root: Path) -> list[float | int]:
     write the manifest and never touch `project.otio`, so a revision that
     watched the timeline alone left an open window showing the old picture
     lane until something unrelated moved the edit.
+
+    **And `lexicon.json`, for the same reason**: its `hear` corrections are
+    what the caption overlay prints, and `lexicon_add` touches neither file.
     """
     project = Project.open(project_root)
     timeline = project.timeline_path
     mtime = timeline.stat().st_mtime if timeline.exists() else 0.0
     manifest = project.manifest_path
-    return [mtime, manifest.stat().st_mtime if manifest.exists() else 0.0, len(project.snapshots())]
+    lexicon = project.root / "lexicon.json"
+    return [
+        mtime,
+        manifest.stat().st_mtime if manifest.exists() else 0.0,
+        len(project.snapshots()),
+        lexicon.stat().st_mtime if lexicon.exists() else 0.0,
+    ]
 
 
 def _session_get(root: str) -> dict[str, Any]:

@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from proofcut import fonts, progress
+from proofcut import fonts, lexicon, progress
 from proofcut.timeline import Edit
 from proofcut.transcript import Transcript
 
@@ -79,6 +79,10 @@ class CueWord:
     text: str
     start: float
     end: float
+    #: A placed sound's or audible inset's word, which a retime never mutes
+    #: (`ops._warp_cues`). Carried on the word rather than looked up by value,
+    #: because a correction (`fold`) changes the value.
+    placed_audio: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return {"text": self.text, "start": self.start, "end": self.end}
@@ -156,6 +160,42 @@ def place(edit: Edit, transcripts: dict[str, Transcript]) -> tuple[list[CueWord]
     # they sit on the timeline — source order says nothing across clips.
     placed.sort(key=lambda w: (w.start, w.end))
     return placed, dropped
+
+
+def fold(words: list[CueWord], table: dict[str, Any]) -> tuple[list[CueWord], list[dict[str, Any]]]:
+    """The placed words with the lexicon's `hear` corrections applied.
+
+    Runs on words in *timeline* order, after the cut and before `group`, so
+    a multi-word correction merges words as they play — "Pup BNB," becomes
+    one word "PupBnB," spanning both — and a line then breaks around the
+    merged word like any other. Each fold is reported, because a spelling
+    change nobody can see in a reply is the silent kind. `lexicon.py` owns
+    the matching; this owns only what a match does to a caption word.
+    """
+    found = lexicon.matches([w.text for w in words], table)
+    if not found:
+        return words, []
+    out: list[CueWord] = []
+    corrected: list[dict[str, Any]] = []
+    at = 0
+    for first, stop, heard, canonical in found:
+        out.extend(words[at:first])
+        run = words[first:stop]
+        text = lexicon.display([w.text for w in run], canonical)
+        out.append(
+            CueWord(
+                text=text,
+                start=run[0].start,
+                end=max(w.end for w in run),
+                placed_audio=any(w.placed_audio for w in run),
+            )
+        )
+        corrected.append(
+            {"at": run[0].start, "heard": " ".join(w.text for w in run), "shown": text, "rule": heard}
+        )
+        at = stop
+    out.extend(words[at:])
+    return out, corrected
 
 
 def group(

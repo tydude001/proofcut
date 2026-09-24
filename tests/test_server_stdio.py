@@ -72,6 +72,9 @@ EXPECTED_TOOLS = {
     "unspoken_rm",
     "unspoken_ls",
     "unspoken_detect",
+    "lexicon_ls",
+    "lexicon_add",
+    "lexicon_rm",
     "build_shots",
     "seed_timeline",
     "cut_by_transcript",
@@ -693,6 +696,9 @@ TOOL_TO_COMMAND = {
     "unspoken_add": "unspoken",
     "unspoken_rm": "unspoken",
     "unspoken_ls": "unspoken",
+    "lexicon_ls": "lexicon",
+    "lexicon_add": "lexicon",
+    "lexicon_rm": "lexicon",
     "unspoken_detect": "unspoken",
     "build_shots": "shots",
     "seed_timeline": "seed",
@@ -8694,7 +8700,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
             assert "no project" in description, tool.name
         else:
             assert "bound project" in description, tool.name
-    assert seen == 106
+    assert seen == 109
 
 
 def test_no_tool_advertises_an_argument_with_nothing_said_about_it() -> None:
@@ -10701,3 +10707,24 @@ def test_the_end_card_fades_in_over_the_film_with_the_music_playing_on_under_it(
     in_film = _tone_window(output, 440.0, 1.0, 0.4)
     under_card = _tone_window(output, 440.0, 4.1, 0.4)
     assert under_card > 0.7 * in_film, (under_card, in_film)
+
+
+def test_lexicon_round_trips_over_the_wire(tmp_path: Path) -> None:
+    """A correction list the panel's agent can keep: it has no file access,
+    so without these tools `lexicon.json` would be an editor-only file."""
+    project = tmp_path / "proj"
+
+    async def body(session: ClientSession) -> tuple[Any, Any, Any]:
+        client = Client(session)
+        await client.call("init", path=str(project))
+        added = await client.call("lexicon_add", path=str(project), heard="Pup BNB", canonical="PupBnB")
+        listed = await client.call("lexicon_ls", path=str(project))
+        removed = await client.call("lexicon_rm", path=str(project), heard="pup bnb")
+        return added, listed, removed
+
+    added, listed, removed = anyio.run(_with_server, body)
+    assert added["written"] is True
+    assert added["matches"] is None  # no timeline yet: reported, not raised
+    assert listed["hear"] == {"Pup BNB": "PupBnB"}
+    assert removed["removed"] == {"heard": "Pup BNB", "canonical": "PupBnB"}
+    assert not (project / "lexicon.json").exists()

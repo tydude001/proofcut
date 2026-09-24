@@ -642,6 +642,27 @@ def _build_parser() -> argparse.ArgumentParser:
         "Off by default: report only",
     )
 
+    p_lexicon = sub.add_parser(
+        "lexicon",
+        help="the project's standing corrections: caption spellings (hear) and "
+        "vo-synth respellings (say)",
+    )
+    lexicon_sub = p_lexicon.add_subparsers(dest="lexicon_command", required=True)
+    lexicon_sub.add_parser("ls", help="list lexicon.json's entries")
+    p_lexicon_add = lexicon_sub.add_parser(
+        "add",
+        help="captions print CANONICAL wherever whisper wrote HEARD (whole words, every "
+        "occurrence; undo does not revert it)",
+    )
+    p_lexicon_add.add_argument("heard", help="the words as whisper spelled them")
+    p_lexicon_add.add_argument("canonical", help="what to print (or, with --kind say, to say) instead")
+    p_lexicon_add.add_argument("--kind", choices=("hear", "say"), default="hear")
+    p_lexicon_add.add_argument("--plan", action="store_true", help="report, write nothing")
+    p_lexicon_rm = lexicon_sub.add_parser("rm", help="remove one entry")
+    p_lexicon_rm.add_argument("heard")
+    p_lexicon_rm.add_argument("--kind", choices=("hear", "say"), default="hear")
+    p_lexicon_rm.add_argument("--plan", action="store_true", help="report, write nothing")
+
     p_unspoken = sub.add_parser(
         "unspoken",
         help="manage the words the transcript holds and the recording never said",
@@ -2536,6 +2557,14 @@ def _cmd_cue(args: argparse.Namespace) -> int:
     return _emit(ops.cue_ls(args.project, clip_id=args.clip_id))
 
 
+def _cmd_lexicon(args: argparse.Namespace) -> int:
+    if args.lexicon_command == "add":
+        return _emit(ops.lexicon_add(args.project, args.heard, args.canonical, kind=args.kind, plan=args.plan))
+    if args.lexicon_command == "rm":
+        return _emit(ops.lexicon_rm(args.project, args.heard, kind=args.kind, plan=args.plan))
+    return _emit(ops.lexicon_ls(args.project))
+
+
 def _cmd_unspoken(args: argparse.Namespace) -> int:
     if args.unspoken_command == "add":
         return _emit(
@@ -3626,6 +3655,7 @@ _COMMANDS = {
     "pack": _cmd_pack,
     "cue": _cmd_cue,
     "unspoken": _cmd_unspoken,
+    "lexicon": _cmd_lexicon,
     "shots": _cmd_shots,
     "seed": _cmd_seed,
     "cut": _cmd_cut,

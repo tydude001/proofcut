@@ -69,7 +69,8 @@ INSTRUCTIONS = (
     "(a second recording after the first, dissolved)\n"
     "- sound: music (the bed), hold_add, vo_extend, vo_synth, sound_add (one-shots at events)\n"
     "- cards and ends: card_templates, card_new, overlay_add (type over the film), head, tail\n"
-    "- finish: add_captions, caption_style, export (render with export_format=null)\n"
+    "- finish: add_captions, caption_style, lexicon_add (caption spelling), export "
+    "(render with export_format=null)\n"
     "- checks: check_frames, verify, film_check, finish_check; changes (what the last edits did)\n\n"
     "Rules nothing will warn you about:\n"
     "- Word indices address the ORIGINAL recording and never renumber, so a range "
@@ -352,7 +353,7 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "transcript_checks", "describe_ls", "card_templates", "card_safe_zones",
             "pack_show", "pack_status", "cue_ls", "assets", "unspoken_ls", "build_shots",
             "locate", "timeline_status", "timeline_view", "changes", "properties", "finish_report",
-            "caption_view", "hold_ls", "hold_check", "overlay_ls", "sound_ls", "retime_ls", "inset_ls", "finish_check", "reframe_coverage",
+            "caption_view", "lexicon_ls", "hold_ls", "hold_check", "overlay_ls", "sound_ls", "retime_ls", "inset_ls", "finish_check", "reframe_coverage",
             "continuity_check", "continuity_ls", "thumbnail", "contact_sheet",
             "broll_brief", "verify", "check_frames", "check_black", "spot_frames",
             "speech_overlap", "review_list",
@@ -384,7 +385,9 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "migrate_project", "clip_role", "attach_transcript", "describe", "fonts",
             "card_new", "card_render", "card_reauthor", "pack_apply", "pack_activate",
             "pack_apply_captions", "cue_reresolve", "seed_timeline", "restore", "export",
-            "add_captions", "caption_style", "canvas", "head", "tail", "music", "reframe",
+            "add_captions", "caption_style", "canvas",
+            # Replaces the entry at its key, or adds one.
+            "lexicon_add", "head", "tail", "music", "reframe",
             "reframe_sheet", "shot_sheet", "footage_sheet", "synopsis", "events", "film_check",
             "import_edit", "review_verdict",
             # Replaces the dissolve at its join, or clears it.
@@ -411,6 +414,8 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "hold_add", "hold_rm", "hold_under_rm", "reel", "continuity_reject",
             "overlay_rm", "sound_rm", "retime_rm", "inset_rm",
             "review_add",
+            # Refuses a key it lacks, so a repeat is not a no-op.
+            "lexicon_rm",
             # Splices a second recording in; the timeline grows, as vo_extend's does.
             "follow",
         ],
@@ -1057,6 +1062,25 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "One template to return in full. The others come back as name and "
             "description only. Unset, every template in full."
         ),
+    },
+    "lexicon_add": {
+        "heard": (
+            "The words as whisper spelled them, one or several (`rough`, `pup bnb`). "
+            "Matched as whole words, case and edge punctuation aside, at every "
+            "occurrence; carry a neighbouring word to narrow it to one place."
+        ),
+        "canonical": (
+            "What to print instead (`hear`) or what the voice model is given "
+            "(`say`). Written as it should appear: `PupBnB` keeps its capitals."
+        ),
+        "kind": (
+            "`hear` (default): a caption correction, also folded out of "
+            "`vo_synth`'s WER. `say`: a respelling `vo_synth` gives the voice model."
+        ),
+    },
+    "lexicon_rm": {
+        "heard": "The entry's key, matched the way `lexicon_add` matches it.",
+        "kind": "`hear` (default) or `say`: which table the entry is in.",
     },
     "caption_style": {
         "preset": (
@@ -3737,6 +3761,56 @@ def caption_view(
     find the cue at a moment rather than paging to it.
     """
     return ops.caption_view(path, clip_id=clip_id, first=first, limit=limit)
+
+
+@_tool()
+def lexicon_ls(path: ProjectPath = None) -> dict[str, Any]:
+    """The project's standing corrections: `hear` (captions) and `say` (vo_synth).
+
+    Read-only. `hear` maps whisper's spelling to what captions print; `say`
+    maps a scripted word to what the voice model is given. `caption_view`'s
+    `corrected` shows where the `hear` rules fired.
+    """
+    return ops.lexicon_ls(path)
+
+
+@_tool()
+def lexicon_add(
+    path: ProjectPath = None,
+    *,
+    heard: str,
+    canonical: str,
+    kind: str = "hear",
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Keep a standing spelling correction: captions print `canonical` wherever whisper wrote `heard`.
+
+    The fix for a caption that shows whisper's spelling ("rough" for "ruff",
+    "Pup BNB" for a brand). Whole words, one or several: a multi-word key
+    merges its words into one caption word. Every occurrence, so narrow one
+    by including a neighbouring word. Display only; the transcript and
+    `verify` are untouched. The reply counts the caption words it changes now.
+
+    **Undo does not revert it**: the lexicon is a preference kept beside the
+    project, not an edit. Remove an entry with `lexicon_rm`. `kind="say"` is
+    `vo_synth`'s pronunciation respelling instead.
+    """
+    return ops.lexicon_add(path, heard, canonical, kind=kind, plan=plan)
+
+
+@_tool()
+def lexicon_rm(
+    path: ProjectPath = None,
+    *,
+    heard: str,
+    kind: str = "hear",
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Remove one lexicon entry; refuses a key the lexicon does not hold.
+
+    The caption goes back to whisper's spelling. `lexicon_ls` lists the entries.
+    """
+    return ops.lexicon_rm(path, heard, kind=kind, plan=plan)
 
 
 @_tool()

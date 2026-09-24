@@ -65,6 +65,7 @@ from proofcut import duck as dk
 # `fonts` is also the name of the op below, so the module needs an alias here
 # or the function would shadow it at call time — the `describe`/`verify` fix.
 from proofcut import fonts as proofcut_fonts
+from proofcut import lexicon as lexicon_mod
 from proofcut import pack as pk
 from proofcut import retime as rt
 from proofcut import sounds as snd
@@ -11650,48 +11651,6 @@ SYNTH_FLAT_FLOOR = 4.5
 SYNTH_FLAT_WEIGHT = 0.002
 
 
-def _load_lexicon(path: Path | str | None, project_root: Path) -> tuple[dict[str, Any], str | None]:
-    """The synth lexicon — `{"say": {written: respelling}, "hear": {variant: canonical}}`.
-
-    An explicit path wins and must exist; otherwise `<project>/lexicon.json`
-    is picked up when present, because pronunciation fixes are content, not
-    tooling, and the project is where the content lives. `say` respells what
-    the model is *given* ("Clarice" → "Clariss" is how a mispronunciation is
-    fixed — instruct prompts made renders worse, local-llm round 3); `hear`
-    folds whisper's spelling of a word back to the script's before the WER is
-    scored ("long legs" → "longlegs"), so a transcription-spelling miss stops
-    costing error budget that should be catching real misreads.
-    """
-    if path is not None:
-        p = Path(path).expanduser()
-        if not p.is_file():
-            raise tl.TimelineError(f"no lexicon at {p}")
-    else:
-        p = project_root / "lexicon.json"
-        if not p.is_file():
-            return {}, None
-    data = json.loads(p.read_text(encoding="utf-8"))
-    for key in data:
-        if key not in ("say", "hear"):
-            raise tl.TimelineError(f'lexicon {p} has an unknown key {key!r} — it takes "say" and "hear"')
-    return data, str(p)
-
-
-def _apply_say(text: str, lexicon: dict[str, Any]) -> str:
-    """Respell each `say` word, whole words only, case-insensitively."""
-    for written, respelt in (lexicon.get("say") or {}).items():
-        text = re.sub(rf"\b{re.escape(written)}\b", respelt, text, flags=re.IGNORECASE)
-    return text
-
-
-def _fold(text: str, lexicon: dict[str, Any]) -> str:
-    """Lower-case and map every `hear` variant to its canonical form, both WER sides."""
-    text = text.lower()
-    for variant, canonical in (lexicon.get("hear") or {}).items():
-        text = text.replace(variant.lower(), canonical.lower())
-    return text
-
-
 def _norm_words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9']+", text.lower().replace("-", " "))
 
@@ -11754,7 +11713,7 @@ def vo_synth(
     different take re-runs with another `seed`, a different set of tickets.
 
     **The lexicon.** `lexicon` (else `<project>/lexicon.json`, if present) is
-    `{"say": {...}, "hear": {...}}` — `_load_lexicon`'s docstring says which
+    `{"say": {...}, "hear": {...}}` — `lexicon.py`'s docstring says which
     side fixes which fault. The model is given the `say`-respelt text (reported
     as `say_text` when it differs) and the WER is scored through the `hear`
     folds on both sides; the words spliced into the timeline are still `text`'s.
@@ -11791,8 +11750,8 @@ def vo_synth(
     project = Project.open(path)
     if clip_id is not None and word_index is not None:
         _splice_point(project, clip_id, word_index)  # refuse before the render, not after it
-    lex, lex_path = _load_lexicon(lexicon, project.root)
-    say_text = _apply_say(text, lex)
+    lex, lex_path = lexicon_mod.load(lexicon, project.root)
+    say_text = lexicon_mod.apply_say(text, lex)
     voice_path = tts.voice_dir(voice)
     ref_text = (voice_path / "ref.txt").read_text(encoding="utf-8").strip()
     # Keyed on what the model is given: a respelt line is different audio, and
@@ -11871,7 +11830,7 @@ def vo_synth(
         payload = asr.transcribe(winner["path"], model=SYNTH_READBACK_MODEL)
         heard = " ".join(seg["text"] for seg in payload.get("segments", [])).strip()
         result["heard"] = heard
-        result["wer"] = round(_wer(_norm_words(_fold(text, lex)), _norm_words(_fold(heard, lex))), 3)
+        result["wer"] = round(_wer(_norm_words(lexicon_mod.fold_text(text, lex)), _norm_words(lexicon_mod.fold_text(heard, lex))), 3)
     if clip_id is not None and word_index is not None:
         splice = _splice_after(
             project,
@@ -17154,6 +17113,143 @@ def _spoken_transcripts(
     return spoken, {"unspoken": dropped, "unspoken_stale": stale}
 
 
+def _lexicon_entry(table: dict[str, Any], kind: str, heard: str) -> str | None:
+    """The stored key `heard` names, matched the way the lexicon matches.
+
+    A `hear` key is its words (case and edge punctuation aside), so "Pup
+    BNB," and "pup bnb" are one entry; a `say` key is a word, case aside.
+    """
+    if kind == "hear":
+        wanted = lexicon_mod.key_words(heard)
+        return next((key for key in table if lexicon_mod.key_words(key) == wanted), None)
+    return next((key for key in table if key.lower() == heard.strip().lower()), None)
+
+
+def _lexicon_kind(kind: str) -> str:
+    if kind not in lexicon_mod.KINDS:
+        raise lexicon_mod.LexiconError(f"unknown lexicon kind {kind!r} — one of: {', '.join(lexicon_mod.KINDS)}")
+    return kind
+
+
+def _lexicon_matches(project: Project, heard: str, canonical: str) -> dict[str, Any]:
+    """Where one `hear` rule would change the captions now, for the echo.
+
+    Over the placed words as `_caption_cues` sees them, before any other
+    rule; reported and never raised, because a project with no timeline yet
+    can still keep a correction for later.
+    """
+    try:
+        edit = _load_edit(project)
+        transcripts, _ = _spoken_transcripts(project, _transcripts_for(project, None))
+        placed, _ = captions.place(edit, transcripts)
+        _, corrected = captions.fold(placed, {"hear": {heard: canonical}})
+    except (ProjectError, tl.TimelineError, tx.TranscriptError) as exc:
+        return {"matches": None, "matches_error": str(exc)}
+    return {"matches": len(corrected), "examples": corrected[:5]}
+
+
+def lexicon_ls(path: Path | str) -> dict[str, Any]:
+    """The project's `lexicon.json`: its `say` respellings and `hear` corrections.
+
+    Read-only. `hear` is what captions print in place of whisper's spelling
+    (`lexicon.py`); `say` is what `vo_synth` gives the voice model.
+    """
+    project = Project.open(path)
+    data, where = lexicon_mod.load(None, project.root)
+    return {
+        "project": str(project.root),
+        "lexicon": where,
+        "say": dict(data.get("say") or {}),
+        "hear": dict(data.get("hear") or {}),
+    }
+
+
+def lexicon_add(
+    path: Path | str,
+    heard: str,
+    canonical: str,
+    *,
+    kind: str = "hear",
+    plan: bool = False,
+) -> dict[str, Any]:
+    """Keep a standing correction in the project's `lexicon.json`.
+
+    `hear` (the default): wherever whisper wrote `heard`, captions print
+    `canonical` — whole words, one or several ("Pup BNB" → "PupBnB" merges
+    two words into one), punctuation kept, and an all-lower-case canonical
+    takes a capital where the word opened a sentence. It applies to every
+    occurrence, so one that must hit a single place is a longer key carrying
+    its neighbours. Display only: the transcript is never edited and
+    `verify` never sees it. `vo_synth` folds its WER through the same table.
+
+    `say`: `vo_synth` gives the voice model `canonical` wherever the script
+    has `heard`.
+
+    **Undo does not revert this.** The lexicon is a standing preference kept
+    beside the project, not an edit in its history, so undoing a cut never
+    brings a misspelling back; `lexicon_rm` removes an entry. An entry for a
+    key already kept replaces it and says what it replaced. The reply counts
+    where a `hear` rule would change the captions now.
+    """
+    project = Project.open(path)
+    kind = _lexicon_kind(kind)
+    heard, canonical = str(heard).strip(), str(canonical).strip()
+    if kind == "hear":
+        lexicon_mod.key_words(heard)
+    elif not heard:
+        raise lexicon_mod.LexiconError("a `say` entry needs the word as written")
+    if not canonical:
+        raise lexicon_mod.LexiconError("a lexicon entry needs what to print or say instead")
+    data, _ = lexicon_mod.load(None, project.root)
+    table = dict(data.get(kind) or {})
+    existing = _lexicon_entry(table, kind, heard)
+    replaced = table.pop(existing) if existing is not None else None
+    table[heard] = canonical
+    result: dict[str, Any] = {
+        "project": str(project.root),
+        "kind": kind,
+        "heard": heard,
+        "canonical": canonical,
+        "replaced": None if existing is None else {"heard": existing, "canonical": replaced},
+        "plan": bool(plan),
+        "written": False,
+    }
+    if kind == "hear":
+        result.update(_lexicon_matches(project, heard, canonical))
+    if not plan:
+        result["lexicon"] = str(lexicon_mod.save(project.root, {**data, kind: table}))
+        result["written"] = True
+    return result
+
+
+def lexicon_rm(path: Path | str, heard: str, *, kind: str = "hear", plan: bool = False) -> dict[str, Any]:
+    """Remove one entry from the project's `lexicon.json`, refusing one it lacks.
+
+    Matched the way `lexicon_add` matches, so the key need not be typed
+    exactly as stored. The file goes when its last entry does.
+    """
+    project = Project.open(path)
+    kind = _lexicon_kind(kind)
+    data, _ = lexicon_mod.load(None, project.root)
+    table = dict(data.get(kind) or {})
+    existing = _lexicon_entry(table, kind, str(heard))
+    if existing is None:
+        kept = ", ".join(repr(k) for k in table) or "none"
+        raise lexicon_mod.LexiconError(f"no {kind} entry for {heard!r} — kept: {kept}")
+    removed = table.pop(existing)
+    result: dict[str, Any] = {
+        "project": str(project.root),
+        "kind": kind,
+        "removed": {"heard": existing, "canonical": removed},
+        "plan": bool(plan),
+        "written": False,
+    }
+    if not plan:
+        lexicon_mod.save(project.root, {**data, kind: table})
+        result["written"] = True
+    return result
+
+
 def caption_style(
     path: Path | str,
     *,
@@ -17270,6 +17366,14 @@ def _caption_cues(
     placed, cut = captions.place(edit, transcripts)
     voiced, placed_audio = _placed_audio_cue_words(project, edit, transcripts)
     placed = sorted([*placed, *voiced], key=lambda w: (w.start, w.end))
+    # The lexicon's `hear` corrections, display only (`lexicon.py`). A broken
+    # file is reported rather than raised: `caption_view` is read on every
+    # reload of the window, and uncorrected captions beat none.
+    corrections: dict[str, Any] = {}
+    try:
+        placed, corrections["corrected"] = captions.fold(placed, lexicon_mod.load(None, project.root)[0])
+    except lexicon_mod.LexiconError as exc:
+        corrections = {"corrected": [], "lexicon_error": str(exc)}
     cues = captions.group(
         placed,
         max_words=style.max_words,
@@ -17277,7 +17381,7 @@ def _caption_cues(
         max_duration=style.max_duration,
         hold=style.hold,
     )
-    return cues, placed, cut, {"clips": sorted(transcripts), **unspoken, **placed_audio}
+    return cues, placed, cut, {"clips": sorted(transcripts), **unspoken, **placed_audio, **corrections}
 
 
 def _placed_audio_cue_words(
@@ -17302,7 +17406,9 @@ def _placed_audio_cue_words(
         return [], {"placed_audio_error": str(exc)}
     edit_at = (lambda s: s) if warp is None else warp.edit_at
     cue_words = [
-        captions.CueWord(text=text, start=edit_at(start), end=edit_at(max(end, start + captions.MIN_WORD)))
+        captions.CueWord(
+            text=text, start=edit_at(start), end=edit_at(max(end, start + captions.MIN_WORD)), placed_audio=True
+        )
         for start, end, text in words
     ]
     return cue_words, {"placed_audio": placed}
@@ -17519,17 +17625,19 @@ def _warp_cues(
 ) -> tuple[list[captions.Cue], int]:
     """Caption cues moved onto the render's clock, muted words left out.
 
-    `unmuted` is the words a placed sound or inset says: a retime mutes the
-    Edit's own audio and never theirs, so a voice over a muted stretch is
-    still heard and still captioned (measured on B7 run three's copy, where
-    the narrator's first word was dropped)."""
+    A placed sound's or inset's word (`CueWord.placed_audio`) is never
+    dropped: a retime mutes the Edit's own audio and never theirs, so a voice
+    over a muted stretch is still heard and still captioned (measured on B7
+    run three's copy, where the narrator's first word was dropped). The flag
+    rides the word because a lexicon correction changes its value; `unmuted`
+    names further words by value."""
     spans = warp.muted_edit_spans()
     moved: list[captions.Cue] = []
     dropped = 0
     for cue in cues:
         words = []
         for word in cue.words:
-            if word not in unmuted and any(a <= (word.start + word.end) / 2 < b for a, b in spans):
+            if not word.placed_audio and word not in unmuted and any(a <= (word.start + word.end) / 2 < b for a, b in spans):
                 dropped += 1
                 continue
             words.append(replace(word, start=warp.render_at(word.start), end=warp.render_at(word.end)))
@@ -18085,6 +18193,10 @@ def add_captions(
     style = captions.resolve({**stored, **overrides})
 
     cues, placed, cut, meta = _caption_cues(project, edit, style, clip_id)
+    if meta.get("lexicon_error"):
+        # The view reports it; a file does not ship with the corrections
+        # silently missing.
+        raise captions.CaptionError(f"{meta['lexicon_error']} — captions are not written without their corrections")
     if not placed:
         raise captions.CaptionError(
             "no transcribed word survives on the timeline — nothing to caption"
@@ -18099,8 +18211,7 @@ def add_captions(
     warp = _project_warp(project, edit)
     retimed_words_dropped = 0
     if warp is not None:
-        voiced, _ = _placed_audio_cue_words(project, edit, _spoken_transcripts(project, _transcripts_for(project, clip_id))[0])
-        cues, retimed_words_dropped = _warp_cues(cues, warp, unmuted=frozenset(voiced))
+        cues, retimed_words_dropped = _warp_cues(cues, warp)
         if not cues:
             raise captions.CaptionError("every captioned word plays inside a muted retime — nothing to caption")
     ass_cues = _offset_cues(cues, head_seconds)
