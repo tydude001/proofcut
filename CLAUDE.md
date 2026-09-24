@@ -1516,6 +1516,19 @@ built; docs/plans/INSTALL.md):
       as `Outfit Thin` and `Outfit` falls through at exit 0. It stages the
       static pair in `fonts/static/`, which `vendored()` never scans so
       fontconfig never sees it. HISTORY.md § The first windows-demo run.
+  - **A caption reveal ends each alpha channel at the style's own value,
+    never `\alpha&H00&`**, which turns a translucent box solid; and **libass
+    blurs only the outline of a glyph that has one**, so a blur reveal draws
+    with `\bord0` until its last 40%. `\blur N` is a gaussian of sigma
+    0.85 N, which the preview mirrors. A caption span (`CAPTION_SPANS_KEY`)
+    is off or a partial style, split *before* grouping. HISTORY.md § Caption
+    reveal, caption spans and caption corrections, built.
+  - **`lexicon.json`'s `hear` table is what captions print**, matched by
+    whole words (`lexicon.py`, one matcher for captions and the WER), and
+    display only: the transcript and `verify` never see a fold. It sits
+    outside the snapshot pair, so **undo does not revert a correction**, on
+    purpose. `CueWord.placed_audio` rides the word because a fold changes the
+    value `_warp_cues` used to match on.
 - **Cards rasterise through `magick`, and the size knob goes *before* the
   input.** `-size` is a vector render and **fits, never distorts**; `-resize`
   after the input resamples the pixels and wrecks text, so `render_svg` has no

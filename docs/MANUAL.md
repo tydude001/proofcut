@@ -309,6 +309,42 @@ both — ASS quotes them channel-reversed and alpha-inverted, so a value that
 looks right is routinely a different colour. The window draws the same style
 over the preview and on the CC lane, so what you see is what burns in.
 
+Each word can **arrive** as it is spoken rather than simply be there: a fade,
+or a blur that sharpens. The line is laid out whole from its first frame, so
+nothing moves while a word comes in. The `reveal` preset is words landing in
+the middle of the frame, fading in:
+
+```sh
+proofcut caption-style --preset reveal --max-words 4
+proofcut caption-style --reveal blur --reveal-ms 250   # blur in over a quarter second
+proofcut caption-style --reveal none                   # back to words simply appearing
+```
+
+A **caption span** treats one stretch of the film differently. `--off` draws
+no captions there (over an end card or a logo); `--style` changes any caption
+field over the span only, which is how one word gets its own big beat inside
+ordinary lines. Spans are addressed like overlays, by word, phrase or event:
+
+```sh
+proofcut caption-span add vo --phrase "Pup" --until-phrase "stay." --off
+proofcut caption-span add vo --phrase "well," --until-phrase "well," \
+    --style '{"max_words": 1, "size": 180}'
+proofcut caption-span ls
+proofcut caption-span rm 0
+```
+
+Whisper's spelling is not always the film's. A **correction** kept in the
+project's `lexicon.json` is printed wherever whisper wrote the words, as whole
+words, and several words can become one. It only changes what captions show:
+the transcript and `verify` are untouched, and undo does not take it back.
+
+```sh
+proofcut lexicon add rough ruff
+proofcut lexicon add "Pup BNB" PupBnB
+proofcut lexicon ls
+proofcut lexicon rm rough
+```
+
 ## Transcript checks and `unspoken`
 
 Attaching a transcript checks it against itself and reports four findings —

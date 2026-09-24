@@ -1272,6 +1272,12 @@ five.
    Recommend the word's start. The watch in step 5 can overturn it cheaply.
 5. **Build order 1 to 5 as above, stopping at the watch.** Recommend yes.
 
+Tyler took all five as recommended, and steps 1 to 4 were built the same
+day. The probes changed one thing in the design: a blur reveal draws no
+outline until its last 40%, because libass blurs only the outline of a glyph
+that has one (P2a). The record, with every measurement, is HISTORY.md
+§ Caption reveal, caption spans and caption corrections, built.
+
 ---
 
 ## Copyright, the DMCA, and this work: 2026-09-23

@@ -18231,3 +18231,64 @@ cached windowed transcript: **0 faults, similarity 1.0**. The same inputs
 with the rule switched off give the recorded 1 fault ("for watching in
 july" twice) at similarity 0.919. A sign-off the edit does say, or one heard
 over expected speech, is still checked (tests for both).
+
+## Caption reveal, caption spans and caption corrections, built — 2026-09-23
+
+Item 1 of docs/plans/DAYDREAM.md § The gaps, re-ranked, built to the design in
+§ Caption reveal and corrections, designed, which Tyler approved as
+recommended. Three features, and the watch that decides the look is out.
+
+**Corrections.** The project's `lexicon.json` `hear` table now corrects what
+captions print. `lexicon.py` holds the loader and one whole-word matcher for
+both uses; the WER fold was a substring replace, which would have printed
+"ruffly" for "roughly". A multi-word key merges its words ("Pup BNB," becomes
+one word "PupBnB,"), punctuation stays, and an all-lower-case canonical takes
+a sentence-opening capital. Display only: the transcript file and `verify`
+are untouched. `lexicon_ls/add/rm` exist because the panel's agent has no
+file access, and **undo does not revert a correction** by design. A placed
+sound's word now carries `CueWord.placed_audio`, because `_warp_cues` found
+those words by value and a correction changes the value. The window watches
+`lexicon.json` in `_revision`.
+
+**Spans.** `caption_span_add/ls/rm` (CLI `caption-span`), addressed like an
+overlay. `off` draws nothing over the span, and a line's hold stops where an
+off span begins (the first live burn held "ruff." 0.13 s onto the logo card).
+`style` layers `caption_style` fields on the project's look; the single large
+word is `{"max_words": 1, "size": 180}` over one word. Words split by span
+before grouping, `captions.settle` keeps two lines off the screen at once
+across a span edge, and each look is its own ASS `Style:` line.
+
+**Reveal.** `caption_style --reveal fade|blur`, `--reveal-ms`,
+`--reveal-blur`, and a `reveal` preset. Measured first
+(`~/proofcut-work/spikes/caption-reveal/NOTES.md`, P1 to P4):
+
+- **libass blurs only the outline of a glyph that has one.** With a 3 px
+  outline, `\blur8` left the fill as sharp as no blur (white core 6611 against
+  6498 px). So a blur reveal draws with `\bord0` and brings the outline back
+  over its last 40%. The fill snaps sharp as that starts (edge gradient 9 to
+  118 between 0.7 s and 0.8 s), which is what a watch of an outlined style
+  should judge. The watch's own style has no outline and cannot show it.
+- **`\alpha&H00&` turns a translucent box solid.** Each channel fades to the
+  style's own alpha instead, and the boxed word then equals the no-fade
+  control to 13 places.
+- **`\blur N` is a gaussian of sigma 0.85 N** reference pixels, which is the
+  preview's multiplier. A fade under the `\k` fill composes (0 px from the
+  fill alone once arrived), and two `Style:` lines each draw their own.
+
+The burn tests read pixels back, with controls: without a reveal the second
+word is already drawn (1562 px) and a fade never goes soft. The preview was
+checked in a real browser over 28 frames of playback across a cut: opacity
+within 0.005 and blur within 0.011 px of the burn's arithmetic. The first
+reading said the preview lagged by 300 ms. That was the harness setting the
+`<video>`'s time directly on a silence-cut project, where the window's clock
+is timeline time. Driven through the page's own Home key, it matched.
+
+**Still open from the browser pass.** The window draws caption type about 10%
+larger than the burn at the same frame. That predates this work and the
+reveal does not touch size.
+
+**The watch.** Two review rounds over Tailscale from
+`~/proofcut-work/spikes/caption-reveal/`: `round-arrive` (the rebuild's
+transparent fill, a 250 ms fade, a blur) and `round-bigword` (the fade, with
+and without "well," and "ruff." alone and large). No default changes until
+Tyler picks.
