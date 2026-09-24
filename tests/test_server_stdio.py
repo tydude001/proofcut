@@ -10748,7 +10748,7 @@ def test_caption_span_style_arrives_as_an_object_over_the_wire(tmp_path: Path) -
     manifest = project.read_manifest()
     manifest["clips"] = [clip]
     project.write_manifest(manifest)
-    words = tuple(tx.Word(index=i, text=t, start=i * 0.5, end=i * 0.5 + 0.4) for i, t in enumerate("one two three".split()))
+    words = tuple(tx.Word(index=i, text=t, start=i * 0.5, end=i * 0.5 + 0.4) for i, t in enumerate(["one", "two", "three"]))
     tx.save(tx.Transcript(clip_id="vo", words=words), project.transcript_path("vo"))
     tl.write(tl.to_otio(tl.Edit([tl.Segment("vo", 0.0, 3.0)]), {"vo": clip}, rate=1000.0), project.timeline_path)
 

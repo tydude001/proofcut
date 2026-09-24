@@ -7,6 +7,7 @@ could not put "well" alone and large the way the original does.
 
 from __future__ import annotations
 
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -72,7 +73,7 @@ def test_the_line_before_a_span_does_not_hold_over_it(project: Project) -> None:
     ops.caption_style(project.root, hold=2.0)
     ops.caption_span_add(project.root, "vo", phrase="well,", until_phrase="well,", style={"size": 150})
     cues = ops.caption_view(project.root)["cues"]
-    for before, after in zip(cues, cues[1:], strict=False):
+    for before, after in pairwise(cues):
         assert before["end"] <= after["start"]
 
 
