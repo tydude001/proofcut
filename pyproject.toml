@@ -56,6 +56,9 @@ dev = [
 # last universal2 wheel. HISTORY.md § An Intel Mac route, without Homebrew.
 # It keeps Dependabot's GHSA-g6cj-pr64-35w5 open (fixed only in 50.0.0): that is
 # PKCS#7 decryption, and pyjwt only signs, so the alert is dismissed, not fixed.
+# GHSA-jwv3-5hgf-82ww (fixed in 49.0.0) is dismissed on the same grounds: it is
+# X.509 path building (`x509.verification`), which nothing here calls. Still no
+# Intel Mac wheel as of 50.0.1 (checked 2026-09-24).
 constraint-dependencies = [
     "cryptography<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
 ]
