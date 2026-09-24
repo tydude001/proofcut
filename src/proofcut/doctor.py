@@ -38,6 +38,7 @@ from typing import Any
 from proofcut import (
     asr,
     autoeditor,
+    browser,
     captions,
     deps,
     describe,
@@ -516,6 +517,37 @@ def _face_entry() -> dict[str, Any]:
     return row
 
 
+def _browser_entry() -> dict[str, Any]:
+    """The headless browser animated graphics are captured through, by running it.
+
+    Found is not enough, the whisper rule: a binary missing a shared library
+    resolves fine and dies when asked to start, so the row is a version read
+    back from an exit 0. Optional, since everything but animated graphics
+    works without it.
+    """
+    named = os.environ.get("PROOFCUT_CHROME")
+    looked_for = f"$PROOFCUT_CHROME ({named or 'unset'}), then setup's folder, then PATH ({', '.join(browser.CHROME_NAMES)})"
+    feature = "animated graphics — capturing a graphic's page frame by frame"
+    fix = _by_setup(
+        "install Chrome for Testing's chrome-headless-shell (or any Chrome or Chromium) "
+        "and put it on PATH or in PROOFCUT_CHROME. Cards, captions and everything else "
+        "work without it."
+    )
+    binary = browser.chrome_path()
+    if binary is None:
+        why = f"PROOFCUT_CHROME names {named!r}, which is not a file" if named else "no browser found"
+        return _entry("browser", feature, looked_for=looked_for, why=why, fix=fix)
+    out, err, code = _run([binary, "--version"])
+    version = (out or err).strip().splitlines()[0] if (out or err).strip() else None
+    if code != 0 or not version or not any(ch.isdigit() for ch in version):
+        return _entry(
+            "browser", feature, looked_for=looked_for, found=binary,
+            why=f"`{binary} --version` exited {code} and printed no version — it may be missing a library",
+            fix=fix,
+        )  # fmt: skip
+    return _entry("browser", feature, ok=True, looked_for=looked_for, found=binary, version=version)
+
+
 def _tts_entry() -> dict[str, Any]:
     """The synthesiser, and — separately — whether a voice is configured.
 
@@ -906,7 +938,7 @@ def report() -> dict[str, Any]:
     # rest of this list. It sat in `required` until a clean Ubuntu 24.04, whose
     # apt has only ImageMagick 6, could never read `ok` for a demo that draws
     # no card (HISTORY.md § A stranger's install, on a clean Ubuntu).
-    optional = [_magick_entry(), _vlm_entry(), _face_entry(), _tts_entry()]
+    optional = [_magick_entry(), _browser_entry(), _vlm_entry(), _face_entry(), _tts_entry()]
     return {
         "proofcut": __version__,
         "ok": all(entry["ok"] for entry in required),

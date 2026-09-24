@@ -1,0 +1,26 @@
+<!doctype html>
+<!-- proofcut graphic template `letters`. Phases: intro 0-1.2s (letters pop in
+     across 0.8s, each taking 0.4s), a still hold, outro 0.4s. -->
+<html><head><meta charset="utf-8"><style>
+@font-face { font-family: "Outfit"; font-weight: 700; src: url("/_proofcut/fonts/static/Outfit-Bold.ttf"); }
+:root { --u: calc(min(100vw, 100vh) / 1080); }
+html, body { margin: 0; width: 100vw; height: 100vh; background: transparent; overflow: hidden; }
+.out { position: absolute; inset: 0; animation: out .4s ease-in 1.2s forwards; }
+@keyframes out { to { opacity: 0; transform: translateY(calc(-40 * var(--u))); } }
+.title { position: absolute; left: 3vw; right: 3vw; top: {{y}}%; translate: 0 -50%; text-align: center;
+  font: 700 calc({{size}} * var(--u)) / 1.1 "Outfit"; color: {{colour}};
+  text-shadow: 0 calc(6 * var(--u)) calc(24 * var(--u)) rgba(0,0,0,.4); }
+.title span { display: inline-block; white-space: pre; opacity: 0; animation: pop .4s cubic-bezier(.3,1.6,.5,1) forwards; }
+@keyframes pop { from { opacity: 0; transform: translateY(calc(40 * var(--u))) scale(.4); } to { opacity: 1; transform: none; } }
+</style></head><body>
+<div class="out"><div class="title" id="title" data-text="{{title}}"></div></div>
+<script>
+const title = document.getElementById("title");
+const letters = [...title.dataset.text];
+const step = 400 / Math.max(1, letters.length - 1);
+letters.forEach((c, n) => {
+  const s = document.createElement("span");
+  s.textContent = c; s.style.animationDelay = `${step * n}ms`;
+  title.append(s);
+});
+</script></body></html>

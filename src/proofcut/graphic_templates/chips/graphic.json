@@ -1,0 +1,11 @@
+{
+  "about": "A row of pill chips slides up one after another.",
+  "intro": 1.2,
+  "outro": 0.4,
+  "slots": {
+    "items": {"required": true, "about": "the chips' labels, separated by |"},
+    "y": {"kind": "number", "default": "80", "about": "the row's centre, as a percentage of the frame's height"},
+    "chip_colour": {"kind": "colour", "default": "#ffffff", "about": "the chips"},
+    "text_colour": {"kind": "colour", "default": "#3d4144", "about": "the labels"}
+  }
+}

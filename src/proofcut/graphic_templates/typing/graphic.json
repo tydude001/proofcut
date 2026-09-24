@@ -1,0 +1,12 @@
+{
+  "about": "A search field rises in and the text types into it; the caret blinks through the hold, which is why the hold is a one-second loop.",
+  "intro": 2.0,
+  "loop": 1.0,
+  "outro": 0.4,
+  "slots": {
+    "text": {"required": true, "about": "what types into the field"},
+    "y": {"kind": "number", "default": "50", "about": "the field's centre, as a percentage of the frame's height"},
+    "field_colour": {"kind": "colour", "default": "#ffffff", "about": "the field"},
+    "text_colour": {"kind": "colour", "default": "#3d4144", "about": "the typed text and the caret"}
+  }
+}

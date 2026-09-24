@@ -105,7 +105,12 @@ Beyond those stages:
 - **Screen recordings.** Named instants (`events`) that a crop, a sound or a
   speed change can hang off, a clip inset into the recording, and a retime
   for the slow parts.
-- **Built for agents.** 115 MCP tools with typed inputs, structured returns
+- **Animated graphics.** A graphic is a web page an agent writes or fills
+  from a template (typing, a highlighter sweep, a letter build, chips),
+  captured frame by frame by a headless browser and placed over a span of
+  words. It animates in, holds as long as the span lasts, and animates out,
+  so a cut never breaks one. Saved graphics carry across projects.
+- **Built for agents.** 124 MCP tools with typed inputs, structured returns
   and read/write annotations, so Claude Code, Codex or your own agent can
   drive it and a permission layer can tell a look from a change.
 - **No lock-in.** The timeline is OpenTimelineIO, the manifest is JSON, and

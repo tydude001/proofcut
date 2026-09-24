@@ -30,7 +30,17 @@ import pytest
 from mcp import ClientSession, StdioServerParameters, stdio_client
 from stubs import write_stub
 
-from proofcut import energy, finish, finishlog, graphics, media, mlt, ops, picture
+from proofcut import (
+    browser,
+    energy,
+    finish,
+    finishlog,
+    graphics,
+    media,
+    mlt,
+    ops,
+    picture,
+)
 from proofcut.project import Project
 
 SERVER = StdioServerParameters(command=sys.executable, args=["-m", "proofcut.cli", "mcp"])
@@ -58,6 +68,15 @@ EXPECTED_TOOLS = {
     "card_new",
     "card_render",
     "card_reauthor",
+    "graphic_templates",
+    "graphic_new",
+    "graphic_edit",
+    "graphic_capture",
+    "graphic_ls",
+    "graphic_sheet",
+    "graphic_save",
+    "graphic_library",
+    "graphic_load",
     "card_safe_zones",
     "pack_apply",
     "pack_activate",
@@ -684,6 +703,13 @@ TOOL_TO_COMMAND = {
     "describe_ls": "describe-ls",
     "card_templates": "card",
     "card_new": "card",
+    **dict.fromkeys(
+        [
+            "graphic_templates", "graphic_new", "graphic_edit", "graphic_capture", "graphic_ls",
+            "graphic_sheet", "graphic_save", "graphic_library", "graphic_load",
+        ],
+        "graphic",
+    ),
     "card_render": "card",
     "card_reauthor": "card",
     "card_safe_zones": "card",
@@ -3836,6 +3862,31 @@ def test_shot_sheet_pages_and_refuses_a_bad_page_size(
 @needs_ffmpeg
 @needs_ffprobe
 @pytest.mark.skipif(shutil.which("magick") is None, reason="ImageMagick is not installed")
+@pytest.mark.skipif(
+    browser.chrome_path() is None or shutil.which("magick") is None,
+    reason="needs a headless browser (PROOFCUT_CHROME) and magick",
+)
+def test_a_graphic_is_made_captured_and_looked_at_over_stdio(tmp_path: Path) -> None:
+    """graphic_new captures through the server's own browser, and graphic_sheet
+    returns the picture — asserted on the raw result, `footage_sheet`'s reason."""
+    project = tmp_path / "proj"
+
+    async def body(session: ClientSession) -> dict[str, Any]:
+        client = Client(session)
+        await client.call("init", path=str(project))
+        made = await client.call(
+            "graphic_new", path=str(project), name="t", template="letters", slots={"title": "Hi"}, pages=1
+        )
+        raw = await session.call_tool("graphic_sheet", {"path": str(project), "name": "t"})
+        return {"made": made, "is_error": raw.is_error, "kinds": [type(b).__name__ for b in raw.content]}
+
+    result = anyio.run(_with_server, body)
+    assert result["made"]["graphic"]["capture"] == "current"
+    assert (result["made"]["captured"]["intro"], result["made"]["captured"]["outro"]) == (36, 12)
+    assert not result["is_error"]
+    assert "ImageContent" in result["kinds"]
+
+
 def test_footage_sheet_returns_the_image_and_needs_no_edit(
     tmp_path: Path, sources: tuple[Path, Path]
 ) -> None:
@@ -8706,7 +8757,7 @@ def test_every_advertised_path_says_what_it_means() -> None:
             assert "no project" in description, tool.name
         else:
             assert "bound project" in description, tool.name
-    assert seen == 112
+    assert seen == 119
 
 
 def test_no_tool_advertises_an_argument_with_nothing_said_about_it() -> None:

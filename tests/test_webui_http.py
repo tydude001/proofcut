@@ -1472,6 +1472,19 @@ def test_an_asset_honours_range_the_way_media_does(project: Path, server: str) -
     assert body == whole[64:128]
 
 
+def test_a_graphic_frame_is_served_and_nothing_beside_it_is(project: Path, server: str) -> None:
+    """`graphic:<name>/<phase>/<frame>` reaches one captured frame, and every
+    part of the key is held to its shape before a path is built from it."""
+    frame = Project.open(project).graphic_frames_dir / "hl" / "intro" / "f0007.png"
+    frame.parent.mkdir(parents=True)
+    frame.write_bytes(b"\x89PNG\r\n\x1a\nframe")
+
+    status, _, body = _get(f"{server}/api/asset/graphic:hl/intro/7?v=abc")
+    assert status == 200 and body == frame.read_bytes()
+    for bad in ("graphic:..%2Fhl/intro/7", "graphic:hl/..%2F..%2Fcards/7", "graphic:hl/intro/7%2F..", "graphic:hl/capture/0"):
+        assert _get(f"{server}/api/asset/{bad}")[0] == 400, bad
+
+
 def test_a_card_name_cannot_climb_out_of_the_cards_directory(server: str) -> None:
     """The one place an asset key arrives from outside the project. A traversal
     is refused with a message rather than served, and the check lives in

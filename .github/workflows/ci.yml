@@ -65,6 +65,17 @@ jobs:
       # nobody had set up (the first Windows run, 2026-09-10). On Windows it
       # is also the registration `fonts._register_windows` writes, exercised.
       - run: uv run proofcut fonts --install
+      # The headless browser animated graphics are captured through, from
+      # setup's own pin, so `tests/test_graphic.py`'s determinism test runs on
+      # all three OSes rather than on the one it was measured on
+      # (DAYDREAM.md § Animated graphics, designed and spiked, the last
+      # recommendation). setup's installer rather than a second download path.
+      - name: headless browser (setup's pin)
+        shell: bash
+        run: >-
+          uv run python -c "import sys; from proofcut import install;
+          r = install.install({'pieces': [{'name': 'chrome', 'version': 'pinned'}]});
+          sys.exit(0 if r['installed'] == ['chrome'] else 1)"
       # What each runner actually resolves, printed before the suite rather
       # than inferred from which tests skipped: the first Windows run ran the
       # `@needs_melt` tests on a runner nobody had put melt on, and nothing in

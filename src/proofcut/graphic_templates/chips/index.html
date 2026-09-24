@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- proofcut graphic template `chips`. Phases: intro 0-1.2s (chips slide up,
+     staggered across 0.7s, each taking 0.5s), a still hold, outro 0.4s. -->
+<html><head><meta charset="utf-8"><style>
+@font-face { font-family: "Outfit"; font-weight: 700; src: url("/_proofcut/fonts/static/Outfit-Bold.ttf"); }
+:root { --u: calc(min(100vw, 100vh) / 1080); }
+html, body { margin: 0; width: 100vw; height: 100vh; background: transparent; overflow: hidden; }
+.out { position: absolute; inset: 0; animation: out .4s ease-in 1.2s forwards; }
+@keyframes out { to { opacity: 0; } }
+.row { position: absolute; left: 4vw; right: 4vw; top: {{y}}%; translate: 0 -50%;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: calc(24 * var(--u)); }
+.chip { padding: calc(18 * var(--u)) calc(40 * var(--u)); border-radius: 999px; background: {{chip_colour}};
+  color: {{text_colour}}; font: 700 calc(48 * var(--u)) "Outfit"; white-space: nowrap;
+  box-shadow: 0 calc(10 * var(--u)) calc(30 * var(--u)) rgba(0,0,0,.3);
+  opacity: 0; animation: up .5s cubic-bezier(.2,.8,.2,1) forwards; }
+@keyframes up { from { opacity: 0; transform: translateY(calc(60 * var(--u))); } to { opacity: 1; transform: none; } }
+</style></head><body>
+<div class="out"><div class="row" id="row" data-items="{{items}}"></div></div>
+<script>
+const row = document.getElementById("row");
+const items = row.dataset.items.split("|").map(s => s.trim()).filter(Boolean);
+items.forEach((label, n) => {
+  const s = document.createElement("span");
+  s.className = "chip"; s.textContent = label; s.style.animationDelay = `${(700 / Math.max(1, items.length - 1)) * n}ms`;
+  row.append(s);
+});
+</script></body></html>

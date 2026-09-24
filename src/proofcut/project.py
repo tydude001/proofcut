@@ -84,6 +84,12 @@ WAVEFORM_DIR = "cache/waveform"
 PROXY_DIR = "cache/proxy"
 RENDER_DIR = "renders"
 CARDS_DIR = "assets/cards"
+#: Animated graphics: one folder per graphic, its page and `graphic.json`
+#: (`motion.py`). Created on demand, like `TAIL_DIR`, so not in `_SUBDIRS`.
+GRAPHICS_DIR = "assets/graphics"
+#: A graphic's captured frames, one folder per graphic. Cache: re-derivable
+#: from the page, the canvas and the rate, and stamped with all three.
+GRAPHIC_FRAMES_DIR = "cache/graphics"
 #: The silent WAV a `tail` renders its audio-track entry from (PLAN.md § Tail
 #: time — the design note). Cache, the `SHEET_DIR` precedent rather than
 #: `PROXY_DIR`'s: it is re-derivable from the manifest's own `tail.seconds`
@@ -501,6 +507,14 @@ class Project:
     @property
     def cards_dir(self) -> Path:
         return self.root / CARDS_DIR
+
+    @property
+    def graphics_dir(self) -> Path:
+        return self.root / GRAPHICS_DIR
+
+    @property
+    def graphic_frames_dir(self) -> Path:
+        return self.root / GRAPHIC_FRAMES_DIR
 
     @property
     def tail_dir(self) -> Path:

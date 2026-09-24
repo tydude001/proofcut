@@ -947,8 +947,10 @@ function buildOverlayRow(state, pxPerSec, duration) {
     }
     const enter = overlay.enter === "none" ? 0 : overlay.enter_seconds;
     const leave = overlay.leave === "none" ? 0 : overlay.leave_seconds;
+    // An animated graphic arrives as one item per piece; each names its phase.
+    const label = overlay.graphic ? `${overlay.graphic} · ${overlay.layer}` : overlay.card;
     block.title = [
-      `overlay ${overlay.position}: ${overlay.card} — drawn over the film`,
+      `overlay ${overlay.position}: ${label} — drawn over the film`,
       `plays ${fmt(overlay.timeline_start)}–${fmt(overlay.timeline_end)}`,
       enter ? `enters: ${overlay.enter}, ${fmt(enter)}, ${overlay.enter_ease}` : "enters: cut",
       leave ? `leaves: ${overlay.leave}, ${fmt(leave)}, ${overlay.leave_ease}` : "leaves: cut",
@@ -963,7 +965,7 @@ function buildOverlayRow(state, pxPerSec, duration) {
       ramp.style.width = `${(Math.min(leave, span) * pxPerSec).toFixed(1)}px`;
       block.append(ramp);
     }
-    block.append(el("span", "clip-label", overlay.card));
+    block.append(el("span", "clip-label", label));
     row.append(block);
   }
   seekOnClick(row, pxPerSec);

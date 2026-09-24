@@ -1,0 +1,14 @@
+{
+  "about": "A line rises in and a marker sweeps under one word of it.",
+  "intro": 1.2,
+  "outro": 0.4,
+  "slots": {
+    "before": {"default": "", "about": "text before the marked word"},
+    "word": {"required": true, "about": "the word the marker sweeps under"},
+    "after": {"default": "", "about": "text after the marked word"},
+    "y": {"kind": "number", "default": "50", "about": "the line's centre, as a percentage of the frame's height"},
+    "size": {"kind": "number", "default": "96", "about": "type size, in pixels of a 1080-tall frame"},
+    "text_colour": {"kind": "colour", "default": "#ffffff", "about": "the text"},
+    "marker_colour": {"kind": "colour", "default": "#ffd84a", "about": "the marker"}
+  }
+}

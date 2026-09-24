@@ -11,6 +11,7 @@ wants something to print as JSON.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import math
@@ -22,7 +23,7 @@ import subprocess
 import tempfile
 import time
 import xml.etree.ElementTree as ET
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 from fractions import Fraction
@@ -34,6 +35,7 @@ from typing import Any
 from proofcut import (
     asr,
     autoeditor,
+    browser,
     captions,
     energy,
     faces,
@@ -60,12 +62,13 @@ from proofcut import doctor as doc
 # be shadowed inside the one function that sets it.
 from proofcut import duck as dk
 
-# `duck` is `music`'s own argument, so the module takes an alias rather than
-# be shadowed inside the one function that sets it.
 # `fonts` is also the name of the op below, so the module needs an alias here
 # or the function would shadow it at call time — the `describe`/`verify` fix.
 from proofcut import fonts as proofcut_fonts
 from proofcut import lexicon as lexicon_mod
+
+# `motion` is a loop variable of the overlay code (an entrance's motion).
+from proofcut import motion as anim
 from proofcut import pack as pk
 from proofcut import retime as rt
 from proofcut import sounds as snd
@@ -4761,13 +4764,39 @@ def timeline_view(
             overlays_view = []
             for plan in overlay_plans:
                 base = {
-                    key: plan[key]
+                    key: plan.get(key)
                     for key in (
-                        "position", "card", "clip_id", "timeline_start", "timeline_end",
+                        "position", "card", "graphic", "clip_id", "timeline_start", "timeline_end",
                         "frames", "lane", "enter", "enter_seconds", "enter_ease",
                         "leave", "leave_seconds", "leave_ease",
                     )
                 }
+                if plan.get("graphic") is not None:
+                    # One item per piece the render draws, each naming the
+                    # phase whose frames it plays and how many there are, so
+                    # the preview picks the frame the render shows — the
+                    # hold's loop included — and derives nothing else.
+                    last = len(plan["phases"]) - 1
+                    for n, phase in enumerate(plan["phases"]):
+                        start = round(phase["start_frame"] / shots_rate, 3)
+                        overlays_view.append(
+                            {
+                                **base,
+                                "layer": phase["phase"],
+                                "asset": f"graphic:{plan['graphic']}/{phase['phase']}",
+                                "frame_count": phase["frames"] if phase["phase"] != "hold" else (
+                                    len(list((Path(plan["frames_dir"]) / "hold").glob("f*.png")))
+                                ),
+                                "rate": shots_rate,
+                                "stamp": plan["stamp"],
+                                "timeline_start": start,
+                                "timeline_end": round((phase["start_frame"] + phase["frames"]) / shots_rate, 3),
+                                "enter": base["enter"] if n == 0 else "none",
+                                "leave": base["leave"] if n == last else "none",
+                                "rise_px": mlt.OVERLAY_RISE,
+                            }
+                        )
+                    continue
                 if plan["layers"] is None:
                     overlays_view.append({**base, "asset": f"card:{plan['card']}", "rise_px": mlt.OVERLAY_RISE})
                     continue
@@ -5342,6 +5371,7 @@ def contact_sheet(
 #: shot, which is the one thing this sheet must never do.
 SHOT_SHEET_DIR = "cache/sheets/shots"
 FOOTAGE_SHEET_DIR = "cache/sheets/footage"
+GRAPHIC_SHEET_DIR = "cache/sheets/graphics"
 
 #: Extracted source frames, shared by **every** sheet rather than sat under
 #: one of them. A frame is addressed `(asset, source second)` and that address
@@ -6045,6 +6075,19 @@ def preview_source(path: Path | str, asset: str) -> dict[str, Any]:
             source = _card_layer_path(project, card, layer)
         else:
             source = project.cards_dir / f"{name}.png"
+    elif asset.startswith("graphic:"):
+        # `graphic:<name>/<phase>/<frame>` — one captured frame. Every part is
+        # held to its shape before a path is built from it, since this key is
+        # the untrusted string the route hands in.
+        parts = asset.removeprefix("graphic:").split("/")
+        if (
+            len(parts) != 3
+            or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,47}", parts[0])
+            or parts[1] not in anim.PHASES
+            or not re.fullmatch(r"\d{1,6}", parts[2])
+        ):
+            raise ProjectError(f"asset {asset!r} does not name a graphic frame (graphic:<name>/<phase>/<frame>)")
+        source = project.graphic_frames_dir / parts[0] / parts[1] / f"f{int(parts[2]):04d}.png"
     else:
         # `preview_path`, not `media_path`: the proxy when a current one
         # exists (PLAN.md § The preview proxy transcode). This is one of the
@@ -14095,6 +14138,407 @@ def _resolved_hold_spans(
 # cut cannot leave one pointing at the wrong moment. List order is stacking
 # order — the writer draws a later overlay above an earlier one it overlaps.
 
+# -- animated graphics ------------------------------------------------------
+#
+# docs/plans/DAYDREAM.md § Animated graphics, designed and spiked. A graphic is
+# a page under `assets/graphics/<name>/`, captured by `anim.capture` into
+# `cache/graphics/<name>/` at the project's canvas and export rate, and drawn
+# over the film by an overlay record naming it (`graphic`, beside `card`). Its
+# files sit outside the snapshot pair, as a card's PNG does: undo moves the
+# overlay that places a graphic, never the page.
+
+
+@contextlib.contextmanager
+def _graphic_errors() -> Iterator[None]:
+    """The engine's refusals, as the `ProjectError` every client already shows."""
+    try:
+        yield
+    except (anim.GraphicError, browser.BrowserError) as exc:
+        raise ProjectError(str(exc)) from None
+
+
+def _graphic_folder(project: Project, name: str, *, exists: bool = True) -> Path:
+    with _graphic_errors():
+        anim.check_name(name)
+    folder = project.graphics_dir / name
+    if exists and not (folder / anim.SPEC_NAME).is_file():
+        known = sorted(p.name for p in project.graphics_dir.glob("*") if (p / anim.SPEC_NAME).is_file())
+        raise ProjectError(
+            f"there is no graphic {name!r}" + (f" — this project has {', '.join(known)}" if known else " — make one with graphic_new")
+        )
+    return folder
+
+
+def _graphic_target(project: Project) -> tuple[int, int, float]:
+    """What a capture is drawn at: the canvas the render declares, and its rate."""
+    width, height = _mlt_resolution(project)
+    return width, height, _export_fps(_clips_by_id(project))
+
+
+def _graphic_state(project: Project, name: str) -> dict[str, Any]:
+    folder = _graphic_folder(project, name)
+    width, height, rate = _graphic_target(project)
+    frames = project.graphic_frames_dir / name
+    with _graphic_errors():
+        spec = anim.read_spec(folder)
+    record = anim.read_capture(frames)
+    if record is None:
+        state = "missing"
+    elif anim.is_current(folder, frames, width, height, rate):
+        state = "current"
+    else:
+        state = "stale"
+    return {
+        "name": name,
+        **spec,
+        "capture": state,
+        "captured": None if record is None else {k: record.get(k) for k in ("canvas", "fps", "intro", "hold", "loop", "outro", "seconds")},
+        "canvas": [width, height],
+        "rate": rate,
+    }
+
+
+def _capture_graphic(project: Project, name: str, pages: int) -> dict[str, Any]:
+    width, height, rate = _graphic_target(project)
+    with _graphic_errors():
+        return anim.capture(
+            project.graphics_dir / name, project.graphic_frames_dir / name,
+            width=width, height=height, fps=rate, pages=pages,
+        )  # fmt: skip
+
+
+def _graphic_pieces(
+    project: Project, record: dict[str, Any], start_frame: int, frames: int, rate: float
+) -> dict[str, Any]:
+    """A placed graphic as the overlay pieces the writer draws, in order.
+
+    The intro plays from the span's start and the outro ends where the span
+    ends; the hold takes what is left — one still, or the loop's frames, which
+    `qimage` repeats on its own (measured: a 10-frame sequence under a 60-frame
+    entry plays 0..9 six times). **Every piece is exactly its phase's length**,
+    because that same repetition means an intro entry one frame too long jumps
+    back to the intro's first frame at exit 0. A span too short for intro and
+    outro is refused rather than cut mid-motion — it would be a different
+    graphic.
+    """
+    name = record["graphic"]
+    folder = _graphic_folder(project, name)
+    width, height, _ = _graphic_target(project)
+    frames_dir = project.graphic_frames_dir / name
+    with _graphic_errors():
+        current = anim.is_current(folder, frames_dir, width, height, rate)
+    if not current:
+        state = "has never been captured" if anim.read_capture(frames_dir) is None else "has changed since it was captured"
+        raise ProjectError(
+            f"graphic {name!r} {state} at this project's {width}x{height}, {rate:g} fps — run graphic_capture"
+        )
+    captured = anim.read_capture(frames_dir) or {}
+    intro, hold, outro, loop = int(captured["intro"]), int(captured["hold"]), int(captured["outro"]), bool(captured["loop"])
+    held = frames - intro - outro
+    if held < 0:
+        raise ProjectError(
+            f"overlay graphic:{name} lasts {frames} frames and its intro and outro take {intro + outro} "
+            f"({(intro + outro) / rate:.2f}s) — lengthen its span or shorten the graphic's phases"
+        )
+    pieces: list[tuple[str, str, int]] = []
+    if intro:
+        pieces.append(("intro", anim.phase_pattern(frames_dir, "intro"), intro))
+    if held:
+        still = str(frames_dir / "hold" / "f0000.png")
+        pieces.append(("hold", anim.phase_pattern(frames_dir, "hold") if loop and hold > 1 else still, held))
+    if outro:
+        pieces.append(("outro", anim.phase_pattern(frames_dir, "outro"), outro))
+    drawn: list[mlt.Overlay] = []
+    cursor = start_frame
+    for n, (_, resource, length) in enumerate(pieces):
+        first, last = n == 0, n == len(pieces) - 1
+        drawn.append(
+            mlt.Overlay(
+                resource=resource,
+                start=cursor,
+                frames=length,
+                in_motion=record["enter"] if first else "none",
+                in_frames=round(record["enter_seconds"] * rate) if first else 0,
+                in_ease=record["enter_ease"],
+                out_motion=record["leave"] if last else "none",
+                out_frames=round(record["leave_seconds"] * rate) if last else 0,
+                out_ease=record["leave_ease"],
+            )
+        )
+        cursor += length
+    return {
+        "drawn": drawn,
+        "frames_dir": str(frames_dir),
+        "stamp": str(captured.get("stamp", ""))[:12],
+        "phases": [
+            {"phase": phase, "start_frame": piece.start, "frames": piece.frames, "loop": phase == "hold" and loop}
+            for (phase, _, _), piece in zip(pieces, drawn, strict=True)
+        ],
+    }
+
+
+def graphic_templates(name: str | None = None) -> dict[str, Any]:
+    """The built-in animated graphic templates, or one of them, with every slot."""
+    listed = anim.templates()
+    if name is not None:
+        listed = [t for t in listed if t["name"] == name]
+        if not listed:
+            raise ProjectError(f"no graphic template {name!r} — available: {', '.join(anim.template_names())}")
+    return {"templates": listed}
+
+
+def _set_phases(spec: dict[str, Any], intro: float | None, loop: float | None, outro: float | None, clear_loop: bool) -> dict[str, Any]:
+    updated = dict(spec)
+    if intro is not None:
+        updated["intro"] = float(intro)
+    if loop is not None:
+        updated["loop"] = float(loop) or None
+    if clear_loop:
+        updated["loop"] = None
+    if outro is not None:
+        updated["outro"] = float(outro)
+    with _graphic_errors():
+        return anim.normalise_spec(updated)
+
+
+def graphic_new(
+    path: Path | str,
+    name: str,
+    *,
+    template: str | None = None,
+    slots: dict[str, str] | None = None,
+    html: str | None = None,
+    intro: float | None = None,
+    loop: float | None = None,
+    outro: float | None = None,
+    replace: bool = False,
+    capture: bool = True,
+    pages: int = anim.DEFAULT_PAGES,
+) -> dict[str, Any]:
+    """Make animated graphic `name` from a template's slots or from a page's HTML, and capture it.
+
+    Exactly one of `template` (with `slots`) or `html`. A page written by hand
+    declares its phases — `intro` and `outro` seconds, and `loop` seconds
+    when its hold moves (a blinking caret does) — and a template brings its
+    own, which these override. The page is served with the project's vendored
+    fonts under `/_proofcut/fonts/` and nothing else: no network, no other
+    file. `capture=False` writes the page and draws nothing.
+    """
+    project = Project.open(path)
+    if (template is None) == (html is None):
+        raise ProjectError("a graphic is made from exactly one of template or html")
+    if html is not None and slots:
+        raise ProjectError("slots fill a template; a page written as html has none")
+    folder = _graphic_folder(project, name, exists=False)
+    if (folder / anim.SPEC_NAME).is_file() and not replace:
+        raise ProjectError(f"graphic {name!r} already exists — graphic_edit it, or pass replace")
+    staging = project.graphics_dir / f".{name}.new"
+    shutil.rmtree(staging, ignore_errors=True)
+    try:
+        with _graphic_errors():
+            if template is not None:
+                spec = anim.fill_template(template, dict(slots or {}), staging)
+            else:
+                staging.mkdir(parents=True)
+                (staging / anim.PAGE_NAME).write_text(str(html))
+                spec = {"intro": 0.0, "loop": None, "outro": 0.0}
+            spec = {**spec, **_set_phases(spec, intro, loop, outro, clear_loop=False)}
+            anim.write_spec(staging, spec)
+        shutil.rmtree(folder, ignore_errors=True)
+        staging.rename(folder)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    captured = _capture_graphic(project, name, pages) if capture else None
+    return {"graphic": _graphic_state(project, name), "captured": captured, "folder": str(folder)}
+
+
+def graphic_edit(
+    path: Path | str,
+    name: str,
+    *,
+    slots: dict[str, str] | None = None,
+    html: str | None = None,
+    intro: float | None = None,
+    loop: float | None = None,
+    no_loop: bool = False,
+    outro: float | None = None,
+    capture: bool = True,
+    pages: int = anim.DEFAULT_PAGES,
+) -> dict[str, Any]:
+    """Change graphic `name`: refill its template's slots, replace its page, or move its phases.
+
+    `slots` merge into the ones it was filled with; a template graphic whose
+    page was replaced by `html` stops being that template's. `no_loop` turns
+    a looping hold back into a still. Recaptured unless `capture=False`.
+    """
+    project = Project.open(path)
+    folder = _graphic_folder(project, name)
+    if slots and html is not None:
+        raise ProjectError("pass slots or html, not both")
+    with _graphic_errors():
+        spec = anim.read_spec(folder)
+        if slots:
+            if not spec.get("template"):
+                raise ProjectError(f"graphic {name!r} was written as html, so it has no slots — pass html")
+            staging = project.graphics_dir / f".{name}.edit"
+            shutil.rmtree(staging, ignore_errors=True)
+            try:
+                refilled = anim.fill_template(spec["template"], {**spec.get("slots", {}), **slots}, staging)
+                phases = {k: spec[k] for k in ("intro", "loop", "outro")}
+                anim.write_spec(staging, {**refilled, **phases})
+                shutil.rmtree(folder)
+                staging.rename(folder)
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
+            spec = anim.read_spec(folder)
+        if html is not None:
+            (folder / anim.PAGE_NAME).write_text(str(html))
+            spec.pop("template", None)
+            spec.pop("slots", None)
+        spec = {**spec, **_set_phases(spec, intro, loop, outro, clear_loop=no_loop)}
+        anim.write_spec(folder, spec)
+    captured = _capture_graphic(project, name, pages) if capture else None
+    return {"graphic": _graphic_state(project, name), "captured": captured}
+
+
+def graphic_capture(
+    path: Path | str, name: str | None = None, *, force: bool = False, pages: int = anim.DEFAULT_PAGES
+) -> dict[str, Any]:
+    """Capture graphic `name`, or every graphic whose capture is missing or stale.
+
+    A capture is stale when the page, the canvas or the export rate moved
+    since it was drawn; an export refuses a stale one rather than drawing the
+    old frames. `force` recaptures a current one too.
+    """
+    project = Project.open(path)
+    names = [name] if name is not None else sorted(
+        p.name for p in project.graphics_dir.glob("*") if (p / anim.SPEC_NAME).is_file()
+    )
+    captured, skipped = [], []
+    for each in names:
+        state = _graphic_state(project, each)
+        if state["capture"] == "current" and not force:
+            skipped.append(each)
+            continue
+        record = _capture_graphic(project, each, pages)
+        captured.append({"name": each, **{k: record[k] for k in ("intro", "hold", "loop", "outro", "seconds", "canvas", "fps")}})
+    return {"captured": captured, "current": skipped}
+
+
+def graphic_ls(path: Path | str) -> dict[str, Any]:
+    """Every graphic in the project: its phases, whether its capture is current, and where it is placed."""
+    project = Project.open(path)
+    names = sorted(p.name for p in project.graphics_dir.glob("*") if (p / anim.SPEC_NAME).is_file())
+    placed: dict[str, list[int]] = {}
+    for position, record in enumerate(_stored_overlays(project)):
+        if "graphic" in record:
+            placed.setdefault(record["graphic"], []).append(position)
+    graphics_ = []
+    for each in names:
+        try:
+            graphics_.append({**_graphic_state(project, each), "overlays": placed.get(each, [])})
+        except ProjectError as exc:
+            graphics_.append({"name": each, "error": str(exc)})
+    return {"graphics": graphics_, "browser": anim.available()["binary"]}
+
+
+def graphic_sheet(path: Path | str, name: str) -> dict[str, Any]:
+    """One labelled tile per phase boundary of a captured graphic — what an agent looks at.
+
+    The intro's first frame, a third and two thirds in, the hold (and the
+    loop's middle), and the outro's middle and last frame, each flattened over
+    mid grey so a transparent graphic reads. A reading is an opinion and gates
+    nothing (CLAUDE.md, the sheets).
+    """
+    project = Project.open(path)
+    state = _graphic_state(project, name)
+    if state["capture"] != "current":
+        raise ProjectError(f"graphic {name!r}'s capture is {state['capture']} — run graphic_capture first")
+    frames_dir = project.graphic_frames_dir / name
+    captured = anim.read_capture(frames_dir) or {}
+    rate = float(captured["fps"])
+    picks: list[tuple[str, int, float]] = []
+    intro, hold, outro = int(captured["intro"]), int(captured["hold"]), int(captured["outro"])
+    for k in sorted({0, intro // 3, (2 * intro) // 3}) if intro else []:
+        picks.append(("intro", k, k / rate))
+    hold_at = float(captured["hold_at"])
+    picks.append(("hold", 0, hold_at))
+    if captured["loop"] and hold > 2:
+        picks.append(("hold", hold // 2, hold_at + (hold // 2) / rate))
+    outro_at = hold_at + (hold / rate if captured["loop"] else 0.0)
+    for k in sorted({outro // 2, outro - 1}) if outro else []:
+        picks.append(("outro", k, outro_at + k / rate))
+    sheet_dir = project.root / GRAPHIC_SHEET_DIR / name
+    shutil.rmtree(sheet_dir, ignore_errors=True)
+    sheet_dir.mkdir(parents=True)
+    tiles = []
+    for n, (phase, k, t) in enumerate(picks):
+        flat = sheet_dir / f"flat{n:02d}.png"
+        done = subprocess.run(
+            [*graphics.magick_command(), str(frames_dir / phase / f"f{k:04d}.png"), "-background", "#808080",
+             "-flatten", "-resize", f"{SHOT_SHEET_TILE}x", str(flat)],
+            capture_output=True, text=True, timeout=120, check=False,
+        )  # fmt: skip
+        if done.returncode != 0:
+            raise ProjectError(f"magick could not flatten {phase} frame {k}: {done.stderr[-400:]}")
+        tile = sheet_dir / f"tile{n:02d}.png"
+        _sheet_tile(flat, f"{phase} {t:.2f}s", tile)
+        tiles.append(tile)
+    sheet = graphics.montage(tiles, sheet_dir / "sheet.jpg", columns=min(4, len(tiles)), tile_width=SHOT_SHEET_TILE, quality=82)
+    return {
+        "graphic": name,
+        "tiles": [{"phase": phase, "frame": k, "page_seconds": round(t, 3)} for phase, k, t in picks],
+        "sheet": str(sheet),
+    }
+
+
+def graphic_save(path: Path | str, name: str, *, as_name: str | None = None, replace: bool = False) -> dict[str, Any]:
+    """Copy graphic `name` into the library every project on this machine reads.
+
+    The page and its phases travel; the captured frames do not, since the
+    project it is loaded into may have another canvas or rate.
+    """
+    project = Project.open(path)
+    folder = _graphic_folder(project, name)
+    saved = as_name or name
+    with _graphic_errors():
+        anim.check_name(saved)
+        destination = anim.library_root() / saved
+        anim.copy_graphic(folder, destination, replace=replace)
+    return {"saved": saved, "library": str(anim.library_root()), "replaced": bool(replace)}
+
+
+def graphic_library() -> dict[str, Any]:
+    """Every graphic saved to this machine's library, with its phases and template."""
+    return {"library": str(anim.library_root()), "graphics": anim.library()}
+
+
+def graphic_load(
+    path: Path | str,
+    saved: str,
+    *,
+    name: str | None = None,
+    replace: bool = False,
+    capture: bool = True,
+    pages: int = anim.DEFAULT_PAGES,
+) -> dict[str, Any]:
+    """Copy library graphic `saved` into this project as `name` (default the same), and capture it."""
+    project = Project.open(path)
+    target = name or saved
+    folder = _graphic_folder(project, target, exists=False)
+    with _graphic_errors():
+        anim.check_name(saved)
+        source = anim.library_root() / saved
+        if not (source / anim.SPEC_NAME).is_file():
+            known = [g["name"] for g in anim.library()]
+            raise ProjectError(
+                f"the library has no graphic {saved!r}" + (f" — it has {', '.join(known)}" if known else " — it is empty")
+            )
+        anim.copy_graphic(source, folder, replace=replace)
+    captured = _capture_graphic(project, target, pages) if capture else None
+    return {"graphic": _graphic_state(project, target), "captured": captured}
+
+
 OVERLAYS_KEY = "overlays"
 
 #: The entrance and exit an overlay gets unless told otherwise — the launch
@@ -14102,6 +14546,16 @@ OVERLAYS_KEY = "overlays"
 #: fade out.
 OVERLAY_ENTER = ("rise", 0.45, "ease-out")
 OVERLAY_LEAVE = ("fade", 0.3, "ease-in")
+#: A graphic's own: none, since its page already animates in and out.
+GRAPHIC_ENTER = ("none", 0.0, "ease-out")
+GRAPHIC_LEAVE = ("none", 0.0, "ease-in")
+
+
+def _overlay_label(record: dict[str, Any]) -> str:
+    """How a refusal names an overlay: its card, or `graphic:<name>`."""
+    if "graphic" in record:
+        return repr(f"graphic:{record['graphic']}")
+    return repr(record.get("card"))
 
 
 def _stored_overlays(project: Project) -> list[dict[str, Any]]:
@@ -14113,8 +14567,14 @@ def _stored_overlays(project: Project) -> list[dict[str, Any]]:
     for item in stored:
         if not isinstance(item, dict):
             raise ProjectError(f"{project.manifest_path}'s {OVERLAYS_KEY!r} entries must be JSON objects")
+        if ("card" in item) == ("graphic" in item):
+            raise ProjectError(f"overlay {item!r} needs exactly one of card or graphic")
+        drawn_key = "card" if "card" in item else "graphic"
+        # A graphic animates itself, so it enters and leaves with no motion of
+        # its own unless asked; a card rises in and fades out.
+        motions = (OVERLAY_ENTER, OVERLAY_LEAVE) if drawn_key == "card" else (GRAPHIC_ENTER, GRAPHIC_LEAVE)
         try:
-            record: dict[str, Any] = {"card": str(item["card"]), "clip_id": str(item["clip_id"])}
+            record: dict[str, Any] = {drawn_key: str(item[drawn_key]), "clip_id": str(item["clip_id"])}
             for key, kind in (
                 ("word_index", int),
                 ("event", str),
@@ -14124,14 +14584,14 @@ def _stored_overlays(project: Project) -> list[dict[str, Any]]:
             ):
                 if item.get(key) is not None:
                     record[key] = kind(item[key])
-            for side, (motion, seconds, ease) in (("enter", OVERLAY_ENTER), ("leave", OVERLAY_LEAVE)):
+            for side, (motion, seconds, ease) in zip(("enter", "leave"), motions, strict=True):
                 record[side] = str(item.get(side, motion))
                 record[f"{side}_seconds"] = float(item.get(f"{side}_seconds", seconds))
                 record[f"{side}_ease"] = str(item.get(f"{side}_ease", ease))
         except (KeyError, TypeError, ValueError) as exc:
             raise ProjectError(
                 f"{project.manifest_path} has an overlay that is not "
-                f"(card, clip_id, a start and an end): {item!r} ({exc})"
+                f"(card or graphic, clip_id, a start and an end): {item!r} ({exc})"
             ) from None
         if ("word_index" in record) == ("event" in record):
             raise ProjectError(f"overlay {item!r} needs exactly one of word_index or event")
@@ -14197,7 +14657,7 @@ def _overlay_instant(
     there is no second place deciding what an event address means.
     """
     clip_id = record["clip_id"]
-    label = label or f"an overlay ({record.get('card')!r})"
+    label = label or f"an overlay ({_overlay_label(record)})"
     if record.get(word_key) is not None:
         parsed = _transcript(project, clip_id)
         index = int(record[word_key])
@@ -14240,13 +14700,13 @@ def _overlay_plan(
     overlays = _stored_overlays(project) if stored is None else stored
     plans: list[dict[str, Any]] = []
     for index, record in enumerate(overlays):
-        png = _overlay_card(project, record["card"])
+        png = _overlay_card(project, record["card"]) if "card" in record else None
         start, start_echo = _overlay_instant(
             project, edit, record, word_key="word_index", event_key="event", edge=0, what="starts"
         )
         if record.get("seconds") is not None:
             if record["seconds"] <= 0:
-                raise ProjectError(f"overlay {record['card']!r} lasts {record['seconds']}s — a length is positive")
+                raise ProjectError(f"overlay {_overlay_label(record)} lasts {record['seconds']}s — a length is positive")
             end, end_echo = start + record["seconds"], None
         else:
             end, end_echo = _overlay_instant(
@@ -14268,10 +14728,38 @@ def _overlay_plan(
             end_frame = min(round(end * rate), edit_frames)
         if end_frame <= start_frame:
             raise ProjectError(
-                f"overlay {record['card']!r} starts at timeline {start:.3f}s and ends at "
+                f"overlay {_overlay_label(record)} starts at timeline {start:.3f}s and ends at "
                 f"{end:.3f}s — it has to end after it starts, on the {rate:g} fps grid"
             )
         frames = end_frame - start_frame
+        if png is None:
+            graphic = _graphic_pieces(project, record, start_frame, frames, rate)
+            drawn = graphic["drawn"]
+            try:
+                for piece in drawn:
+                    mlt._check_overlay(piece, edit_frames)
+            except mlt.MLTError as exc:
+                raise ProjectError(str(exc)) from None
+            plans.append(
+                {
+                    "position": index,
+                    **record,
+                    "png": None,
+                    "frames_dir": graphic["frames_dir"],
+                    "stamp": graphic["stamp"],
+                    "timeline_start": round(start_frame / rate, 3),
+                    "timeline_end": round(end_frame / rate, 3),
+                    "start_frame": start_frame,
+                    "frames": frames,
+                    "start_echo": start_echo,
+                    "end_echo": end_echo,
+                    "overlay": drawn[0],
+                    "drawn": drawn,
+                    "layers": None,
+                    "phases": graphic["phases"],
+                }
+            )
+            continue
         overlay = mlt.Overlay(
             resource=str(png),
             start=start_frame,
@@ -14353,10 +14841,11 @@ def _edit_frames(edit: tl.Edit, rate: float) -> int:
 
 def overlay_add(
     path: Path | str,
-    card: str,
+    card: str | None,
     clip_id: str,
     word_index: int | None = None,
     *,
+    graphic: str | None = None,
     phrase: str | None = None,
     event: str | None = None,
     until_word_index: int | None = None,
@@ -14374,7 +14863,7 @@ def overlay_add(
     position: int | None = None,
     plan: bool = False,
 ) -> dict[str, Any]:
-    """Place overlay card `card` over the film, from a word or event of `clip_id`.
+    """Place overlay card `card`, or animated graphic `graphic`, over the film from a word or event of `clip_id`.
 
     The start is one of `word_index`, `phrase` (its first word) or `event`;
     the end is one of `until_word_index`, `until_phrase` (its last word),
@@ -14385,17 +14874,25 @@ def overlay_add(
     a later overlay draws over an earlier one it overlaps: put a `scrim`
     before the `lowerthird` it sits under.
 
+    A graphic plays its intro from the start, holds, and plays its outro out
+    to the end, so its span is its length; it enters and leaves with no
+    motion of its own unless `enter`/`leave` say otherwise, since its page
+    already animates. A full-frame graphic is one whose page is opaque.
+
     Resolved against the live timeline before anything is written, and the
     words and events it resolved to are echoed with their neighbours.
     `plan=True` writes nothing.
     """
     project = Project.open(path)
+    if (card is None) == (graphic is None):
+        raise ProjectError("an overlay draws exactly one of a card or a graphic")
     if sum(x is not None for x in (word_index, phrase, event)) != 1:
         raise ProjectError("an overlay starts at one of word_index, phrase or event")
     if sum(x is not None for x in (until_word_index, until_phrase, until_event, seconds)) != 1:
         raise ProjectError("an overlay ends at one of until_word_index, until_phrase, until_event or seconds")
 
-    record: dict[str, Any] = {"card": card, "clip_id": clip_id}
+    record: dict[str, Any] = {"card": card} if card is not None else {"graphic": graphic}
+    record["clip_id"] = clip_id
     if event is not None:
         record["event"] = event
     else:
@@ -14420,9 +14917,10 @@ def overlay_add(
             occurrence=occurrence,
             edge="last",
         )
+    defaults = (OVERLAY_ENTER, OVERLAY_LEAVE) if card is not None else (GRAPHIC_ENTER, GRAPHIC_LEAVE)
     for side, (motion, length, ease), values in (
-        ("enter", OVERLAY_ENTER, (enter, enter_seconds, enter_ease)),
-        ("leave", OVERLAY_LEAVE, (leave, leave_seconds, leave_ease)),
+        ("enter", defaults[0], (enter, enter_seconds, enter_ease)),
+        ("leave", defaults[1], (leave, leave_seconds, leave_ease)),
     ):
         record[side] = motion if values[0] is None else str(values[0])
         record[f"{side}_seconds"] = length if values[1] is None else float(values[1])
@@ -16426,11 +16924,12 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
     ]
     overlays_report = [
         {
-            key: plan[key]
+            key: plan.get(key)
             for key in (
-                "position", "card", "clip_id", "timeline_start", "timeline_end", "frames", "lane", "enter",
-                "leave", "layers",
+                "position", "card", "graphic", "clip_id", "timeline_start", "timeline_end", "frames", "lane",
+                "enter", "leave", "layers", "phases",
             )
+            if key in plan
         }
         for plan in overlay_plans
     ]

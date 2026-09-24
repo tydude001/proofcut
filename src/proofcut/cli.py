@@ -526,6 +526,58 @@ def _build_parser() -> argparse.ArgumentParser:
         "(tiktok-organic, tiktok-ads, reels, shorts, worst-case)",
     )
 
+    p_graphic = sub.add_parser("graphic", help="animated graphics: a web page captured as intro, hold and outro")
+    graphic_sub = p_graphic.add_subparsers(dest="graphic_command", required=True)
+    p_graphic_templates = graphic_sub.add_parser("templates", help="the animated templates proofcut ships, and their slots")
+    p_graphic_templates.add_argument("name", nargs="?", help="one template")
+    phases = (
+        ("--intro", "seconds of the page that play once from the start of the span"),
+        ("--loop", "seconds after the intro to repeat through the hold (a hold that moves)"),
+        ("--outro", "seconds of the page, from the hold on, that end the span"),
+    )
+    p_graphic_new = graphic_sub.add_parser("new", help="make a graphic from a template or a page of HTML, and capture it")
+    p_graphic_new.add_argument("name", help="the name overlay add graphic:NAME places")
+    source = p_graphic_new.add_mutually_exclusive_group(required=True)
+    source.add_argument("--template", help="see `proofcut graphic templates`")
+    source.add_argument("--html", type=Path, help="a page written by hand, read from this file")
+    p_graphic_new.add_argument(
+        "--set", action="append", default=[], metavar="SLOT=VALUE", dest="slots", help="fill one slot; repeat for each"
+    )
+    for flag, text in phases:
+        p_graphic_new.add_argument(flag, type=float, help=text)
+    p_graphic_new.add_argument("--replace", action="store_true", help="replace a graphic of this name")
+    p_graphic_new.add_argument("--no-capture", action="store_true", help="write the page, draw nothing")
+    p_graphic_new.add_argument("--pages", type=int, default=2, help="browser pages capturing side by side (1-8)")
+    p_graphic_edit = graphic_sub.add_parser("edit", help="refill slots, replace the page, or move the phases; recapture")
+    p_graphic_edit.add_argument("name")
+    p_graphic_edit.add_argument(
+        "--set", action="append", default=[], metavar="SLOT=VALUE", dest="slots", help="change one slot; repeat"
+    )
+    p_graphic_edit.add_argument("--html", type=Path, help="a whole new page, read from this file")
+    for flag, text in phases:
+        p_graphic_edit.add_argument(flag, type=float, help=text)
+    p_graphic_edit.add_argument("--no-loop", action="store_true", help="make the hold still again")
+    p_graphic_edit.add_argument("--no-capture", action="store_true", help="leave the capture stale")
+    p_graphic_edit.add_argument("--pages", type=int, default=2, help="browser pages capturing side by side (1-8)")
+    p_graphic_capture = graphic_sub.add_parser("capture", help="capture a graphic, or every missing or stale one")
+    p_graphic_capture.add_argument("name", nargs="?")
+    p_graphic_capture.add_argument("--force", action="store_true", help="recapture a current one too")
+    p_graphic_capture.add_argument("--pages", type=int, default=2, help="browser pages capturing side by side (1-8)")
+    graphic_sub.add_parser("ls", help="every graphic, its capture state and the overlays placing it")
+    p_graphic_sheet = graphic_sub.add_parser("sheet", help="one labelled tile per phase boundary")
+    p_graphic_sheet.add_argument("name")
+    p_graphic_save = graphic_sub.add_parser("save", help="copy a graphic into this machine's library")
+    p_graphic_save.add_argument("name")
+    p_graphic_save.add_argument("--as", dest="as_name", help="its name in the library")
+    p_graphic_save.add_argument("--replace", action="store_true", help="replace a library graphic of that name")
+    graphic_sub.add_parser("library", help="every graphic saved to this machine's library")
+    p_graphic_load = graphic_sub.add_parser("load", help="copy a library graphic into this project and capture it")
+    p_graphic_load.add_argument("saved", help="the library graphic")
+    p_graphic_load.add_argument("--name", help="its name in this project")
+    p_graphic_load.add_argument("--replace", action="store_true", help="replace a project graphic of that name")
+    p_graphic_load.add_argument("--no-capture", action="store_true", help="copy only")
+    p_graphic_load.add_argument("--pages", type=int, default=2, help="browser pages capturing side by side (1-8)")
+
     p_pack = sub.add_parser("pack", help="load, activate and inspect a channel preset pack")
     pack_sub = p_pack.add_subparsers(dest="pack_command", required=True)
 
@@ -1496,7 +1548,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p_overlay_add = overlay_sub.add_parser(
         "add", help="place an overlay card from a word or event to a word, event or length"
     )
-    p_overlay_add.add_argument("card", help="a card made from an overlay template (card new … lowerthird)")
+    p_overlay_add.add_argument(
+        "card", help="a card made from an overlay template (card new … lowerthird), or graphic:NAME (graphic new)"
+    )
     p_overlay_add.add_argument("clip_id", help="the clip whose words or events address the span")
     p_overlay_add.add_argument("word_index", type=int, nargs="?", help="the word it starts on")
     p_overlay_add.add_argument("--phrase", help="start on this phrase's first word")
@@ -1509,10 +1563,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p_overlay_add.add_argument("--occurrence", type=int, help="pick the Nth phrase match")
     motions = ", ".join(OVERLAY_MOTIONS)
     eases = ", ".join(EASINGS)
-    p_overlay_add.add_argument("--enter", choices=OVERLAY_MOTIONS, help=f"{motions} (default {ops.OVERLAY_ENTER[0]})")
+    p_overlay_add.add_argument(
+        "--enter", choices=OVERLAY_MOTIONS, help=f"{motions} (default {ops.OVERLAY_ENTER[0]}; none for a graphic)"
+    )
     p_overlay_add.add_argument("--enter-seconds", type=float, help=f"default {ops.OVERLAY_ENTER[1]}")
     p_overlay_add.add_argument("--enter-ease", choices=tuple(EASINGS), help=f"{eases} (default {ops.OVERLAY_ENTER[2]})")
-    p_overlay_add.add_argument("--leave", choices=OVERLAY_MOTIONS, help=f"{motions} (default {ops.OVERLAY_LEAVE[0]})")
+    p_overlay_add.add_argument(
+        "--leave", choices=OVERLAY_MOTIONS, help=f"{motions} (default {ops.OVERLAY_LEAVE[0]}; none for a graphic)"
+    )
     p_overlay_add.add_argument("--leave-seconds", type=float, help=f"default {ops.OVERLAY_LEAVE[1]}")
     p_overlay_add.add_argument("--leave-ease", choices=tuple(EASINGS), help=f"{eases} (default {ops.OVERLAY_LEAVE[2]})")
     p_overlay_add.add_argument(
@@ -2529,6 +2587,43 @@ def _cmd_card(args: argparse.Namespace) -> int:
     return _emit(ops.card_render(args.project, args.name, width=args.width, height=args.height))
 
 
+def _cmd_graphic(args: argparse.Namespace) -> int:
+    command = args.graphic_command
+    if command == "templates":
+        return _emit(ops.graphic_templates(args.name))
+    if command == "library":
+        return _emit(ops.graphic_library())
+    if command == "new":
+        return _emit(
+            ops.graphic_new(
+                args.project, args.name, template=args.template, slots=_slot_assignments(args.slots) or None,
+                html=args.html.read_text() if args.html else None, intro=args.intro, loop=args.loop,
+                outro=args.outro, replace=args.replace, capture=not args.no_capture, pages=args.pages,
+            )
+        )  # fmt: skip
+    if command == "edit":
+        return _emit(
+            ops.graphic_edit(
+                args.project, args.name, slots=_slot_assignments(args.slots) or None,
+                html=args.html.read_text() if args.html else None, intro=args.intro, loop=args.loop,
+                no_loop=args.no_loop, outro=args.outro, capture=not args.no_capture, pages=args.pages,
+            )
+        )  # fmt: skip
+    if command == "capture":
+        return _emit(ops.graphic_capture(args.project, args.name, force=args.force, pages=args.pages))
+    if command == "ls":
+        return _emit(ops.graphic_ls(args.project))
+    if command == "sheet":
+        return _emit(ops.graphic_sheet(args.project, args.name))
+    if command == "save":
+        return _emit(ops.graphic_save(args.project, args.name, as_name=args.as_name, replace=args.replace))
+    return _emit(
+        ops.graphic_load(
+            args.project, args.saved, name=args.name, replace=args.replace, capture=not args.no_capture, pages=args.pages
+        )
+    )
+
+
 def _cmd_pack(args: argparse.Namespace) -> int:
     if args.pack_command == "apply":
         return _emit(
@@ -3107,9 +3202,10 @@ def _cmd_overlay(args: argparse.Namespace) -> int:
         return _emit(
             ops.overlay_add(
                 args.project,
-                args.card,
+                None if args.card.startswith("graphic:") else args.card,
                 args.clip_id,
                 args.word_index,
+                graphic=args.card.removeprefix("graphic:") if args.card.startswith("graphic:") else None,
                 phrase=args.phrase,
                 event=args.event,
                 until_word_index=args.until_word_index,
@@ -3716,6 +3812,7 @@ _COMMANDS = {
     "describe": _cmd_describe,
     "describe-ls": _cmd_describe_ls,
     "card": _cmd_card,
+    "graphic": _cmd_graphic,
     "pack": _cmd_pack,
     "cue": _cmd_cue,
     "unspoken": _cmd_unspoken,

@@ -1627,6 +1627,28 @@ built; docs/plans/INSTALL.md):
   drawing the render. A frame melt composites with an overlay reads ~2 luma
   levels brighter all over, so judge an overlay against a baseline frame
   inside its span. HISTORY.md § Overlays, built.
+- **An animated graphic is a web page a headless browser captures
+  (`browser.py`, `motion.py`), placed by an overlay record's `graphic` as
+  three ordinary overlay pieces: intro, hold, outro.** HISTORY.md § Animated
+  graphics, built.
+  - **`browser.DETERMINISTIC_FLAGS` are the capture, not tuning**: without
+    them two captures of one page differed on 62 of 91 frames. Never let a
+    caller drop them.
+  - **The page is served, never opened**: every request answered from its
+    folder or the vendored fonts at `browser.ORIGIN`, the rest refused. A
+    `file://` page would read the disk, and a web font would race the capture.
+  - **Every piece is exactly its phase's length, because `qimage` loops a
+    frame pattern** (0 to 9 six times under a 60-frame entry): that is what
+    makes a looping hold one entry, and an intro one frame long jumps back to
+    its first frame at exit 0.
+  - **A capture is stamped with the page's bytes, the canvas and the rate**,
+    and export refuses a stale one (`graphic_capture`). The hold is checked at
+    capture: still means nothing animating through it, a loop means its
+    first frame recurs byte for byte.
+  - `ops` imports the module as `anim`: `motion` is a loop variable of the
+    overlay code. The stdio tests reach the browser through `PROOFCUT_CHROME`
+    in `tests/conftest.py`'s pass-through; setup's `chrome` piece rides
+    doctor's *optional* browser row, never a ✗.
 - **A one-shot sound (`SOUNDS_KEY`, `_is_layered`'s tenth trigger) never
   plays its own file — it plays a padded copy from `cache/sounds/`.**
   - melt has two exit-0 traps for a short file: a file it counts as one

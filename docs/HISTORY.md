@@ -18330,3 +18330,73 @@ differs: ink x 424–664 against the burn's 423–665, the P's rows 328–366
 against 328.5–367. Both land within a pixel or two of the burn in size and in
 vertical placement. Spike: `~/proofcut-work/spikes/caption-preview-size/`.
 
+
+## Animated graphics, built — 2026-09-24
+
+docs/plans/DAYDREAM.md § Animated graphics, designed and spiked, approved the
+same day ("proceed with your recommendations") and built on its four
+recommendations: a headless browser as an optional capability behind `proofcut
+setup`, intro/hold/outro graphics, templates and the library built with the
+capture, and the capture's determinism measured on every OS in CI.
+
+**What shipped.** `browser.py` launches the browser, speaks DevTools over a
+stdlib websocket client (no pipe to fds 3 and 4, which `subprocess` cannot
+hand a child on Windows), and serves the page itself at
+`https://graphic.proofcut.invalid` by answering every request: the graphic's
+own folder and the vendored fonts, and a refusal for anything else. `motion.py`
+holds the graphic folder (`assets/graphics/<name>/`, its `index.html` and
+`graphic.json`), the capture into `cache/graphics/<name>/{intro,hold,outro}/`,
+four templates (`typing`, `highlight`, `letters`, `chips`) and the library
+(`PROOFCUT_LIBRARY`, else beside setup's folder). Nine tools with CLI twins:
+`graphic_templates`, `graphic_new`, `graphic_edit`, `graphic_capture`,
+`graphic_ls`, `graphic_sheet`, `graphic_save`, `graphic_library`,
+`graphic_load`. An overlay record takes `graphic` beside `card`
+(`overlay add graphic:NAME` on the CLI).
+
+**One scope cut from the note.** A graphic is an overlay only, never a cue's
+asset: a full-frame graphic is a page with an opaque background. Making it a
+cue would split shots inside `plan_picture` for a picture the overlay route
+already draws.
+
+**A placed graphic is three ordinary overlay pieces, and each is exactly its
+phase's length.** Measured first: `qimage` pointed at a frame pattern *loops*
+it, a 10-frame sequence under a 60-frame entry playing 0 to 9 six times. That
+makes a looping hold one entry, and it makes an intro entry one frame too long
+jump back to the intro's first frame at exit 0. So `_graphic_pieces` gives the
+intro and outro exactly their captured counts and the hold the rest (one still,
+or the loop's sequence), and a span shorter than intro plus outro is refused.
+
+**The hold is checked when it is captured, not when it is exported.** A still
+hold with an animation still running through its instant is refused, naming
+the animation (a blinking caret is one); a loop whose frame one period on is
+not byte-identical to its first is refused. A face the page declared and
+could not load is refused rather than drawn in a fallback.
+
+**Read back through melt.** On a copy of the Pup BNB rebuild, `highlight`
+placed over words 0 to 6 (94 frames at 30 fps: intro 36, hold 46, outro 12)
+rendered 242 of 242 frames. Each of the 94 frames was matched against every
+captured frame composited over the render without the graphic: 90 picked the
+expected frame, and the other 4 were ties, pairs of captured frames under 0.7
+levels apart on the ink against 10 to 17 for frames that differ. The frames
+after the span equal the baseline exactly.
+
+**The window previews the frames, never the live page.** `timeline_view`
+hands the preview one item per piece with its frame count and rate;
+`player.js` picks the frame at the playhead (the hold wraps) and preloads a
+piece's frames when it first goes live. Checked in a real browser at six
+instants against the render's own layout: intro 15 at 0.5 s, intro 33 at
+1.1 s, the hold at 2.0 s, outro 5 at 2.9 s (the render's frame 87), outro 11
+at 3.1 s, nothing at 3.2 s. The capture's stamp rides each frame URL, so a
+recapture is not served from the browser's memory. `graphic:<name>/<phase>/<k>`
+resolves through `ops.preview_source` with every part held to its shape.
+
+**The pin is the measured build.** Chrome for Testing 149.0.7827.55's
+headless shell, for Linux x86_64, Windows and both Macs (no Linux arm64 build
+is published); the Linux binary is byte-identical to the one the spike's
+determinism was measured on. `proofcut setup` installs it when doctor's
+optional browser row is unavailable, restoring the zip's Unix modes (the
+binary and its GL libraries are marked executable, and `zipfile` drops that),
+and refuses it with the packages to install when `ldd` finds a library
+missing. Installed on this box with `proofcut setup --yes`: doctor then found
+it in setup's folder with no environment variable, and the 36 graphic tests
+ran with none skipped.

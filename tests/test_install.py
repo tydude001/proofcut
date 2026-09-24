@@ -344,6 +344,39 @@ def test_an_auto_editor_missing_libgomp_says_so_and_keeps_nothing(
     assert not deps.auto_editor().parent.exists()
 
 
+def _browserless() -> dict[str, Any]:
+    report = _report()
+    report["optional"] = [doctor._entry("browser", "animated graphics", why="no browser found")]
+    return report
+
+
+def test_the_browser_rides_its_optional_row_and_keeps_its_modes(
+    home: Path, pins: dict[str, install.Pin], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The headless shell is installed only when doctor's optional browser row is
+    unavailable, and its binary comes out executable: `zipfile` drops the modes."""
+    assert [p["name"] for p in install.plan(_report())["pieces"]] == [], "a present browser installs nothing"
+    folder = "chrome-headless-shell-linux64"
+    archive = tmp_path / "downloads" / "chrome.zip"
+    with zipfile.ZipFile(archive, "w") as zipped:
+        binary = zipfile.ZipInfo(f"{folder}/chrome-headless-shell")
+        binary.external_attr = 0o100755 << 16
+        zipped.writestr(binary, "#!chrome\n")
+        zipped.writestr(f"{folder}/resources.pak", "data")
+    monkeypatch.setitem(install.PINS, "chrome", {"x86_64": _pin(archive)})
+    monkeypatch.setattr(install.doctor, "report", _browserless)
+    steps = install.plan(_browserless())
+    assert [p["name"] for p in steps["pieces"]] == ["chrome"]
+    assert steps["pieces"][0]["why"].startswith("animated graphics")
+    result = install.install(steps, say=lambda line: None)
+    assert result["installed"] == ["chrome"]
+    assert deps.chrome().is_file()
+    if os.name != "nt":
+        assert os.access(deps.chrome(), os.X_OK)
+    install.uninstall()
+    assert not deps.chrome().parent.parent.exists()
+
+
 def test_a_piece_setup_installed_that_still_fails_is_not_installed_again(
     home: Path, pins: dict[str, install.Pin], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -386,6 +419,15 @@ def test_the_resolvers_prefer_what_setup_installed_over_path(home: Path, tmp_pat
 OFF_GITHUB = {
     ("ffmpeg", "macos-x86_64"): re.compile(r"https://evermeet\.cx/ffmpeg/ff(mpeg|probe)-\d+(\.\d+)+\.zip"),
     ("ffmpeg", "macos-aarch64"): re.compile(r"https://www\.osxexperts\.net/ff(mpeg|probe)\d+arm\.zip"),
+    # Chrome for Testing publishes only to Google's bucket, one folder per
+    # version, and keeps every one — a pinned build, never `Stable`.
+    **{
+        ("chrome", target): re.compile(
+            r"https://storage\.googleapis\.com/chrome-for-testing-public/\d+(\.\d+){3}/"
+            r"(linux64|win64|mac-x64|mac-arm64)/chrome-headless-shell-\2\.zip"
+        )
+        for target in ("x86_64", "windows-x86_64", "macos-x86_64", "macos-aarch64")
+    },
 }
 
 #: Where a pin carries the publisher's own hash of the binary inside it.
@@ -408,7 +450,7 @@ def test_every_pin_is_a_github_release_with_a_sha256() -> None:
                     assert re.fullmatch(r"[0-9a-f]{64}", pin.member_sha256 or ""), (name, target)
                 else:
                     assert pin.member_sha256 is None, (name, target)
-    assert set(install.PINS) == {"ffmpeg", "auto-editor", "melt"}
+    assert set(install.PINS) == {"ffmpeg", "auto-editor", "melt", "chrome"}
     for target in ("x86_64", "windows-x86_64", "macos-x86_64", "macos-aarch64"):
         assert all(target in install.PINS[name] for name in install.PINS), target
     # One universal dmg, not two pins that could drift apart.

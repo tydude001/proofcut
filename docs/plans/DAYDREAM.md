@@ -1286,8 +1286,11 @@ wants the big word as an occasional beat, which is what a span is.
 
 Item 2 of § The gaps, re-ranked, written after reading it, § The channel,
 watched, and PLAN.md § Motion graphics and templates (with its § Animation is
-a length problem, not a rendering one). **Nothing here is built; this note
-stops for Tyler's review.** The spike is `~/proofcut-work/spikes/animated-graphics/`.
+a length problem, not a rendering one). The spike is
+`~/proofcut-work/spikes/animated-graphics/`. **Approved and built the same
+day, on all four recommendations: HISTORY.md § Animated graphics, built.** The
+one departure is design item 4: a graphic is an overlay only, and a full-frame
+graphic is a page with an opaque background.
 
 ### The spike
 
@@ -1403,7 +1406,8 @@ no new producer type**, only `qimage` pointed at a pattern.
      graphic.
 
 4. **It rides the tracks that already exist.** Full-frame, a graphic is a
-   cue's asset; over the picture, it is an overlay (§ Overlays, built). The
+   cue's asset; over the picture, it is an overlay (§ Overlays, built).
+   (Built as an overlay only; see HISTORY.md § Animated graphics, built.) The
    writer change is one more entry shape, a `qimage` sequence node plus the
    still, in the node namespaces `mlt.py` already keeps per role. Nothing in
    the cue table or overlay records changes shape: `asset` names a graphic as

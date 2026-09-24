@@ -1,0 +1,11 @@
+{
+  "about": "A title builds letter by letter, each letter popping up with an overshoot.",
+  "intro": 1.2,
+  "outro": 0.4,
+  "slots": {
+    "title": {"required": true, "about": "the title"},
+    "y": {"kind": "number", "default": "50", "about": "the title's centre, as a percentage of the frame's height"},
+    "size": {"kind": "number", "default": "150", "about": "type size, in pixels of a 1080-tall frame"},
+    "colour": {"kind": "colour", "default": "#ffffff", "about": "the letters"}
+  }
+}

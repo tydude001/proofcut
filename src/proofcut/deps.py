@@ -83,3 +83,17 @@ def auto_editor() -> Path:
     """auto-editor's release binary, as setup downloads it. It may not exist."""
     name = "auto-editor.exe" if sys.platform == "win32" else "auto-editor"
     return root() / "auto-editor" / name
+
+
+def chrome() -> Path:
+    """Chrome for Testing's headless shell, as setup unzips it. It may not exist.
+
+    Each zip holds one folder named for its platform, and the binary inside
+    it; the animated-graphics capture runs it (`browser.chrome_path`).
+    """
+    if sys.platform == "win32":
+        return root() / "chrome" / "chrome-headless-shell-win64" / "chrome-headless-shell.exe"
+    if sys.platform == "darwin":
+        folder = "chrome-headless-shell-mac-arm64" if machine() == "aarch64" else "chrome-headless-shell-mac-x64"
+        return root() / "chrome" / folder / "chrome-headless-shell"
+    return root() / "chrome" / "chrome-headless-shell-linux64" / "chrome-headless-shell"

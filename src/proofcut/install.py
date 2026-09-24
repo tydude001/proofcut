@@ -211,6 +211,37 @@ PINS: dict[str, dict[str, Pin | tuple[Pin, ...]]] = {
         "macos-x86_64": _SHOTCUT_MACOS,
         "macos-aarch64": _SHOTCUT_MACOS,
     },
+    # Chrome for Testing's headless shell, for animated graphics — the build
+    # the capture's determinism was measured on (DAYDREAM.md § Animated
+    # graphics), its Linux binary byte-identical to the one measured. Google
+    # keeps every CfT build, so this is bumped by hand, never `Stable`. No
+    # Linux arm64 build is published.
+    "chrome": {
+        "x86_64": Pin(
+            "chrome-headless-shell 149.0.7827.55",
+            "https://storage.googleapis.com/chrome-for-testing-public/149.0.7827.55/linux64/chrome-headless-shell-linux64.zip",
+            "410c9407d5de3fea80d9398666be06f2aa09154a3fa7b327dc254e336bb4c4b7",
+            119778157,
+        ),
+        "windows-x86_64": Pin(
+            "chrome-headless-shell 149.0.7827.55",
+            "https://storage.googleapis.com/chrome-for-testing-public/149.0.7827.55/win64/chrome-headless-shell-win64.zip",
+            "5cfda0c763aa6a867ce2efad0c467e3220e9c5c01c4cba02fd57afe49ede5457",
+            119099822,
+        ),
+        "macos-x86_64": Pin(
+            "chrome-headless-shell 149.0.7827.55",
+            "https://storage.googleapis.com/chrome-for-testing-public/149.0.7827.55/mac-x64/chrome-headless-shell-mac-x64.zip",
+            "a32029e1861329a431b712d5b864e213d9cf8ef51a82ce4c24b27e25f6605434",
+            103452247,
+        ),
+        "macos-aarch64": Pin(
+            "chrome-headless-shell 149.0.7827.55",
+            "https://storage.googleapis.com/chrome-for-testing-public/149.0.7827.55/mac-arm64/chrome-headless-shell-mac-arm64.zip",
+            "302f82603be06683947594ecd60f849e362a8fe3dd82a89bd4408477c97e75a6",
+            98043456,
+        ),
+    },
 }
 
 #: whisper is not a download setup hashes: uv resolves it. 3.12 because torch's
@@ -479,6 +510,12 @@ def plan(report: dict[str, Any] | None = None) -> dict[str, Any]:
                 "(a shell profile, or ~/.config/environment.d/), and Shotcut's melt draws under it"
             )
 
+    # Optional, unlike the rest: animated graphics are the one feature it
+    # gates, so it rides the optional row doctor marks `–`, never a ✗.
+    browser_row = next((row for row in report.get("optional", []) if row["name"] == "browser"), None)
+    if browser_row is not None and not browser_row["ok"]:
+        want("chrome", f"animated graphics: {_reason(browser_row)}")
+
     return {
         "platform": sys.platform,
         "arch": platform.machine(),
@@ -736,7 +773,51 @@ def _install_melt(pins: tuple[Pin, ...], entry: dict[str, Any], record: dict[str
         )
 
 
-_INSTALLERS = {"ffmpeg": _install_ffmpeg, "auto-editor": _install_auto_editor, "melt": _install_melt}
+def _unzip_keeping_modes(archive: Path, into: Path) -> None:
+    """Unzip, restoring each member's Unix mode, then delete the archive.
+
+    `zipfile` drops the mode `_unpack`'s docstring mentions; the headless
+    shell's zip marks its binary and its GL libraries executable, and a
+    browser whose binary is not is a browser that cannot start.
+    """
+    with zipfile.ZipFile(archive) as zipped:
+        for info in zipped.infolist():
+            written = Path(zipped.extract(info, into))
+            mode = (info.external_attr >> 16) & 0o777
+            if mode and not info.is_dir():
+                written.chmod(mode)
+    archive.unlink()
+
+
+def _install_chrome(pins: tuple[Pin, ...], entry: dict[str, Any], record: dict[str, Any], say: Say, notes: list[str]) -> None:
+    (pin,) = pins
+    home = deps.root() / "chrome"
+    _makedirs(home, record)
+    entry["dir"] = str(home)
+    archive = home / "chrome-headless-shell.zip"
+    _fetch(pin, archive, say)
+    say("  unpacking")
+    _unzip_keeping_modes(archive, home)
+    if not deps.chrome().is_file():
+        raise InstallError(f"{pin.url} unpacked with no {deps.chrome().relative_to(home)} in it")
+    # It links the system's NSS, ATK and friends, which a desktop has and a
+    # server image may not: the `ldd` rule every piece holds to.
+    if sys.platform.startswith("linux") and shutil.which("ldd") and (missing := _missing_libraries([deps.chrome()])):
+        raise InstallError(
+            f"the headless browser needs {', '.join(missing)}, which this system does not have. A "
+            "desktop install has them; on a server image install your distribution's packages for "
+            "them (on Ubuntu: libnss3 libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libxkbcommon0 "
+            "libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 libasound2t64) and run "
+            "`proofcut setup` again."
+        )
+
+
+_INSTALLERS = {
+    "ffmpeg": _install_ffmpeg,
+    "auto-editor": _install_auto_editor,
+    "melt": _install_melt,
+    "chrome": _install_chrome,
+}
 
 
 def _uv_dir(uv: str, which: str) -> Path | None:

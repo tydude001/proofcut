@@ -68,7 +68,8 @@ INSTRUCTIONS = (
     "reframe, reframe_sheet, inset_add (a clip inside the recording), follow "
     "(a second recording after the first, dissolved)\n"
     "- sound: music (the bed), hold_add, vo_extend, vo_synth, sound_add (one-shots at events)\n"
-    "- cards and ends: card_templates, card_new, overlay_add (type over the film), head, tail\n"
+    "- cards and ends: card_templates, card_new, graphic_templates, graphic_new (animated), "
+    "overlay_add (a card or graphic over the film), head, tail\n"
     "- finish: add_captions, caption_style, lexicon_add (caption spelling), caption_span_add (captions off or a big word), export "
     "(render with export_format=null)\n"
     "- checks: check_frames, verify, film_check, finish_check; changes (what the last edits did)\n\n"
@@ -357,6 +358,8 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "continuity_check", "continuity_ls", "thumbnail", "contact_sheet",
             "broll_brief", "verify", "check_frames", "check_black", "spot_frames",
             "speech_overlap", "review_list",
+            # The sheet lands in the project's own sheet cache and nowhere asked.
+            "graphic_templates", "graphic_ls", "graphic_sheet", "graphic_library",
         ],
         _READ,
     ),
@@ -392,6 +395,10 @@ _ANNOTATIONS: dict[str, ToolAnnotations] = {
             "lexicon_add", "head", "tail", "music", "reframe",
             "reframe_sheet", "shot_sheet", "footage_sheet", "synopsis", "events", "film_check",
             "import_edit", "review_verdict",
+            # A graphic is refused if it exists unless `replace`, which then
+            # replaces it whole; a capture rewrites the same cache from the
+            # same page. The library copies are keyed by name the same way.
+            "graphic_new", "graphic_edit", "graphic_capture", "graphic_save", "graphic_load",
             # Replaces the dissolve at its join, or clears it.
             "dissolve",
             # Rewrites the generated WAVs with the same bytes; imports only
@@ -1750,7 +1757,14 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
     "overlay_add": {
         "card": (
             "The overlay card to place: one made by card_new from an overlay template "
-            "(`lowerthird`, `scrim`). An ordinary card is opaque and is refused."
+            "(`lowerthird`, `scrim`). An ordinary card is opaque and is refused. One of "
+            "card or graphic."
+        ),
+        "graphic": (
+            "An animated graphic (graphic_new) to place instead of a card. Its intro plays "
+            "from the start, its outro ends at the end, and its hold fills the span between; "
+            "a span shorter than intro plus outro is refused. It enters and leaves with no "
+            "motion of its own unless enter/leave say so."
         ),
         "clip_id": (
             "The clip whose words or events address the span — the transcript the "
@@ -1767,16 +1781,74 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         "seconds": (
             "End this long after the start. A length, so a cut inside the span does not shorten it."
         ),
-        "enter": "How it appears: `rise` (moves up while fading in), `fade`, or `none` (a cut). Default rise.",
+        "enter": "How it appears: `rise` (moves up while fading in), `fade`, or `none` (a cut). Default rise for a card, none for a graphic.",
         "enter_seconds": "How long the entrance takes. Default 0.45.",
         "enter_ease": "The entrance's curve: linear, ease, ease-in or ease-out. Default ease-out.",
-        "leave": "How it goes: `fade`, `rise` (moves down while fading out), or `none`. Default fade.",
+        "leave": "How it goes: `fade`, `rise` (moves down while fading out), or `none`. Default fade for a card, none for a graphic.",
         "leave_seconds": "How long the exit takes. Default 0.3.",
         "leave_ease": "The exit's curve: linear, ease, ease-in or ease-out. Default ease-in.",
         "position": (
             "Where in the stack it goes: 0 is the bottom, omitted is the top. A later "
             "overlay draws over an earlier one it overlaps, so a scrim goes before its type."
         ),
+    },
+    "graphic_templates": {
+        "name": "One template to return. Unset, every template with its slots.",
+    },
+    "graphic_new": {
+        "name": (
+            "The graphic's name: lowercase letters, digits, - and _. overlay_add places it "
+            "by this name."
+        ),
+        "template": "A template to fill (graphic_templates lists them). One of template or html.",
+        "slots": "The template's slots, as text. A colour is #rrggbb, a number a number.",
+        "html": (
+            "A whole page, written by hand. CSS animations and transitions are seeked frame "
+            "by frame; a script animating from its own clock must define "
+            "window.proofcutSeek(seconds). Fonts load from /_proofcut/fonts/static/"
+            "Outfit-Regular.ttf and Outfit-Bold.ttf; nothing loads from the network."
+        ),
+        "intro": "Seconds of the page that play once from the start of the span.",
+        "loop": (
+            "Seconds of the page after the intro to repeat through the hold, for a hold that "
+            "moves (a blinking caret). Unset, the hold is the page's last intro frame, still; "
+            "a page still moving there is refused."
+        ),
+        "outro": "Seconds of the page, from the hold on, that play once to end the span.",
+        "replace": "Replace a graphic of this name. Unset, an existing one is refused.",
+        "capture": "Capture it now. False writes the page and draws nothing.",
+        "pages": "Browser pages capturing side by side, 1 to 8. Default 2.",
+    },
+    "graphic_edit": {
+        "name": "The graphic to change.",
+        "slots": "Slots to change, merged into the ones it was filled with.",
+        "html": "A whole new page. The graphic stops being its template's.",
+        "intro": "New intro length, in seconds.",
+        "loop": "New loop length, in seconds, making the hold loop.",
+        "no_loop": "Make the hold still again.",
+        "outro": "New outro length, in seconds.",
+        "capture": "Recapture now. False leaves the capture stale until graphic_capture.",
+        "pages": "Browser pages capturing side by side, 1 to 8. Default 2.",
+    },
+    "graphic_capture": {
+        "name": "The graphic to capture. Unset, every graphic whose capture is missing or stale.",
+        "force": "Recapture even a current one.",
+        "pages": "Browser pages capturing side by side, 1 to 8. Default 2.",
+    },
+    "graphic_sheet": {
+        "name": "The captured graphic to look at.",
+    },
+    "graphic_save": {
+        "name": "The project's graphic to save.",
+        "as_name": "The name in the library. Unset, the same name.",
+        "replace": "Replace a library graphic of that name. Unset, it is refused.",
+    },
+    "graphic_load": {
+        "saved": "The library graphic to copy in (graphic_library lists them).",
+        "name": "Its name in this project. Unset, the same name.",
+        "replace": "Replace a project graphic of that name. Unset, it is refused.",
+        "capture": "Capture it now at this project's canvas and rate.",
+        "pages": "Browser pages capturing side by side, 1 to 8. Default 2.",
     },
     "overlay_rm": {
         "position": "The overlay to remove, by its position in overlay_ls (0 is the bottom).",
@@ -2791,6 +2863,151 @@ def card_templates(name: str | None = None) -> dict[str, Any]:
     template's slots — the whole table is long.
     """
     return ops.card_templates(name)
+
+
+@_tool()
+def graphic_templates(name: str | None = None) -> dict[str, Any]:
+    """The animated graphic templates proofcut ships, with their phases and slots.
+
+    Read this before graphic_new with a template. Each template says what it
+    draws, its intro, loop and outro in seconds, and every slot with its
+    default. A template is a starting point; a page written as html can do
+    anything CSS can.
+    """
+    return ops.graphic_templates(name)
+
+
+@_tool()
+def graphic_new(
+    path: ProjectPath = None,
+    *,
+    name: str,
+    template: str | None = None,
+    slots: dict[str, Any] | None = None,
+    html: str | None = None,
+    intro: float | None = None,
+    loop: float | None = None,
+    outro: float | None = None,
+    replace: bool = False,
+    capture: bool = True,
+    pages: int = 2,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Make an animated graphic — a web page, captured frame by frame — from a template or your own HTML.
+
+    A graphic has three phases, in seconds of the page's own timeline: an
+    intro that plays once from the start of wherever it is placed, a hold
+    that fills whatever the span leaves (the page's last intro frame, or
+    `loop` seconds repeated), and an outro that plays once to end the span.
+    The span decides the length, never the graphic, so cuts cannot break it.
+    Write the page's outro animations to start where the intro ends (after
+    one loop, if it loops). Nothing on the page may load from the network.
+
+    Place it with overlay_add(graphic=name). Then look at it with
+    graphic_sheet. The capture draws at the project's canvas and export rate;
+    changing either makes it stale, and export refuses a stale graphic.
+    """
+    return ops.graphic_new(
+        path, name, template=template, slots=slots, html=html, intro=intro, loop=loop,
+        outro=outro, replace=replace, capture=capture, pages=pages,
+    )  # fmt: skip
+
+
+@_tool()
+def graphic_edit(
+    path: ProjectPath = None,
+    *,
+    name: str,
+    slots: dict[str, Any] | None = None,
+    html: str | None = None,
+    intro: float | None = None,
+    loop: float | None = None,
+    no_loop: bool = False,
+    outro: float | None = None,
+    capture: bool = True,
+    pages: int = 2,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Change an animated graphic — refill its slots, replace its page, or move its phases — and recapture it.
+
+    Every overlay placing it follows, since an overlay names the graphic, not
+    its frames. Undo does not revert a graphic's page: it lives beside the
+    project's manifest, like a card's PNG.
+    """
+    return ops.graphic_edit(
+        path, name, slots=slots, html=html, intro=intro, loop=loop, no_loop=no_loop,
+        outro=outro, capture=capture, pages=pages,
+    )  # fmt: skip
+
+
+@_tool()
+def graphic_capture(
+    path: ProjectPath = None,
+    *,
+    name: str | None = None,
+    force: bool = False,
+    pages: int = 2,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Capture one animated graphic, or every one whose capture is missing or stale.
+
+    Needed after a canvas or frame-rate change; graphic_new and graphic_edit
+    capture on their own. Runs a headless browser; `doctor` says whether this
+    machine has one.
+    """
+    return ops.graphic_capture(path, name, force=force, pages=pages)
+
+
+@_tool()
+def graphic_ls(path: ProjectPath = None) -> dict[str, Any]:
+    """Every animated graphic in the project, whether its capture is current, and which overlays place it."""
+    return ops.graphic_ls(path)
+
+
+# `-> Any`: see footage_sheet — a concrete annotation silently drops the image.
+@_tool()
+def graphic_sheet(path: ProjectPath = None, *, name: str) -> Any:
+    """Look at an animated graphic: one labelled tile per phase boundary, as an image.
+
+    The intro's first frame and two more across it, the hold (and the loop's
+    middle), and the outro's middle and last frame, flattened over grey so a
+    transparent graphic reads. What you see is an opinion, not a check.
+    """
+    report = ops.graphic_sheet(path, name)
+    return [report, Image(path=report["sheet"])]
+
+
+@_tool()
+def graphic_save(
+    path: ProjectPath = None, *, name: str, as_name: str | None = None, replace: bool = False
+) -> dict[str, Any]:
+    """Save an animated graphic to this machine's library, where every project can load it.
+
+    The page and its phases are saved; the frames are not, since another
+    project may have another canvas.
+    """
+    return ops.graphic_save(path, name, as_name=as_name, replace=replace)
+
+
+@_tool()
+def graphic_library() -> dict[str, Any]:
+    """Every animated graphic saved to this machine's library (graphic_save), with its phases."""
+    return ops.graphic_library()
+
+
+@_tool()
+def graphic_load(
+    path: ProjectPath = None,
+    *,
+    saved: str,
+    name: str | None = None,
+    replace: bool = False,
+    capture: bool = True,
+    pages: int = 2,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Copy a graphic from this machine's library into the project, and capture it at the project's canvas."""
+    return ops.graphic_load(path, saved, name=name, replace=replace, capture=capture, pages=pages)
 
 
 @_tool(projectless=True)
@@ -5048,7 +5265,8 @@ def events(
 def overlay_add(
     path: ProjectPath = None,
     *,
-    card: str,
+    card: str | None = None,
+    graphic: str | None = None,
     clip_id: str,
     word_index: int | None = None,
     phrase: str | None = None,
@@ -5068,7 +5286,7 @@ def overlay_add(
     position: int | None = None,
     plan: bool = False,
 ) -> dict[str, Any]:
-    """Draw a transparent card over the film — a lower third, or the scrim under one.
+    """Draw a transparent card or an animated graphic over the film — a lower third, the scrim under one, a graphic.
 
     Make the card first with card_new from `lowerthird` (a headline and an
     optional footnote, bottom left) or `scrim` (a dark gradient for type to sit
@@ -5089,6 +5307,7 @@ def overlay_add(
         card,
         clip_id,
         word_index,
+        graphic=graphic,
         phrase=phrase,
         event=event,
         until_word_index=until_word_index,

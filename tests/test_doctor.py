@@ -61,6 +61,7 @@ def test_ok_reads_the_required_section_alone(monkeypatch: pytest.MonkeyPatch) ->
     )
     monkeypatch.setattr(doctor, "_tts_entry", lambda: doctor._entry("PROOFCUT_TTS", "vo", ok=False))
     monkeypatch.setattr(doctor, "_magick_entry", lambda: doctor._entry("magick", "cards", ok=False))
+    monkeypatch.setattr(doctor, "_browser_entry", lambda: doctor._entry("browser", "graphics", ok=False))
     payload = doctor.report()
     assert payload["ok"] == all(r["ok"] for r in payload["required"])
     assert not any(r["ok"] for r in payload["optional"])

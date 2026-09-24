@@ -760,6 +760,32 @@ function overlayMotion(overlay, u) {
   return { opacity: 1, drop: 0 };
 }
 
+/* An animated graphic's piece plays its captured frames: the frame at the
+ * playhead, on the render's own grid (`rate`), held to the piece's count —
+ * and a looping hold wraps, the way melt's `qimage` repeats a sequence. The
+ * view already split the span into pieces; nothing here derives a phase.
+ * Each piece's frames are fetched once, when it first goes live, and kept
+ * decoded, so playback never waits on a request per frame. */
+const graphicFrames = new Map(); // url -> Image, kept so the decode is kept
+
+function graphicFrameURL(overlay, t) {
+  const count = Math.max(1, overlay.frame_count || 1);
+  const at = Math.floor((t - overlay.timeline_start) * overlay.rate + 1e-6);
+  const k = overlay.layer === "hold" ? ((at % count) + count) % count : Math.min(count - 1, Math.max(0, at));
+  // The capture's stamp rides the URL, so a recapture is new frames rather
+  // than the browser's memory of the old ones.
+  const base = `graphic:${overlay.graphic}/${overlay.layer}`;
+  const url = (i) => `${assetURL(`${base}/${i}`)}?v=${overlay.stamp || ""}`;
+  if (!graphicFrames.has(url(0))) {
+    for (let i = 0; i < count; i += 1) {
+      const image = new Image();
+      image.src = url(i);
+      graphicFrames.set(url(i), image);
+    }
+  }
+  return url(k);
+}
+
 function paintOverlays(t) {
   if (!overlayLayer) return;
   const v = view();
@@ -780,7 +806,7 @@ function paintOverlays(t) {
       overlayImages[i] = img;
       overlayLayer.append(img); // DOM order is stack order: position i over i-1
     }
-    const url = assetURL(overlay.asset);
+    const url = overlay.graphic ? graphicFrameURL(overlay, t) : assetURL(overlay.asset);
     if (img.dataset.src !== url) {
       img.dataset.src = url;
       img.src = url;

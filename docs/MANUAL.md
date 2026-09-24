@@ -666,6 +666,51 @@ is its own `lowerthird` with an empty headline. Each one `--enter`s and
 would cover the film — and an overlay card is refused as a cue. Mind the bottom
 band: a lower third and burned captions both live there.
 
+### Animated graphics
+
+A graphic is a web page, captured frame by frame by a headless browser and
+placed over the film like an overlay card. It needs the browser `proofcut
+doctor` lists under optional; `proofcut setup` installs a pinned Chrome for
+Testing headless shell (about 120 MB), or point `PROOFCUT_CHROME` at any
+Chrome or Chromium.
+
+```sh
+proofcut graphic templates                              # typing, highlight, letters, chips, and their slots
+proofcut -C myproject graphic new title --template letters --set title="Pup BNB"
+proofcut -C myproject graphic new url --template typing --set text=proofcut.dev --set y=40
+proofcut -C myproject graphic new mine --html page.html --intro 1.5 --outro 0.5
+proofcut -C myproject graphic sheet title               # tiles at each phase boundary
+proofcut -C myproject overlay add graphic:title vo --phrase "pup bnb" --for 3
+proofcut -C myproject graphic edit title --set title="PupBnB"   # refills, keeps the phases, recaptures
+proofcut -C myproject graphic save title --as brand-title       # into this machine's library
+proofcut -C other graphic load brand-title                      # and into another project
+```
+
+A graphic has three phases, in seconds of the page's own timeline: an
+**intro** that plays once from the start of its span, a **hold** that fills
+whatever the span leaves, and an **outro** that plays once to end the span.
+The hold is the page's last intro frame, or with `--loop N` the next N seconds
+of the page repeated, for a hold that moves (the `typing` template's caret
+blinks). So the span decides the length and the graphic never does: a cut
+that shortens the span shortens the hold. A span shorter than intro plus
+outro is refused rather than cut mid-motion.
+
+A page written by hand animates with CSS: animations and transitions are
+paused and seeked to each frame's time. A script animating from its own clock
+defines `window.proofcutSeek(seconds)`. Start the outro's animations where the
+intro ends (one loop later, if it loops). The page loads its own folder's
+files and the vendored fonts under `/_proofcut/fonts/static/`, and nothing
+else: no network, so a web font cannot lose a race with the capture. Three
+things are refused at capture: a hold still moving when it was declared
+still, a loop that does not come back to where it started, and a font that
+failed to load.
+
+The capture is drawn at the project's canvas and export rate and is stamped
+with both and with the page's bytes; change any of them and `export` refuses
+the stale frames until `graphic capture` redraws them. A full-frame graphic is
+one whose page has an opaque background. Undo moves the overlay that places a
+graphic, never the page, which lives beside the manifest like a card's PNG.
+
 A card can also go *after* the last frame, as a `tail` — an end card or a
 bumper, which every earlier cut applied downstream of `export` and so lost on
 any re-cut, silently:

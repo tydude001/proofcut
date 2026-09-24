@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- proofcut graphic template `typing`. Phases (graphic.json): intro 0-2.0s
+     (the field rises in 0.5s, then the text types by 1.8s), a 1.0s loop (the
+     caret blinks), outro 0.4s from 3.0s (the field drops away). -->
+<html><head><meta charset="utf-8"><style>
+@font-face { font-family: "Outfit"; font-weight: 400; src: url("/_proofcut/fonts/static/Outfit-Regular.ttf"); }
+:root { --u: calc(min(100vw, 100vh) / 1080); }
+html, body { margin: 0; width: 100vw; height: 100vh; background: transparent; overflow: hidden; }
+.out { position: absolute; inset: 0; animation: out .4s cubic-bezier(.5,0,.75,0) 3s forwards; }
+@keyframes out { to { opacity: 0; transform: translateY(calc(40 * var(--u))); } }
+.field { position: absolute; left: 50%; top: {{y}}%; width: min(90vw, calc(1200 * var(--u)));
+  height: calc(140 * var(--u)); translate: -50% -50%; border-radius: calc(70 * var(--u));
+  background: {{field_colour}}; box-shadow: 0 calc(18 * var(--u)) calc(50 * var(--u)) rgba(0,0,0,.35);
+  display: flex; align-items: center; box-sizing: border-box; padding: 0 calc(70 * var(--u));
+  font: 400 calc(64 * var(--u)) "Outfit"; color: {{text_colour}}; white-space: pre; overflow: hidden;
+  animation: rise .5s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes rise { from { transform: translateY(calc(80 * var(--u))); opacity: 0; } to { transform: none; opacity: 1; } }
+.ch { opacity: 0; animation: on 1ms steps(1) forwards; }
+@keyframes on { to { opacity: 1; } }
+.caret { flex: none; width: calc(5 * var(--u)); height: calc(72 * var(--u)); margin-left: calc(4 * var(--u));
+  background: {{text_colour}}; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+</style></head><body>
+<div class="out"><div class="field" id="field" data-text="{{text}}"></div></div>
+<script>
+const field = document.getElementById("field");
+const text = [...field.dataset.text];
+const step = 1300 / Math.max(1, text.length);
+text.forEach((c, i) => {
+  const s = document.createElement("span");
+  s.className = "ch"; s.textContent = c; s.style.animationDelay = `${500 + step * i}ms`;
+  field.append(s);
+});
+const caret = document.createElement("span"); caret.className = "caret"; field.append(caret);
+</script></body></html>
