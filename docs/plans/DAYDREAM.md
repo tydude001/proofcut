@@ -1067,6 +1067,213 @@ Most value per cost first, each with a recommendation. This replaces
 
 ---
 
+## Caption reveal and corrections, designed: 2026-09-23
+
+Item 1 of § The gaps, re-ranked, written after reading § Captions, PLAN.md
+§ Per-word caption animation, `captions.py`, `ops._caption_cues`, the
+lexicon code in `ops.py` (`_load_lexicon`, `_fold`) and the rebuild's own
+caption file. Four features, and the findings that shape them come first.
+
+### What the reading settled
+
+1. **Nothing measured in August is stale, and it covers the reveal.**
+   Finding 4's table puts `\alpha` and `\blur` among the metric-neutral
+   tags: a word fading or blurring in moves no other word. So the reveal is
+   one `\t` block per word inside the one event per line `to_ass` already
+   writes, and the line is laid out whole from its first frame, invisible
+   words holding their places. That is the look the gallery shows (words
+   landing in a line that does not move). Finding 5's preview trap does not
+   bite here, because CSS `opacity` and `filter: blur()` are also
+   metric-neutral: both halves hold still.
+2. **The single large word is already one construction proofcut has.**
+   Finding 3 found that one event per word, with no `\pos`, centres the word
+   alone in the frame, and `group(max_words=1)` writes exactly that. So
+   `caption-style --max-words 1 --size 150 --position middle` is the "well" /
+   "ruff." look today, for the whole film. What Daydream does and proofcut
+   cannot is use it for **one beat inside ordinary lines**. That makes it a
+   span question, the same shape as captions off.
+3. **Captions off and a big word are one mechanism**: a span of the film
+   whose captions are treated differently. Off is the empty treatment. A
+   span is addressed the way an overlay is (`_overlay_instant`, "the one
+   resolver for a word or an event"), so no new addressing.
+4. **`lexicon.json`'s `hear` table already means "the right spelling of what
+   whisper heard"** (`_load_lexicon`: it folds whisper's spelling back to the
+   script's). Caption corrections are the same fact, so they reuse the table
+   and add no key. Three things about the file as it stands:
+   - `_fold` is a **substring** replace on lowercased text. For a WER score
+     that is harmless (both sides fold alike); for captions it is wrong:
+     `rough → ruff` would print "ruffly" for "roughly".
+   - It lowercases the result, so it cannot carry a brand's capitals
+     (`PupBnB`).
+   - **No `lexicon.json` exists on this box** (searched `~/projects` and
+     `~/proofcut-work`, unfiltered), so changing its matching changes nothing
+     on disk.
+5. **Nothing in the panel can write the file.** The agent panel runs
+   `--tools ToolSearch`, with no file access, and `lexicon.json` has no op.
+   A correction list only an editor can change is not Daydream's
+   "remember this", which the agent files itself. So it needs an op.
+6. **A reveal must not end at `\alpha&H00&`.** `\alpha` sets all four
+   alphas, and the `boxed` preset's box is the back colour at `&HB0`. A
+   reveal ending fully opaque would turn a translucent box solid. Each
+   channel animates to **its own style value** (`\1a`, `\3a`, `\4a`), which
+   is one line of care and silent when missed.
+
+### The design
+
+**A. Corrections: `hear`, matched by whole words, applied only to captions.**
+
+- One matcher in a new `proofcut/lexicon.py` (`load`, `fold_words`,
+  `fold_text`), moved out of `ops.py` with `_load_lexicon`/`_apply_say`.
+  `fold_text` is the WER fold on the same word matcher, so the file has one
+  meaning. Tokens compare lowercased with surrounding punctuation stripped;
+  longest key first, so `pup bnb` wins over `bnb`.
+- `fold_words` runs in `_caption_cues` on the placed words (timeline order,
+  sound words included), **after** `_spoken_transcripts` and **before**
+  `group`. A multi-word key merges its words into one caption word spanning
+  first start to last end ("Pup BNB," → "PupBnB,"). The last word's trailing
+  punctuation and the first word's leading punctuation stay, because `group`
+  breaks lines on a sentence end. The canonical is written as it should
+  print; an all-lowercase canonical takes the original's first-letter case,
+  so a sentence-opening "Rough" becomes "Ruff".
+- **Display only.** The transcript file is never touched (the `unspoken`
+  rule: word indices address every cue), and `verify` never sees a fold,
+  because it compares whisper against whisper.
+- **Standing, not per occurrence**, which is Daydream's "memory" shape. A
+  fold that must hit one occurrence and not another is a longer key carrying
+  its neighbours (`well rough` → `well ruff`). A per-index spelling record
+  was considered and not proposed: it would be a third way of addressing a
+  word, and it goes stale on a re-transcribe the way a mark does.
+- `caption_view` and `add_captions` report `corrected`: each fold applied,
+  with its timeline second, from → to. A spelling change nobody can see in a
+  reply is the silent kind.
+- Ops `lexicon_ls`, `lexicon_add` (`kind` = `hear` | `say`, `heard`,
+  `canonical`, `plan`) and `lexicon_rm`, with CLI and MCP parity. **The file
+  sits outside the snapshot pair, so undo does not revert a correction.**
+  That is deliberate and gets said in the tool text: a correction is a
+  standing preference, not an edit, and undoing a cut should not bring
+  "rough" back. The other build, a manifest key read beside the file, puts
+  one fact in two places. A cross-project list (Daydream's "all your
+  projects") is left out; it would be a user-level file, and nothing yet
+  asks for one.
+
+**B. Caption spans: `CAPTION_SPANS_KEY`.**
+
+- Records are `{clip_id, word_index | event, until_word_index | until_event
+  | seconds, off | style}`, validated like `_stored_overlays` and resolved
+  live every build through `_overlay_instant`. List order decides overlaps
+  (last wins). Additive and optional, so no schema bump.
+- A placed word belongs to a span when its middle falls inside it. Words are
+  partitioned into runs by span **before** `group`, so a line never crosses
+  a span edge.
+- `off: true` drops the span's cues. The count comes back as
+  `caption_off_words`, beside `unspoken` (a caption that vanished needs a
+  number that says why).
+- `style: {...}` is a partial `caption_style` layered on the project's own:
+  any field but `preset`, grouping included. The big word is
+  `{max_words: 1, size: 150, position: "middle"}` over one word's span.
+  `to_ass` writes one `Style:` line per distinct resolved look (`proofcut`,
+  then `proofcut-1` onward) and each Dialogue names its own. Per-event
+  override tags are not enough, because the box and `MarginV` are
+  style-level.
+- A span a cut removed refuses in `add_captions` and comes back as
+  `caption_spans_error` in `caption_view`, the `overlays_error` policy. The
+  window reads that view on every reload.
+- Ops `caption_span_add` (word, `phrase`, `occurrence` or event addressing,
+  exactly `overlay_add`'s arguments), `caption_span_ls` and
+  `caption_span_rm`, each with `plan`.
+- The preview draws whatever `caption_view` hands it. Each cue carries a
+  `style` index into a `styles` list, and the CC lane draws only the cues
+  that exist, so an off span shows as a hole in the lane.
+
+**C. Reveal: `reveal`, `reveal_ms` and `reveal_blur` on `caption_style`.**
+
+- `reveal` is `none` | `fade` | `blur` (blur fades as well); `reveal_ms`
+  defaults to 150 and `reveal_blur` to a strength set by probe P2. Setting
+  either number with `reveal: none` is refused, never ignored (the
+  `STYLE_FIELDS` rule). Additive and optional: no schema bump, and no
+  existing project changes look.
+- Per word: `{\1a&HFF&\3a&HFF&\4a&HFF&[\blurN]\t(t0,t0+ms,\1a..\3a..\4a..[\blur0])}`
+  with the targets from the resolved style (finding 6 above). `t0` is the
+  **word's own start**, not `highlight_start`: a reveal says the word is
+  being spoken now, where the fill's early start exists to keep a sweep in
+  step with gaps. `\t` times are milliseconds from the Dialogue's start
+  (`cue.start`), which PLAN.md calls the one silent-when-wrong detail.
+- It composes with the fill (karaoke) and with spans. A span may set its own
+  `reveal`, so the big word can blur in while the lines around it fade.
+- **A new preset, `reveal`**: the gallery's kinetic type as a starting
+  point. Middle, four words a line, fade, no fill, Outfit. It replaces the
+  transparent-secondary karaoke trick of § The rebuild, and the trick keeps
+  working.
+- `player.js` builds word spans whenever `reveal` or `karaoke` is on, and
+  sets each span's `opacity` and `filter` from `t` on every frame, never by
+  CSS transition, so a seek lands on the right state. The blur radius is
+  `k × reveal_blur × scale`, with `k` from probe P2.
+
+**D. Emphasis stays the fill.** § Captions' August decision holds. The
+reveal answers "which word is this" on its own, because the newest word is
+the one arriving. `emphasis: word` stays a road not taken.
+
+### Probes before the code, each read back off a burned frame
+
+All at 1920×1080 over a flat **mid-grey** frame with a **coloured** outline
+(PLAN.md finding 6: black on black reads as "no effect").
+
+- **P1. Per-channel alpha.** A fade on `clean` and on `boxed`, sampled at
+  t0, t0 + ms/2 and t0 + ms. Pass: each word's text, outline and box reach
+  the style's own alpha, and the box is not opaque.
+- **P2. Blur calibration.** `\blur` 2, 4, 8 and 16 against CSS `blur()` in
+  headless Chrome on the same word. Measure the 10–90% edge width of both
+  and fit `k`. Canvas readback, never a screenshot (the viewer rule).
+- **P3. Reveal with the fill.** Does `\1a`/`\2a` animation survive `\k`'s
+  secondary-to-primary switch? If it does not, `reveal` with `karaoke` is
+  refused until it does.
+- **P4. Two `Style:` lines.** One ffmpeg burn: both looks draw, and each
+  event takes the style it names.
+- **P5. The big word inside ordinary lines**, on the rebuild's own "well,
+  rough." beat: position, size, and whether the lines either side still
+  hold still.
+
+### The build, in order
+
+1. **Corrections (A).** Smallest, no look question, and it fixes the
+   rebuild's "rough." and "Pup BNB," outright. Tests over real whisper-shaped
+   words: a merge, punctuation carried, the case rule, `roughly` left alone,
+   and `verify`'s expectation unchanged.
+2. **Captions off (B, `off` only).** Fixes the rebuild's caption over the
+   logo card. The span machinery lands here.
+3. **Reveal (C)**, after P1 to P3. The test burns and reads alpha per word at
+   three instants, since a test on `.ass` text proves the string, not the
+   picture (PLAN.md's build rule). Then the preview, checked with
+   `verify-live` by readback against the burned frame.
+4. **Span styles (B, `style`)**, after P4 and P5: the big word.
+5. **The watch.** The pup-hotel rebuild re-cut with all four, served with
+   `proofcut review serve` as an A/B against a `fill` control: fade against
+   blur, then the big word on or off. The look is Tyler's call by eye, as it
+   was in August, and no default changes until he has made it.
+
+Each step is independently useful and ships alone. Steps 1 and 2 are about
+a day together; 3 and 4 are a day or two each, most of it probes and the
+preview's calibration.
+
+### Decisions for Tyler
+
+Each has a recommendation; "proceed with your recommendations" takes all
+five.
+
+1. **Corrections reuse `hear` rather than a new `captions` key.**
+   Recommend yes: it is one fact, and no lexicon file exists yet to disagree.
+2. **Undo does not revert a correction.** Recommend yes, and the tool text
+   says so. The alternative is widening the snapshot to include
+   `lexicon.json`, which touches every undo for a preference.
+3. **The big word is a span override, not only a whole-film style.**
+   Recommend yes. The whole-film form already works (`--max-words 1`); the
+   gallery uses it as a beat.
+4. **A reveal starts at the word's own start, not the fill's early start.**
+   Recommend the word's start. The watch in step 5 can overturn it cheaply.
+5. **Build order 1 to 5 as above, stopping at the watch.** Recommend yes.
+
+---
+
 ## Copyright, the DMCA, and this work: 2026-09-23
 
 Tyler asked that everything planned here stay within the DMCA. These are the
