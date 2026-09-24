@@ -1,5 +1,10 @@
 # proofcut
 
+[![PyPI](https://img.shields.io/pypi/v/proofcut)](https://pypi.org/project/proofcut/)
+[![Python](https://img.shields.io/pypi/pyversions/proofcut)](https://pypi.org/project/proofcut/)
+[![CI](https://github.com/tydude001/proofcut/actions/workflows/ci.yml/badge.svg)](https://github.com/tydude001/proofcut/actions/workflows/ci.yml)
+[![License: PolyForm Shield 1.0.0](https://img.shields.io/badge/license-PolyForm%20Shield%201.0.0-blue)](https://github.com/tydude001/proofcut/blob/main/LICENSE)
+
 <!-- mcp-name: io.github.tydude001/proofcut -->
 
 **An AI video editor that proves its cuts.** Your recordings in, a finished,

@@ -20,6 +20,11 @@ authors = [
 # Pinned below 3.14: OpenTimelineIO 0.18.1 ships cp39-cp313 wheels and no cp314.
 # Every other dep already covers 3.14. Revisit when OTIO publishes cp314.
 requires-python = ">=3.13,<3.14"
+# The README's Python badge reads these, never `requires-python`; they move with it.
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+]
 dependencies = [
     "mcp>=2",
     "opentimelineio>=0.18.1",
