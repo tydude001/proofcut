@@ -18292,3 +18292,10 @@ reveal does not touch size.
 transparent fill, a 250 ms fade, a blur) and `round-bigword` (the fade, with
 and without "well," and "ruff." alone and large). No default changes until
 Tyler picks.
+
+**Watched 2026-09-24, and nothing changes.** Round 1: Tyler liked the fill,
+the fade and the blur alike and would not pick one, so all three stay options
+and no default moves (a project with no `reveal` still has none; the `reveal`
+preset keeps its fade). Round 2: he likes the big word but would not use it
+every time, which is what a span already is: opt-in, one beat at a time,
+never a default. Verdicts are recorded in the two rounds' review lists.

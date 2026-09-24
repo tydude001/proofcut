@@ -1276,7 +1276,9 @@ Tyler took all five as recommended, and steps 1 to 4 were built the same
 day. The probes changed one thing in the design: a blur reveal draws no
 outline until its last 40%, because libass blurs only the outline of a glyph
 that has one (P2a). The record, with every measurement, is HISTORY.md
-§ Caption reveal, caption spans and caption corrections, built.
+§ Caption reveal, caption spans and caption corrections, built. The watch
+(step 5) moved no default: Tyler liked all three ways a word arrives, and
+wants the big word as an occasional beat, which is what a span is.
 
 ---
 
