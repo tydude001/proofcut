@@ -17267,6 +17267,9 @@ def caption_style(
     position: str | None = None,
     margin: int | None = None,
     karaoke: bool | None = None,
+    reveal: str | None = None,
+    reveal_ms: int | None = None,
+    reveal_blur: float | None = None,
     max_words: int | None = None,
     max_gap: float | None = None,
     max_duration: float | None = None,
@@ -17315,15 +17318,26 @@ def caption_style(
         "position": position,
         "margin": margin,
         "karaoke": karaoke,
+        "reveal": reveal,
+        "reveal_ms": reveal_ms,
+        "reveal_blur": reveal_blur,
         "max_words": max_words,
         "max_gap": max_gap,
         "max_duration": max_duration,
         "hold": hold,
     }
     changes = {field: value for field, value in changes.items() if value is not None}
+    # Switching the reveal off (or to a fade) takes the *stored* numbers it no
+    # longer uses with it, rather than leaving them where resolve would refuse
+    # them. A number passed in this same call is kept, and refused.
+    dropped = {"none": ("reveal_ms", "reveal_blur"), "fade": ("reveal_blur",)}.get(changes.get("reveal", ""), ())
+    for field in dropped:
+        changes.setdefault(field, None)
 
     base = {} if reset else _stored_caption_style(project)
-    style = captions.resolve({**base, **changes})
+    merged = {**base, **changes}
+    style = captions.resolve({k: v for k, v in merged.items() if v is not None})
+    changes = {k: v for k, v in changes.items() if v is not None or k in base}
 
     write = bool(changes or reset) and not plan
     if write:
@@ -17437,7 +17451,14 @@ def _caption_span_plan(
         if record.get("off"):
             planned.append((start, end, None))
             continue
-        looks.append(captions.resolve({**style.stored, **record["style"]}))
+        base = dict(style.stored)
+        if record["style"].get("reveal") in ("none", "fade"):
+            # A span that turns the reveal off (or to a fade) drops the numbers
+            # the project's own reveal set, or resolve refuses them.
+            base.pop("reveal_blur", None)
+            if record["style"]["reveal"] == "none":
+                base.pop("reveal_ms", None)
+        looks.append(captions.resolve({**base, **record["style"]}))
         planned.append((start, end, len(looks) - 1))
     return planned, looks
 

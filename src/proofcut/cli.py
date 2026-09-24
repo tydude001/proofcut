@@ -1244,6 +1244,11 @@ def _build_parser() -> argparse.ArgumentParser:
         p_capstyle.add_argument(
             f"--{flag}", action=argparse.BooleanOptionalAction, default=None, help=helptext
         )
+    p_capstyle.add_argument(
+        "--reveal", choices=captions.REVEALS, help="how each word arrives: fade, blur, or none"
+    )
+    p_capstyle.add_argument("--reveal-ms", type=int, help="length of each word's reveal (default 150)")
+    p_capstyle.add_argument("--reveal-blur", type=float, help="how blurred a word starts (reveal blur; default 6)")
     p_capstyle.add_argument("--max-words", type=int, help="words per caption line")
     p_capstyle.add_argument("--max-gap", type=float, help="silence that starts a new line")
     p_capstyle.add_argument("--max-duration", type=float, help="longest a line stays up")
@@ -2915,6 +2920,9 @@ def _cmd_caption_style(args: argparse.Namespace) -> int:
             position=args.position,
             margin=args.margin,
             karaoke=args.karaoke,
+            reveal=args.reveal,
+            reveal_ms=args.reveal_ms,
+            reveal_blur=args.reveal_blur,
             max_words=args.max_words,
             max_gap=args.max_gap,
             max_duration=args.max_duration,

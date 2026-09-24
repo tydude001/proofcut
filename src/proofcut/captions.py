@@ -332,6 +332,16 @@ class Preset:
     alignment: int
     margin_v: int
     karaoke: bool
+    #: How each word arrives: `none`, `fade`, or `blur` (fades as well). Per
+    #: word, from its own start, inside the one event per line — `\\alpha`
+    #: and `\\blur` are metric-neutral, so the line holds still (PLAN.md §
+    #: Per-word caption animation, finding 4). `_reveal_tags` has the rest.
+    reveal: str = "none"
+    reveal_ms: int = 150
+    #: `\\blur` strength at the start of a blur reveal: a gaussian of sigma
+    #: 0.85 x this in PlayRes pixels, measured (DAYDREAM.md § Caption reveal
+    #: and corrections, designed, P2b) — the preview's multiplier.
+    reveal_blur: float = 6.0
 
 
 #: Deliberately small (PLAN.md). The font was `DejaVu Sans` on the reasoning
@@ -381,6 +391,24 @@ PRESETS: dict[str, Preset] = {
         alignment=2,
         margin_v=80,
         karaoke=True,
+    ),
+    # The gallery's kinetic type (DAYDREAM.md § The gallery, watched): words
+    # land in the middle of the frame, each fading in as it is spoken.
+    "reveal": Preset(
+        font=CAPTION_FONT,
+        size=72,
+        primary="&H00FFFFFF",
+        secondary="&H00FFFFFF",
+        outline_colour="&H00000000",
+        back="&H80000000",
+        bold=-1,
+        border_style=1,
+        outline=3.0,
+        shadow=0.0,
+        alignment=5,
+        margin_v=80,
+        karaoke=False,
+        reveal="fade",
     ),
     "boxed": Preset(
         font=CAPTION_FONT,
@@ -661,6 +689,9 @@ STYLE_FIELDS: dict[str, str] = {
     "position": "position",
     "margin": "int",
     "karaoke": "bool",
+    "reveal": "reveal",
+    "reveal_ms": "int",
+    "reveal_blur": "float",
     "max_words": "int",
     "max_gap": "float",
     "max_duration": "float",
@@ -668,6 +699,10 @@ STYLE_FIELDS: dict[str, str] = {
 }
 
 DEFAULT_PRESET = "clean"
+
+#: How a word arrives. `blur` fades too: a word that sharpened out of nothing
+#: at full opacity reads as a rendering fault, not a reveal.
+REVEALS = ("none", "fade", "blur")
 
 
 @dataclass(frozen=True)
@@ -731,6 +766,9 @@ class Style:
                 "position": _POSITIONS.get(self.ass.alignment, str(self.ass.alignment)),
                 "margin": self.ass.margin_v,
                 "karaoke": self.ass.karaoke,
+                "reveal": self.ass.reveal,
+                "reveal_ms": self.ass.reveal_ms,
+                "reveal_blur": self.ass.reveal_blur,
                 **self.grouping,
             },
             "ass": colours,
@@ -751,6 +789,11 @@ def _coerce(field: str, kind: str, value: Any) -> Any:
             raise CaptionError(
                 f"unknown caption position {value!r} — one of: {', '.join(ALIGNMENTS)}"
             )
+        return name
+    if kind == "reveal":
+        name = str(value).strip().lower()
+        if name not in REVEALS:
+            raise CaptionError(f"unknown reveal {value!r} — one of: {', '.join(REVEALS)}")
         return name
     if kind == "bool":
         return bool(value)
@@ -789,6 +832,10 @@ def normalise(stored: dict[str, Any] | None) -> dict[str, Any]:
         raise CaptionError("size must be at least 1")
     if clean.get("max_words", 1) < 1:
         raise CaptionError("max_words must be at least 1")
+    if clean.get("reveal_ms", 1) < 1:
+        raise CaptionError("reveal_ms must be at least 1")
+    if clean.get("reveal_blur", 0) < 0:
+        raise CaptionError("reveal_blur is a strength, not negative")
     return clean
 
 
@@ -829,7 +876,16 @@ def resolve(stored: dict[str, Any] | None) -> Style:
         alignment=ALIGNMENTS[clean["position"]] if "position" in clean else base.alignment,
         margin_v=int(clean.get("margin", base.margin_v)),
         karaoke=karaoke,
+        reveal=str(clean.get("reveal", base.reveal)),
+        reveal_ms=int(clean.get("reveal_ms", base.reveal_ms)),
+        reveal_blur=float(clean.get("reveal_blur", base.reveal_blur)),
     )
+    # A number set for a reveal that is not on is refused, never ignored — a
+    # setting silently dropped looks exactly like one that had no effect.
+    if ass.reveal == "none" and ("reveal_ms" in clean or "reveal_blur" in clean):
+        raise CaptionError("reveal_ms and reveal_blur need a reveal — set reveal to fade or blur")
+    if ass.reveal == "fade" and "reveal_blur" in clean:
+        raise CaptionError("reveal_blur needs reveal=blur; a fade does not blur")
     grouping = {**DEFAULT_GROUPING, **{k: clean[k] for k in DEFAULT_GROUPING if k in clean}}
     return Style(
         ass=ass,
@@ -863,18 +919,57 @@ def _escape(text: str) -> str:
     return " ".join(text.translate(_UNSAFE).split())
 
 
+def _alpha(colour: str) -> str:
+    """The alpha byte of an ASS `&HAABBGGRR` colour, as an `&HAA&` value."""
+    return f"&H{colour[2:4]}&"
+
+
+#: A blur reveal draws with no outline while it blurs, because libass blurs
+#: only the outline of a glyph that has one and leaves the fill sharp
+#: (measured, P2a). The outline comes back over this last share of the
+#: reveal. The fill sharpens as it starts — the snap a watch judges.
+REVEAL_OUTLINE_FROM = 0.6
+
+
+def _reveal_tags(word: CueWord, cue: Cue, style: Preset) -> str:
+    """One word's arrival, as override tags for its own block.
+
+    Every alpha channel starts transparent and animates to **the style's own
+    value**, never `\\alpha&H00&`: `\\alpha` sets all four, and a
+    translucent box ended fully opaque (measured, P1). `\\t` times are
+    milliseconds from the Dialogue's own start, `cue.start` — the one detail
+    that is silent when wrong. The reveal starts at the word's own start,
+    not the fill's earlier `highlight_start`: it says the word is being said.
+    """
+    begin = max(0, round((word.start - cue.start) * 1000))
+    end = begin + style.reveal_ms
+    channels = (style.primary, style.secondary, style.outline_colour, style.back)
+    tags = "".join(f"\\{n}a&HFF&" for n in range(1, 5))
+    target = "".join(f"\\{n}a{_alpha(c)}" for n, c in enumerate(channels, start=1))
+    if style.reveal != "blur":
+        return f"{tags}\\t({begin},{end},{target})"
+    tags += f"\\bord0\\blur{style.reveal_blur:g}"
+    tags += f"\\t({begin},{end},{target}\\blur0)"
+    if style.outline > 0:
+        tags += f"\\t({begin + round(style.reveal_ms * REVEAL_OUTLINE_FROM)},{end},\\bord{style.outline:g})"
+    return tags
+
+
 def _dialogue_text(cue: Cue, style: Preset) -> str:
-    if not style.karaoke:
+    if not style.karaoke and style.reveal == "none":
         return _escape(cue.text)
 
     # Each \k is the duration of its own word *plus the gap before it*, so the
     # highlight stays locked to the audio instead of drifting forward by the
     # accumulated silence between words. `karaoke_spans` owns that rule; the
     # preview overlay reads the same spans off `as_dict`.
-    return " ".join(
-        f"{{\\k{max(0, round((until - lit) * 100))}}}{_escape(word.text)}"
-        for word, lit, until in cue.karaoke_spans()
-    )
+    blocks = []
+    for word, lit, until in cue.karaoke_spans():
+        tags = f"\\k{max(0, round((until - lit) * 100))}" if style.karaoke else ""
+        if style.reveal != "none":
+            tags += _reveal_tags(word, cue, style)
+        blocks.append(f"{{{tags}}}{_escape(word.text)}")
+    return " ".join(blocks)
 
 
 def _style_name(look: int) -> str:

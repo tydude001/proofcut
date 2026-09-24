@@ -906,12 +906,12 @@ function cueAt(t) {
   return null;
 }
 
-/* Rebuild the line's contents. Word spans only when karaoke is on — with it
- * off every word is the same colour forever, and a span per word would be
- * churn nobody can see. */
+/* Rebuild the line's contents. Word spans only when a word can differ from
+ * its neighbours — karaoke or a reveal. Otherwise every word is the same
+ * forever, and a span per word would be churn nobody can see. */
 function buildLine(cue, look) {
   captionLine.textContent = "";
-  if (!look.karaoke) {
+  if (!look.karaoke && (!look.reveal || look.reveal === "none")) {
     captionLine.textContent = cue.text;
     captionLine.style.color = look.text;
     return;
@@ -939,6 +939,46 @@ function paintKaraoke(cue, look, t) {
   const spans = captionLine.children;
   for (let n = 0; n < spans.length && n < cue.words.length; n++) {
     spans[n].style.color = cue.words[n].highlight_start <= t ? look.highlight : look.text;
+  }
+}
+
+/* The reveal, per word, from `t` alone — never a CSS transition, so a seek
+ * lands on the right state. The mirror of `captions._reveal_tags`:
+ *
+ *  * opacity rises linearly over `reveal_ms` from the word's OWN start (not
+ *    `highlight_start`, which is the fill's);
+ *  * a blur starts at `reveal_blur`, a libass `\blur` whose gaussian sigma
+ *    is 0.85 x that in reference pixels (measured, DAYDREAM.md § Caption
+ *    reveal and corrections, designed, P2b) — and CSS `blur(r)` is sigma r;
+ *  * libass blurs only the outline of a glyph that has one, so the burn draws
+ *    no outline while it blurs and brings it back over the last 40%
+ *    (`REVEAL_OUTLINE_FROM`). The stroke here follows the same ramp. The
+ *    burn's fill turns sharp as that ramp starts; this preview's blur runs
+ *    down to zero instead, which is the one place the two differ, and the
+ *    difference lasts a few frames.
+ *
+ * `opacity` and `filter` do not affect layout, and neither do `\alpha` and
+ * `\blur` — so both halves keep the line still (PLAN.md § Per-word caption
+ * animation, finding 5's trap is about a property that reflows). */
+const REVEAL_BLUR_SIGMA = 0.85; // captions.py: sigma per unit of \blur
+const REVEAL_OUTLINE_FROM = 0.6; // captions.REVEAL_OUTLINE_FROM
+
+function paintReveal(cue, look, t, scale) {
+  const spans = captionLine.children;
+  const seconds = look.reveal_ms / 1000;
+  for (let n = 0; n < spans.length && n < cue.words.length; n++) {
+    const p = Math.min(1, Math.max(0, (t - cue.words[n].start) / seconds));
+    spans[n].style.opacity = String(p);
+    if (look.reveal !== "blur") {
+      spans[n].style.filter = "";
+      continue;
+    }
+    const sigma = REVEAL_BLUR_SIGMA * look.reveal_blur * (1 - p) * scale;
+    spans[n].style.filter = sigma > 0.01 ? `blur(${sigma}px)` : "";
+    if (!look.box) {
+      const ramp = Math.min(1, Math.max(0, (p - REVEAL_OUTLINE_FROM) / (1 - REVEAL_OUTLINE_FROM)));
+      spans[n].style.webkitTextStroke = `${look.outline_width * ramp * scale}px ${look.outline_colour}`;
+    }
   }
 }
 
@@ -988,6 +1028,7 @@ function paintCaption(t) {
     buildLine(cue, look);
   }
   if (look.karaoke) paintKaraoke(cue, look, t);
+  if (look.reveal && look.reveal !== "none") paintReveal(cue, look, t, scale);
 }
 
 /* Called by app.js whenever /api/captions lands — on load, and again after

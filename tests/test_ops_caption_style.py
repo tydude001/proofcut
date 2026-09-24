@@ -253,3 +253,44 @@ def test_cues_are_in_timeline_seconds(project: Project) -> None:
 
     assert before == 0.0
     assert after < 0.4, "'first' now plays where 'the' used to"
+
+
+# -- the reveal (DAYDREAM.md § Caption reveal and corrections, designed) ----
+
+
+def test_a_reveal_is_stored_and_echoed_resolved(project: Project) -> None:
+    result = ops.caption_style(project.root, reveal="blur", reveal_ms=300)
+    assert result["stored"] == {"reveal": "blur", "reveal_ms": 300}
+    assert result["resolved"]["reveal_blur"] == 6.0
+
+
+def test_a_reveal_number_without_a_reveal_is_refused(project: Project) -> None:
+    with pytest.raises(CaptionError, match="need a reveal"):
+        ops.caption_style(project.root, reveal_ms=200)
+    with pytest.raises(CaptionError, match="needs reveal=blur"):
+        ops.caption_style(project.root, reveal="fade", reveal_blur=4)
+
+
+def test_turning_the_reveal_off_takes_its_stored_numbers_with_it(project: Project) -> None:
+    ops.caption_style(project.root, reveal="blur", reveal_ms=300, reveal_blur=8)
+    ops.caption_style(project.root, reveal="fade")
+    assert ops.caption_style(project.root)["stored"] == {"reveal": "fade", "reveal_ms": 300}
+    ops.caption_style(project.root, reveal="none")
+    assert ops.caption_style(project.root)["stored"] == {"reveal": "none"}
+
+
+def test_the_reveal_preset_fades_words_in_mid_frame(project: Project, tmp_path: Path) -> None:
+    ops.caption_style(project.root, preset="reveal")
+    out = tmp_path / "c.ass"
+    ops.add_captions(project.root, out)
+    line = next(l for l in out.read_text(encoding="utf-8").splitlines() if l.startswith("Dialogue:"))
+    # Every word starts transparent and fades to the style's own alphas, from
+    # its own start in ms after the line's.
+    assert r"{\1a&HFF&\2a&HFF&\3a&HFF&\4a&HFF&\t(0,150,\1a&H00&\2a&H00&\3a&H00&\4a&H80&)}the" in line
+    assert r"\t(400,550," in line  # "first" starts 0.4 s into the line
+
+
+def test_a_span_can_switch_the_projects_reveal_off(project: Project) -> None:
+    ops.caption_style(project.root, reveal="blur", reveal_blur=8)
+    ops.caption_span_add(project.root, "vo", 0, seconds=1.0, style={"reveal": "none"})
+    assert ops.caption_view(project.root)["styles"][1]["reveal"] == "none"

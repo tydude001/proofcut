@@ -1110,7 +1110,8 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
     },
     "caption_style": {
         "preset": (
-            "The base look: `clean`, `karaoke` (per-word highlight) or `boxed`. "
+            "The base look: `clean`, `karaoke` (per-word highlight), `reveal` (words "
+            "land mid-frame, fading in as spoken) or `boxed`. "
             "Everything else overrides one of its fields, and only the overrides are "
             "stored."
         ),
@@ -1146,6 +1147,16 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "Fill each word as it is spoken. The fill is left-to-right within a line "
             "rather than a per-word step, which is what the grouping fields below "
             "shape."
+        ),
+        "reveal": (
+            "How each word arrives as it is spoken: `fade`, `blur` (blurs and fades "
+            "in; the outline returns at the end), or `none`. The line is laid out "
+            "whole from the start, so nothing moves."
+        ),
+        "reveal_ms": "How long a word's reveal takes, in milliseconds. Default 150. Needs a reveal.",
+        "reveal_blur": (
+            "How blurred a word starts under `reveal=blur` (ASS `\\blur`; a gaussian of "
+            "0.85 x this in canvas pixels). Default 6."
         ),
         "max_words": (
             "Most words in one caption cue. Grouping is part of the look, which is "
@@ -3904,6 +3915,9 @@ def caption_style(
     position: str | None = None,
     margin: int | None = None,
     karaoke: bool | None = None,
+    reveal: str | None = None,
+    reveal_ms: int | None = None,
+    reveal_blur: float | None = None,
     max_words: int | None = None,
     max_gap: float | None = None,
     max_duration: float | None = None,
@@ -3919,9 +3933,10 @@ def caption_style(
     argument sets that field and leaves the others alone. `reset` drops every
     override first — `reset` plus `preset` starts clean from a preset.
 
-    `preset` is the base look ("clean", "karaoke" for per-word highlight, or
-    "boxed"); everything else overrides one of its fields, and only the
-    overrides are stored.
+    `preset` is the base look ("clean", "karaoke" for per-word highlight,
+    "reveal" for words landing mid-frame and fading in as spoken, or "boxed");
+    everything else overrides one of its fields, and only the overrides are
+    stored. `reveal` ("fade", "blur" or "none") is how each word arrives.
 
     Colours take "#rrggbb", "#rrggbbaa", a name ("yellow", "white", "red", …)
     or an ASS "&H…" value. `text` is the word's colour and `highlight` what it
@@ -3948,6 +3963,9 @@ def caption_style(
         position=position,
         margin=margin,
         karaoke=karaoke,
+        reveal=reveal,
+        reveal_ms=reveal_ms,
+        reveal_blur=reveal_blur,
         max_words=max_words,
         max_gap=max_gap,
         max_duration=max_duration,
