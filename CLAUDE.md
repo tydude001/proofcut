@@ -117,6 +117,12 @@ not built 2026-09-20 — is [docs/plans/PICKS-PRIOR.md](docs/plans/PICKS-PRIOR.m
 Whether proofcut wants a landing page (GitHub Pages) — not yet, because a site
 converts traffic and makes none; it waits on the launch recording or a paid
 tier — is [docs/plans/SITE.md](docs/plans/SITE.md), written 2026-09-24.
+A store outside every project for what whisper, the vision model and the
+face detector say about a source, keyed by the media's content and what the
+model was given, so a second project on the same shoot or a `--fresh` trial
+pays no model time — the efficiency review's largest finding — is
+[docs/plans/MODEL-CACHE.md](docs/plans/MODEL-CACHE.md), written 2026-09-24,
+designed and not built; its controls are stated there.
 **Competitor research and anything copied from another product follows
 docs/plans/DAYDREAM.md § Copyright, the DMCA, and this work**: a research
 download stays private and is deleted once its notes are checked, never commit
