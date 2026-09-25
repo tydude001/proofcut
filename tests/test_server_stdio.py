@@ -8683,12 +8683,12 @@ def test_a_bound_server_splits_a_dump_into_shorts_it_then_cannot_reach(
     under one bound server — seed two recordings, split — and then the shorts
     are outside its project, so `_confine` refuses every call naming one, while
     a second server bound to a short writes to it."""
-    from test_split import _recording
+    from test_split import _encode_recording
 
     dump = tmp_path / "dump"
     ops.init(dump)
     for name, colour in (("a", "blue"), ("b", "red")):
-        video, transcript = _recording(tmp_path, name, colour)
+        video, _audio, transcript = _encode_recording(tmp_path, name, colour)
         ops.import_media(dump, video, clip_id=name)
         ops.attach_transcript(dump, name, transcript)
     shorts = [

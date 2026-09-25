@@ -16347,6 +16347,22 @@ belong here beside the three serial ones once a run has produced them; the
 repo is public, so the saving is wall clock, not billed minutes
 (`wiki/git-server.md`).
 
+**Two fixtures encode once (2026-09-24).** `tests/test_ops_reframe_sheet.py`
+ran a real `testsrc` encode for every test and `tests/test_split.py` two per
+`_dump`, all of them the same bytes. Each file now encodes its masters once
+per session (`clip_cache`, `recording_cache`, under `tmp_path_factory`) and
+copies them into each test's own project, since a test mutates its project
+and media is probed by mtime. Serial, reframe sheet went 62.95 s to
+45.93 s and split 37.00 s to 28.62 s, both green; under `-n 4` each worker
+builds its own masters. **The stdio server stays one process per test**,
+and that was evaluated rather than assumed: the project lock's lease table
+is per process (`projectlock.py`), so a shared server could never be
+refused its own earlier lease, and the two tests that prove a second
+session is refused and the lock is released at exit (`tests/
+test_server_stdio.py`) measure exactly that boundary; binding (`-C`) and
+`PROOFCUT_WHISPER` are fixed at spawn too. A shared server would have kept
+the file green while it stopped testing what the lock is for.
+
 ## Retime, built — 2026-09-17
 
 NATIVE.md § B5. A stretch plays a span of the film, from a word or event to

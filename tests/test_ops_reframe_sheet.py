@@ -44,7 +44,7 @@ VO = {
 }
 
 
-def _video(path: Path, seconds: int = 8) -> None:
+def _encode_video(path: Path, seconds: int = 8) -> None:
     command = [
         "ffmpeg", "-v", "error", "-y",
         "-f", "lavfi", "-i", f"testsrc=size=1920x816:rate=30:duration={seconds}",
@@ -53,13 +53,35 @@ def _video(path: Path, seconds: int = 8) -> None:
     subprocess.run(command, check=True)
 
 
+@pytest.fixture(scope="session")
+def clip_cache(tmp_path_factory: pytest.TempPathFactory) -> dict[int, Path]:
+    """The real `testsrc` encodes this file draws frames from, keyed by
+    duration and built once for the whole session — every test wants the same
+    1920x816 clip (or its 4s cousin for the no-picture-lane case), and
+    re-encoding identical bytes per test bought nothing but the wait."""
+    root = tmp_path_factory.mktemp("clips")
+    cache: dict[int, Path] = {}
+    for seconds in (8, 4):
+        master = root / f"testsrc{seconds}.mp4"
+        _encode_video(master, seconds=seconds)
+        cache[seconds] = master
+    return cache
+
+
+def _video(path: Path, clip_cache: dict[int, Path], seconds: int = 8) -> None:
+    """Copy the session's `seconds`-long encode to `path` — tests mutate
+    their own project and media can be probed by mtime, so each one needs its
+    own file rather than the cached one."""
+    shutil.copy(clip_cache[seconds], path)
+
+
 @pytest.fixture
-def project(tmp_path: Path) -> Project:
+def project(tmp_path: Path, clip_cache: dict[int, Path]) -> Project:
     """A VO with two cues onto one real 1920x816 clip, on a vertical canvas —
     so the film has two placements of one asset and something to crop."""
     project = Project.create(tmp_path / "proj")
     footage = tmp_path / "clipa.mp4"
-    _video(footage)
+    _video(footage, clip_cache)
 
     manifest = project.read_manifest()
     manifest["clips"] = [
@@ -335,13 +357,13 @@ def test_a_card_is_skipped_and_named(project: Project) -> None:
 
 @needs_tools
 def test_the_edits_own_track_is_sheeted_when_there_is_no_picture_lane(
-    tmp_path: Path,
+    tmp_path: Path, clip_cache: dict[int, Path]
 ) -> None:
     """With no cues the edit *is* the picture, and it is framed by the same
     rects — so it is the same review, not a different one."""
     project = Project.create(tmp_path / "solo")
     footage = tmp_path / "solo.mp4"
-    _video(footage, seconds=4)
+    _video(footage, clip_cache, seconds=4)
     manifest = project.read_manifest()
     manifest["clips"] = [
         {
@@ -647,7 +669,7 @@ def test_the_sheet_wipes_its_own_tiles_and_not_the_shared_frame_cache(project: P
 
 @needs_tools
 def test_a_window_in_the_clips_last_tenth_draws_its_samples_off_the_last_frame(
-    tmp_path: Path,
+    tmp_path: Path, clip_cache: dict[int, Path]
 ) -> None:
     """The stretch ends at the clip's end, but a frame is asked for by its
     start: ffmpeg's `-ss t` answers the first frame at or after `t`, so a
@@ -656,7 +678,7 @@ def test_a_window_in_the_clips_last_tenth_draws_its_samples_off_the_last_frame(
     moments there. Samples are bounded by `_timeline_bound` less a frame."""
     project = Project.create(tmp_path / "proj")
     footage = tmp_path / "clipa.mp4"
-    _video(footage)
+    _video(footage, clip_cache)
     manifest = project.read_manifest()
     manifest["clips"] = [
         {

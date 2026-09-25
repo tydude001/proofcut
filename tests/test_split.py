@@ -31,8 +31,10 @@ needs_auto_editor = pytest.mark.skipif(
 BURSTS = [(0.0, 2.0), (3.0, 5.0), (6.0, 8.0), (9.0, 11.0)]
 
 
-def _recording(root: Path, name: str, colour: str) -> tuple[Path, Path]:
-    """A 12s video of one flat colour over the four bursts, and its transcript."""
+def _encode_recording(root: Path, name: str, colour: str) -> tuple[Path, Path, Path]:
+    """A 12s video of one flat colour over the four bursts, and its transcript
+    — the real ffmpeg (and wave-module) encode, run once per session by
+    `recording_cache` rather than once per test."""
     audio = root / f"{name}.wav"
     rate = 22050
     with wave.open(str(audio), "w") as out:
@@ -64,15 +66,47 @@ def _recording(root: Path, name: str, colour: str) -> tuple[Path, Path]:
     ]
     transcript = root / f"{name}.json"
     transcript.write_text(json.dumps({"language": "en", "words": words}), encoding="utf-8")
-    return video, transcript
+    return video, audio, transcript
 
 
-def _dump(tmp_path: Path, *, silences: bool = False) -> Project:
+@pytest.fixture(scope="session")
+def recording_cache(tmp_path_factory: pytest.TempPathFactory) -> dict[str, tuple[Path, Path, Path]]:
+    """Recordings `a` (blue) and `b` (red), encoded once for the whole
+    session: every `_dump` wants the same bytes, so re-running ffmpeg on the
+    same colour and burst pattern for each of ~15 tests bought nothing but
+    the wait."""
+    root = tmp_path_factory.mktemp("recordings")
+    return {
+        name: _encode_recording(root, name, colour)
+        for name, colour in (("a", "blue"), ("b", "red"))
+    }
+
+
+def _recording(
+    root: Path, name: str, cache: dict[str, tuple[Path, Path, Path]]
+) -> tuple[Path, Path]:
+    """Copy the session's `name` recording into `root` — a project mutates
+    its own media, and media can be probed by mtime, so each test needs its
+    own files rather than the cached ones."""
+    video, audio, transcript = cache[name]
+    shutil.copy(video, root / video.name)
+    shutil.copy(audio, root / audio.name)
+    dest_transcript = root / transcript.name
+    shutil.copy(transcript, dest_transcript)
+    return root / video.name, dest_transcript
+
+
+def _dump(
+    tmp_path: Path,
+    recording_cache: dict[str, tuple[Path, Path, Path]],
+    *,
+    silences: bool = False,
+) -> Project:
     """`dump/` holding recordings `a` (blue) and `b` (red), seeded end to end."""
     root = tmp_path / "dump"
     ops.init(root)
-    for name, colour in (("a", "blue"), ("b", "red")):
-        video, transcript = _recording(tmp_path, name, colour)
+    for name in ("a", "b"):
+        video, transcript = _recording(tmp_path, name, recording_cache)
         ops.import_media(root, video, clip_id=name)
         ops.attach_transcript(root, name, transcript)
     ops.seed_timeline(root, ["a", "b"], remove_silences=silences)
@@ -87,8 +121,10 @@ def _edge(clip_id: str, word: int) -> dict[str, object]:
 
 
 @needs_ffmpeg
-def test_a_seed_lays_several_recordings_end_to_end_in_order(tmp_path: Path) -> None:
-    project = _dump(tmp_path)
+def test_a_seed_lays_several_recordings_end_to_end_in_order(
+    tmp_path: Path, recording_cache: dict[str, tuple[Path, Path, Path]]
+) -> None:
+    project = _dump(tmp_path, recording_cache)
     segments = tl.read(project.timeline_path).segments
     assert [s.clip_id for s in segments] == ["a", "b"]
     assert tl.read(project.timeline_path).duration == pytest.approx(24.0, abs=0.1)
@@ -96,10 +132,12 @@ def test_a_seed_lays_several_recordings_end_to_end_in_order(tmp_path: Path) -> N
 
 @needs_ffmpeg
 @needs_auto_editor
-def test_a_seed_of_several_silence_cuts_every_recording(tmp_path: Path) -> None:
+def test_a_seed_of_several_silence_cuts_every_recording(
+    tmp_path: Path, recording_cache: dict[str, tuple[Path, Path, Path]]
+) -> None:
     """Finding 1: `follow` spliced the second recording in whole, pauses and
     all. A seed of several runs the silence pass over each."""
-    project = _dump(tmp_path, silences=True)
+    project = _dump(tmp_path, recording_cache, silences=True)
     edit = tl.read(project.timeline_path)
     for clip_id in ("a", "b"):
         kept = sum(s.end - s.start for s in edit.segments if s.clip_id == clip_id)
@@ -108,8 +146,10 @@ def test_a_seed_of_several_silence_cuts_every_recording(tmp_path: Path) -> None:
 
 
 @needs_ffmpeg
-def test_a_seed_of_several_reports_each_recording(tmp_path: Path) -> None:
-    project = _dump(tmp_path)
+def test_a_seed_of_several_reports_each_recording(
+    tmp_path: Path, recording_cache: dict[str, tuple[Path, Path, Path]]
+) -> None:
+    project = _dump(tmp_path, recording_cache)
     result = ops.seed_timeline(project.root, ["b", "a"], remove_silences=False)
     assert result["clip_id"] == ["b", "a"]
     assert [c["clip_id"] for c in result["clips"]] == ["b", "a"]
@@ -118,9 +158,9 @@ def test_a_seed_of_several_reports_each_recording(tmp_path: Path) -> None:
 
 @needs_ffmpeg
 def test_a_seed_of_several_refuses_a_repeat_and_a_recording_with_no_picture(
-    tmp_path: Path,
+    tmp_path: Path, recording_cache: dict[str, tuple[Path, Path, Path]]
 ) -> None:
-    project = _dump(tmp_path)
+    project = _dump(tmp_path, recording_cache)
     with pytest.raises(ProjectError, match="more than once"):
         ops.seed_timeline(project.root, ["a", "a"], remove_silences=False)
     ops.import_media(project.root, tmp_path / "a.wav", clip_id="vo")
@@ -135,9 +175,9 @@ def test_a_seed_of_several_refuses_a_repeat_and_a_recording_with_no_picture(
 
 @needs_ffmpeg
 def test_split_makes_each_short_beside_the_dump_with_only_its_recordings(
-    tmp_path: Path,
+    tmp_path: Path, recording_cache: dict[str, tuple[Path, Path, Path]]
 ) -> None:
-    project = _dump(tmp_path)
+    project = _dump(tmp_path, recording_cache)
     result = ops.split(
         project.root,
         [
@@ -163,8 +203,10 @@ def test_split_makes_each_short_beside_the_dump_with_only_its_recordings(
 
 
 @needs_ffmpeg
-def test_a_short_across_the_join_keeps_both_recordings(tmp_path: Path) -> None:
-    project = _dump(tmp_path)
+def test_a_short_across_the_join_keeps_both_recordings(
+    tmp_path: Path, recording_cache: dict[str, tuple[Path, Path, Path]]
+) -> None:
+    project = _dump(tmp_path, recording_cache)
     result = ops.split(
         project.root, [{"name": "join", "from": _edge("a", 6), "to": _edge("b", 1)}]
     )
@@ -180,8 +222,10 @@ def test_a_short_across_the_join_keeps_both_recordings(tmp_path: Path) -> None:
 
 
 @needs_ffmpeg
-def test_split_echoes_each_edge_and_its_neighbours(tmp_path: Path) -> None:
-    project = _dump(tmp_path)
+def test_split_echoes_each_edge_and_its_neighbours(
+    tmp_path: Path, recording_cache: dict[str, tuple[Path, Path, Path]]
+) -> None:
+    project = _dump(tmp_path, recording_cache)
     planned = ops.split(
         project.root,
         [{"name": "s", "from": {"clip_id": "a", "phrase": "a20"}, "to": _edge("a", 5)}],
@@ -195,9 +239,9 @@ def test_split_echoes_each_edge_and_its_neighbours(tmp_path: Path) -> None:
 
 @needs_ffmpeg
 def test_split_reports_overlaps_and_unassigned_material_and_refuses_neither(
-    tmp_path: Path,
+    tmp_path: Path, recording_cache: dict[str, tuple[Path, Path, Path]]
 ) -> None:
-    project = _dump(tmp_path)
+    project = _dump(tmp_path, recording_cache)
     planned = ops.split(
         project.root,
         [
@@ -213,16 +257,20 @@ def test_split_reports_overlaps_and_unassigned_material_and_refuses_neither(
 
 
 @needs_ffmpeg
-def test_split_takes_reel_seconds_too(tmp_path: Path) -> None:
-    project = _dump(tmp_path)
+def test_split_takes_reel_seconds_too(
+    tmp_path: Path, recording_cache: dict[str, tuple[Path, Path, Path]]
+) -> None:
+    project = _dump(tmp_path, recording_cache)
     result = ops.split(project.root, [{"name": "watch", "start": 13.0, "end": 17.0}])
     assert result["shorts"][0]["duration"] == pytest.approx(4.0, abs=0.05)
     assert result["shorts"][0]["clips_dropped"] == ["a"]
 
 
 @needs_ffmpeg
-def test_split_refuses_a_word_the_cleaning_removed(tmp_path: Path) -> None:
-    project = _dump(tmp_path)
+def test_split_refuses_a_word_the_cleaning_removed(
+    tmp_path: Path, recording_cache: dict[str, tuple[Path, Path, Path]]
+) -> None:
+    project = _dump(tmp_path, recording_cache)
     ops.cut_by_transcript(project.root, "a", cut=[[2, 3]])
     with pytest.raises(ProjectError, match="word 2 .* is not on the timeline"):
         ops.split(project.root, [{"name": "s", "from": _edge("a", 2), "to": _edge("a", 5)}])
@@ -242,16 +290,21 @@ def test_split_refuses_a_word_the_cleaning_removed(tmp_path: Path) -> None:
     ],
 )
 def test_split_refuses_a_malformed_short(
-    tmp_path: Path, short: dict[str, object], message: str
+    tmp_path: Path,
+    short: dict[str, object],
+    message: str,
+    recording_cache: dict[str, tuple[Path, Path, Path]],
 ) -> None:
-    project = _dump(tmp_path)
+    project = _dump(tmp_path, recording_cache)
     with pytest.raises(ProjectError, match=message):
         ops.split(project.root, [short])
 
 
 @needs_ffmpeg
-def test_split_refuses_an_existing_directory_and_a_repeated_name(tmp_path: Path) -> None:
-    project = _dump(tmp_path)
+def test_split_refuses_an_existing_directory_and_a_repeated_name(
+    tmp_path: Path, recording_cache: dict[str, tuple[Path, Path, Path]]
+) -> None:
+    project = _dump(tmp_path, recording_cache)
     (tmp_path / "taken").mkdir()
     with pytest.raises(ProjectError, match="already exists"):
         ops.split(project.root, [{"name": "taken", "start": 0.0, "end": 2.0}])
@@ -264,9 +317,11 @@ def test_split_refuses_an_existing_directory_and_a_repeated_name(tmp_path: Path)
 
 @needs_ffmpeg
 def test_a_split_that_fails_part_way_leaves_no_short_behind(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    recording_cache: dict[str, tuple[Path, Path, Path]],
 ) -> None:
-    project = _dump(tmp_path)
+    project = _dump(tmp_path, recording_cache)
     real = ops.reel
     calls: list[str] = []
 
@@ -288,8 +343,10 @@ def test_a_split_that_fails_part_way_leaves_no_short_behind(
 
 
 @needs_ffmpeg
-def test_split_puts_shorts_in_into_when_asked(tmp_path: Path) -> None:
-    project = _dump(tmp_path)
+def test_split_puts_shorts_in_into_when_asked(
+    tmp_path: Path, recording_cache: dict[str, tuple[Path, Path, Path]]
+) -> None:
+    project = _dump(tmp_path, recording_cache)
     elsewhere = tmp_path / "shorts"
     elsewhere.mkdir()
     result = ops.split(project.root, [{"name": "s", "start": 0.0, "end": 2.0}], into=elsewhere)
@@ -297,10 +354,12 @@ def test_split_puts_shorts_in_into_when_asked(tmp_path: Path) -> None:
 
 
 @needs_ffmpeg
-def test_split_drops_a_dropped_recordings_rows_and_keeps_a_cued_one(tmp_path: Path) -> None:
+def test_split_drops_a_dropped_recordings_rows_and_keeps_a_cued_one(
+    tmp_path: Path, recording_cache: dict[str, tuple[Path, Path, Path]]
+) -> None:
     """Design 6: a recording is in a short when it is on the timeline or a kept
     cue names it; anything keyed by a dropped one's `clip_id` goes with it."""
-    project = _dump(tmp_path)
+    project = _dump(tmp_path, recording_cache)
     manifest = project.read_manifest()
     manifest["reframe"] = [{"clip_id": "b", "rect": [0, 0, 90, 120]}]
     manifest["unspoken"] = [{"clip_id": "b", "word_index": 1}]
