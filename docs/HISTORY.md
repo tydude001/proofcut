@@ -18746,3 +18746,8 @@ docstring forbids until the memory growth it cites is re-isolated.
 Tests: five in `tests/test_picture.py` (melt's exit in the unreadable-file
 error, twice; a crash retried to success; retries exhausted; SIGKILL not
 retried).
+
+**Proven.** The soak on `7464ef7` read 0 of 30 failed on both Mac runners,
+and the Intel runner still left one crash report with the same
+`cache_object_close` fault: the retry caught a live crash and the render
+came out whole. The same push's mac-demo passed on both CPUs.
