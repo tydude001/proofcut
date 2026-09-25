@@ -88,7 +88,6 @@ jobs:
       # themselves: 13:42 (Linux), 11:34 (macOS), 22:29 (Windows) of pytest
       # per job, over 90% of each job's wall time. The one parallel hazard
       # the plan found, the flatpak melt launch race, cannot occur here: no
-      # runner has melt. The parallel times are read off this run's
-      # successors, and go beside those three in HISTORY.md § The suite in
-      # two minutes, and the flatpak launch race.
+      # runner has melt. Parallel it is about 5:40 / 5:50 / 8:50 (HISTORY.md
+      # § The suite in two minutes, and the flatpak launch race).
       - run: uv run pytest -n auto -q -rfE

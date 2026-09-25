@@ -16342,10 +16342,11 @@ measurement: on the last run before the flip, the pytest step alone took
 wall time, with `uv sync`, the ffmpeg install, doctor and the browser pin
 all under 30 s apiece. The hazard that kept CI serial, the flatpak melt
 launch race above, cannot occur on a runner, because no runner has melt.
-So `ci.yml` runs `pytest -n auto` from the next push. The parallel times
-belong here beside the three serial ones once a run has produced them; the
-repo is public, so the saving is wall clock, not billed minutes
-(`wiki/git-server.md`).
+So `ci.yml` runs `pytest -n auto` from the next push. Its first three
+parallel runs (2026-09-25: `8186845`, `c2275bd`, `7464ef7`) took 5:35 to
+5:44 on Linux, 5:11 to 6:34 on macOS and 6:57 to 9:43 on Windows: about
+2.4x, 2x and 2.5x faster. The repo is public, so the saving is wall clock,
+not billed minutes (`wiki/git-server.md`).
 
 **Two fixtures encode once (2026-09-24).** `tests/test_ops_reframe_sheet.py`
 ran a real `testsrc` encode for every test and `tests/test_split.py` two per
