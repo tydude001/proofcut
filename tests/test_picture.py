@@ -586,6 +586,47 @@ def test_a_render_melt_did_not_write_is_a_failure_whatever_it_exited(
         picture.render(project, tmp_path / "out.mp4")
 
 
+def _unreadable(p: Path) -> media.MediaInfo:
+    raise media.MediaError(f"ffprobe failed on {p}: moov atom not found")
+
+
+def test_an_unreadable_render_carries_melts_own_exit_and_output(
+    melt: _FakeMelt, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Shotcut's Mac melt has left a file with no moov atom, and ffprobe's
+    complaint was all the log held — melt's exit and stderr must survive."""
+
+    def killed(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        melt(command, **kwargs)
+        return subprocess.CompletedProcess(command, -11, "", "Current Frame: 288\nmelt: bye")
+
+    monkeypatch.setattr(picture.subprocess, "run", killed)
+    monkeypatch.setattr(picture.media, "probe", _unreadable)
+    project = tmp_path / "timeline.mlt"
+    project.write_text("<mlt/>", encoding="utf-8")
+
+    with pytest.raises(picture.PictureError) as caught:
+        picture.render(project, tmp_path / "out.mp4")
+    message = str(caught.value)
+    assert "killed by SIGSEGV" in message
+    assert "melt: bye" in message
+    assert "moov atom not found" in message
+    assert not (tmp_path / "out.mp4").exists()
+    staged = next((tmp_path / "scratch").glob("render-*/out.mp4"))
+    assert str(staged) in message
+
+
+def test_an_unreadable_render_names_a_plain_exit_too(
+    melt: _FakeMelt, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(picture.media, "probe", _unreadable)
+    project = tmp_path / "timeline.mlt"
+    project.write_text("<mlt/>", encoding="utf-8")
+
+    with pytest.raises(picture.PictureError, match=r"\(exit 0\)"):
+        picture.render(project, tmp_path / "out.mp4")
+
+
 def test_blackdetect_missing_target_raises() -> None:
     with pytest.raises(picture.PictureError, match="no such file"):
         picture.blackdetect("/no/such/render.mp4")

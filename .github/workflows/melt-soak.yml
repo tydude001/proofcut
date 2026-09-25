@@ -1,0 +1,83 @@
+# Renders the demo project through melt many times on both Mac runners, to
+# measure the "moov atom not found" flake rather than re-run past it.
+#
+# Shotcut's Mac melt has left a file with no moov atom four times in mac-demo
+# (2026-09-14, 09-17, 09-24, 09-25 on Apple Silicon; 09-22 on Intel), each
+# after running a full render's length, and each passed on a plain re-run.
+# The log held only ffprobe's complaint until picture.render began carrying
+# melt's own exit and stderr, so this is the first run that can say how melt
+# stopped: a signal, a clean exit, or something in its output. Any crash
+# report macOS wrote for melt is uploaded with the log.
+#
+# By hand only: it is a measurement, not a gate.
+
+name: melt-soak
+
+on:
+  workflow_dispatch:
+    inputs:
+      renders:
+        description: "renders per runner"
+        default: "30"
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      # The kit is only here to install and build the demo project; its own
+      # verdict is mac-demo's business, so its exit is not this job's.
+      - name: the Mac test kit, for the demo project
+        run: bash scripts/mac_trial.sh < /dev/null || true
+      - name: render the demo again and again
+        env:
+          RENDERS: ${{ inputs.renders }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          proj=~/proofcut-mac-trial/demo/proj
+          out=~/melt-soak
+          mkdir -p "$out"
+          test -f "$proj/proofcut.json" || { echo "the kit built no demo project"; exit 1; }
+          failed=0
+          for i in $(seq 1 "$RENDERS"); do
+            start=$(date +%s)
+            if .venv/bin/python3 -m proofcut.cli -C "$proj" export "$out/render.mp4" --render \
+                > "$out/$i.log" 2>&1; then
+              status=ok
+              rm -f "$out/$i.log"
+            else
+              status=FAIL
+              failed=$((failed + 1))
+            fi
+            echo "$i $status $(( $(date +%s) - start ))s" | tee -a "$out/summary.txt"
+          done
+          echo "$failed of $RENDERS renders failed" | tee -a "$out/summary.txt"
+          {
+            echo "### ${{ matrix.os }}: $failed of $RENDERS renders failed"
+            for f in "$out"/*.log; do
+              [ -e "$f" ] || continue
+              echo; echo "#### render $(basename "$f" .log)"; echo '```'; tail -40 "$f"; echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$failed" -eq 0 ]
+      - name: collect melt's crash reports
+        if: always()
+        run: |
+          mkdir -p ~/melt-soak/crashes
+          find ~/Library/Logs/DiagnosticReports /Library/Logs/DiagnosticReports \
+            -iname 'melt*' -exec cp {} ~/melt-soak/crashes/ \; 2>/dev/null || true
+          ls -la ~/melt-soak/crashes
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: melt-soak-${{ matrix.os }}
+          path: ~/melt-soak
+          if-no-files-found: warn

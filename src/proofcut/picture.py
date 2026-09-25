@@ -37,6 +37,7 @@ import random
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -456,6 +457,17 @@ LAUNCH_RETRY_PAUSE = 0.3
 def launch_raced(completed: subprocess.CompletedProcess[str]) -> bool:
     """Did this melt call die in flatpak's launcher rather than in melt?"""
     return FLATPAK_LAUNCH_RACE in (completed.stderr or "")
+
+
+def _exit_text(returncode: int) -> str:
+    """melt's exit as a person reads it: a negative code is the signal that
+    killed it, which is the one exit here that means something."""
+    if returncode < 0:
+        try:
+            return f"killed by {signal.Signals(-returncode).name}"
+        except ValueError:
+            return f"killed by signal {-returncode}"
+    return f"exit {returncode}"
 
 
 def _retrying_launch(
@@ -975,8 +987,21 @@ def render(
             f"{_TMP_HINT if _invisible_to_flatpak(path, melt) else ''}"
         )
 
-    info = media.probe(staged)
-    counts = media.count_frames(staged)
+    # A file melt started and never finished has no moov atom, and ffprobe's
+    # complaint about it says nothing of why melt stopped. Shotcut's Mac melt
+    # has left one four times in CI, each after rendering its full length,
+    # and the log held only ffprobe's line — so melt's own exit and stderr go
+    # in the error, and the file stays where it is.
+    try:
+        info = media.probe(staged)
+        counts = media.count_frames(staged)
+    except media.MediaError as exc:
+        detail = (completed.stderr or completed.stdout or "").strip()[-2000:]
+        raise PictureError(
+            f"melt left an unreadable file for {path} ({_exit_text(completed.returncode)}"
+            f"). It is at {staged}, kept as the evidence.\n{exc}\n"
+            f"melt's last output:\n{detail or '(none)'}"
+        ) from exc
     measured: dict[str, Any] = {
         "width": info.width,
         "height": info.height,
