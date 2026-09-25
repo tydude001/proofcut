@@ -459,6 +459,25 @@ def launch_raced(completed: subprocess.CompletedProcess[str]) -> bool:
     return FLATPAK_LAUNCH_RACE in (completed.stderr or "")
 
 
+#: The signals a crashed melt dies of, as against one something stopped:
+#: SIGKILL is the memory cap's, and a render that hit the cap would only hit
+#: it again. Shotcut 26.8.1's Mac melt segfaults in `cache_object_close`, a
+#: render thread freeing a frame, in 3 of 60 renders of the demo across
+#: both Mac CPUs (melt-soak.yml, 2026-09-25); it had failed mac-demo five times.
+CRASH_SIGNALS = frozenset({"SIGSEGV", "SIGBUS"})
+
+#: How many times a crashed render is run again. At 3 in 60, two retries put
+#: a render that fails outright near 1 in 8,000.
+CRASH_RETRIES = 2
+
+
+def melt_crashed(completed: subprocess.CompletedProcess[str]) -> bool:
+    """Did melt die of a crash signal, rather than exit or get stopped?"""
+    return completed.returncode < 0 and any(
+        _exit_text(completed.returncode) == f"killed by {name}" for name in CRASH_SIGNALS
+    )
+
+
 def _exit_text(returncode: int) -> str:
     """melt's exit as a person reads it: a negative code is the signal that
     killed it, which is the one exit here that means something."""
@@ -468,6 +487,10 @@ def _exit_text(returncode: int) -> str:
         except ValueError:
             return f"killed by signal {-returncode}"
     return f"exit {returncode}"
+
+
+def _retried_text(crashes: list[str]) -> str:
+    return f", after {len(crashes)} crashed run(s) thrown away" if crashes else ""
 
 
 def _retrying_launch(
@@ -950,23 +973,33 @@ def render(
     # while the console left on stdin with output to the console, or to NUL,
     # exited too. CI's runner has no console, so it never showed there.
     # HISTORY.md § The render that never exited.
+    crashes: list[str] = []
     try:
-        if progress.streamed():
-            completed = _retrying_launch(
-                lambda: _render_reporting(command, env, timeout, expect_frames, destination.name)
-            )
-        else:
-            completed = _retrying_launch(
-                lambda: subprocess.run(
-                    command,
-                    capture_output=True,
-                    text=True,
-                    env=env,
-                    timeout=timeout,
-                    check=False,
-                    stdin=subprocess.DEVNULL,
+        while True:
+            if progress.streamed():
+                completed = _retrying_launch(
+                    lambda: _render_reporting(
+                        command, env, timeout, expect_frames, destination.name
+                    )
                 )
-            )
+            else:
+                completed = _retrying_launch(
+                    lambda: subprocess.run(
+                        command,
+                        capture_output=True,
+                        text=True,
+                        env=env,
+                        timeout=timeout,
+                        check=False,
+                        stdin=subprocess.DEVNULL,
+                    )
+                )
+            if not melt_crashed(completed) or len(crashes) >= CRASH_RETRIES:
+                break
+            # A render is a pure function of the document, so a crashed one
+            # is thrown away and run again rather than inspected.
+            crashes.append(_exit_text(completed.returncode))
+            staged.unlink(missing_ok=True)
     except FileNotFoundError as exc:
         raise PictureError(f"could not run melt: {' '.join(command)}") from exc
     except progress.Cancelled:
@@ -982,16 +1015,16 @@ def render(
     if not staged.exists() or staged.stat().st_size == 0:
         detail = (completed.stderr or completed.stdout or "").strip()[-2000:]
         raise PictureError(
-            f"melt rendered nothing for {path} (exit {completed.returncode}, which "
+            f"melt rendered nothing for {path} ({_exit_text(completed.returncode)}"
+            f"{_retried_text(crashes)}, which "
             f"proves nothing either way — the missing file is the finding).\n{detail}"
             f"{_TMP_HINT if _invisible_to_flatpak(path, melt) else ''}"
         )
 
     # A file melt started and never finished has no moov atom, and ffprobe's
-    # complaint about it says nothing of why melt stopped. Shotcut's Mac melt
-    # has left one four times in CI, each after rendering its full length,
-    # and the log held only ffprobe's line — so melt's own exit and stderr go
-    # in the error, and the file stays where it is.
+    # complaint about it says nothing of why melt stopped — so melt's own exit
+    # and stderr go in the error, and the file stays where it is. That is how
+    # the Mac crash `melt_crashed` retries was found.
     try:
         info = media.probe(staged)
         counts = media.count_frames(staged)
@@ -999,7 +1032,7 @@ def render(
         detail = (completed.stderr or completed.stdout or "").strip()[-2000:]
         raise PictureError(
             f"melt left an unreadable file for {path} ({_exit_text(completed.returncode)}"
-            f"). It is at {staged}, kept as the evidence.\n{exc}\n"
+            f"{_retried_text(crashes)}). It is at {staged}, kept as the evidence.\n{exc}\n"
             f"melt's last output:\n{detail or '(none)'}"
         ) from exc
     measured: dict[str, Any] = {
@@ -1035,6 +1068,11 @@ def render(
         progress.report(measured["frames"], measured["frames"], f"rendered {destination.name}")
 
     notes: list[str] = []
+    if crashes:
+        notes.append(
+            f"melt crashed {len(crashes)} time(s) ({', '.join(crashes)}) and the render "
+            "was run again from the start; this file is from the run that finished"
+        )
     if measured["frames"] is None:
         notes.append(
             "this render has no video stream, so there were no frames to count "
@@ -1061,6 +1099,7 @@ def render(
         "output": str(destination),
         "project": str(path),
         "exit_code": completed.returncode,
+        "crash_retries": len(crashes),
         "memory_cap": max_memory if capped else None,
         "consumer": list(consumer_args),
         **measured,

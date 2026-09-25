@@ -18709,3 +18709,40 @@ decision to take when a short film's Render click is the complaint.
 Tests: five in `tests/test_webui_http.py` (reuse, an edit between,
 a different request, a deleted output, Stop during reuse) and one in
 `tests/test_renderlog_writers.py` (the lexicon stamp).
+
+## The Mac melt crash — 2026-09-25
+
+mac-demo had failed five times since 2026-09-14 at its render step, four on
+Apple Silicon and one on Intel, each with ffprobe's `moov atom not found`
+and each passing on a plain re-run. The log never said why: `picture.render`
+probed the staged file, and the probe's `MediaError` replaced melt's own
+exit and stderr.
+
+**The evidence first.** An unreadable staged file is now a `PictureError`
+carrying melt's exit (a negative code named as its signal), its stderr tail
+and the kept file's path. `melt-soak.yml`, dispatch-only, runs the Mac kit
+for the demo project and then renders it N times on both Mac runners,
+uploading each failure's log and any crash report macOS wrote for melt.
+
+**What it measured.** On Apple Silicon (Shotcut 26.8.1's melt, MLT 7.x),
+2 of 30 renders were `killed by SIGSEGV`, around frame 216 of 289, and the
+same push's mac-demo failed the same way; on Intel, 1 of 30. All three
+crash reports fault in one place: a render thread in `libmlt`'s `cache_object_close`, freeing a frame,
+reaching `localeconv_l` through `sprintf` at address `0x48`, which reads as
+the thread's locale gone. It is MLT's race, not proofcut's, and the
+earlier reading that melt had run a full render's length was wrong: a
+crashed run takes about as long as a whole one.
+
+**The fix.** A render is a pure function of its document, so a crashed one
+is thrown away and run again: `CRASH_SIGNALS` (SIGSEGV, SIGBUS) retry up to
+`CRASH_RETRIES` (2) times, which at 3 in 60 puts an outright failure near 1
+in 8,000. SIGKILL never retries, because it is how the systemd memory cap
+stops a render, and that render would only hit the cap again. The result
+carries `crash_retries` and a note, and a render that crashes past the
+retries says how many were thrown away. Stopping the race itself (a
+single-threaded consumer) would add a consumer key, which `picture.render`'s
+docstring forbids until the memory growth it cites is re-isolated.
+
+Tests: five in `tests/test_picture.py` (melt's exit in the unreadable-file
+error, twice; a crash retried to success; retries exhausted; SIGKILL not
+retried).

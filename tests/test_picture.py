@@ -616,6 +616,74 @@ def test_an_unreadable_render_carries_melts_own_exit_and_output(
     assert str(staged) in message
 
 
+class _CrashingMelt(_FakeMelt):
+    """melt that dies of `signals` in turn, each after writing a torn file,
+    and then renders — the Mac melt's `cache_object_close` segfault."""
+
+    def __init__(self, signals: list[int]) -> None:
+        super().__init__()
+        self.signals = signals
+        self.calls = 0
+
+    def __call__(self, command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        completed = super().__call__(command, **kwargs)
+        self.calls += 1
+        if self.calls <= len(self.signals):
+            return subprocess.CompletedProcess(command, -self.signals[self.calls - 1], "", "")
+        return completed
+
+
+def _crashing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, signals: list[int]
+) -> tuple[_CrashingMelt, Path]:
+    fake = _CrashingMelt(signals)
+    monkeypatch.setattr(picture.subprocess, "run", fake)
+    # A torn file is one the probe cannot read; the fake's last run is whole.
+    monkeypatch.setattr(
+        picture.media,
+        "probe",
+        lambda p: _unreadable(p) if fake.calls <= len(signals) else _PROBE,
+    )
+    project = tmp_path / "timeline.mlt"
+    project.write_text("<mlt/>", encoding="utf-8")
+    return fake, project
+
+
+def test_a_crashed_melt_is_run_again_and_says_so(
+    melt: _FakeMelt, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake, project = _crashing(monkeypatch, tmp_path, [11, 11])
+
+    result = picture.render(project, tmp_path / "out.mp4", expect_frames=150)
+
+    assert fake.calls == 3
+    assert result["crash_retries"] == 2
+    assert any("melt crashed 2 time(s) (killed by SIGSEGV" in n for n in result["notes"])
+    assert (tmp_path / "out.mp4").exists()
+
+
+def test_a_melt_that_keeps_crashing_fails_after_the_retries(
+    melt: _FakeMelt, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake, project = _crashing(monkeypatch, tmp_path, [11] * (picture.CRASH_RETRIES + 1))
+
+    with pytest.raises(picture.PictureError, match="after 2 crashed run"):
+        picture.render(project, tmp_path / "out.mp4")
+    assert fake.calls == picture.CRASH_RETRIES + 1
+
+
+def test_a_render_the_memory_cap_killed_is_not_run_again(
+    melt: _FakeMelt, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SIGKILL is the cap's; running that render again only hits it again."""
+    fake, project = _crashing(monkeypatch, tmp_path, [9])
+
+    # Windows' `signal` has no SIGKILL, so there it is named by number.
+    with pytest.raises(picture.PictureError, match=r"killed by (SIGKILL|signal 9)"):
+        picture.render(project, tmp_path / "out.mp4")
+    assert fake.calls == 1
+
+
 def test_an_unreadable_render_names_a_plain_exit_too(
     melt: _FakeMelt, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

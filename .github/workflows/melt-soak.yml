@@ -2,12 +2,16 @@
 # measure the "moov atom not found" flake rather than re-run past it.
 #
 # Shotcut's Mac melt has left a file with no moov atom four times in mac-demo
-# (2026-09-14, 09-17, 09-24, 09-25 on Apple Silicon; 09-22 on Intel), each
-# after running a full render's length, and each passed on a plain re-run.
+# (2026-09-14, 09-17, 09-24, 09-25 on Apple Silicon; 09-22 on Intel), and
+# each passed on a plain re-run.
 # The log held only ffprobe's complaint until picture.render began carrying
 # melt's own exit and stderr, so this is the first run that can say how melt
 # stopped: a signal, a clean exit, or something in its output. Any crash
 # report macOS wrote for melt is uploaded with the log.
+#
+# Its first run (2026-09-25) found a SIGSEGV in MLT's `cache_object_close`,
+# 3 of 60 renders, and picture.render now runs a crashed render again
+# (HISTORY.md § The Mac melt crash). A run since should read 0 failed.
 #
 # By hand only: it is a measurement, not a gate.
 

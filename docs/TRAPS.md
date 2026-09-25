@@ -1411,6 +1411,13 @@ built; docs/plans/INSTALL.md):
     and never exits — a person's Windows PC hung on it while CI, which has
     no console, rendered in 4 s. A test holds the argument, since nothing
     here reproduces the hang. HISTORY.md § The render that never exited.
+  - **Shotcut's Mac melt segfaults mid-render, and `picture.render` runs a
+    crashed render again.** A render thread dies in MLT's
+    `cache_object_close` (3 in 60 renders of the demo, both Mac CPUs), and
+    the torn file has no moov atom. Only `CRASH_SIGNALS` (SIGSEGV, SIGBUS)
+    retry, `CRASH_RETRIES` times; never SIGKILL, which is the memory cap's.
+    The result's `crash_retries` and a note say it happened. HISTORY.md §
+    The Mac melt crash.
   - **A *failed* render's staging directory survives on purpose, and
     `sweep_scratch` drops it after `SCRATCH_RETENTION_DAYS`.** It sweeps by
     name (`_SCRATCH_NAME`), never by age alone — a hand-placed directory in
