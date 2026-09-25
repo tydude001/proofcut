@@ -57,10 +57,13 @@ const STAGE_LABELS = {
 
 /** "done"→ok, "error"→fail, "skipped"→skip, "cancelled"→warn — the same
  * four-state badge vocabulary agent.js's own completion card already uses
- * for a render's checks (`.check-badge.{ok,warn,fail,skip}`, app.css). */
+ * for a render's checks (`.check-badge.{ok,warn,fail,skip}`, app.css).
+ * "reused" is ok too: the stage's file is the last run's, unchanged
+ * (webui.RenderJob), and the badge says so in its own word. */
 function badgeClassForOutcome(outcome) {
   switch (outcome) {
     case "done":
+    case "reused":
       return "ok";
     case "error":
       return "fail";
@@ -77,6 +80,7 @@ function detailSummary(detail) {
   if (!detail || typeof detail !== "object") return "";
   if (typeof detail.reason === "string") return detail.reason;
   if (typeof detail.error === "string") return detail.error;
+  if (typeof detail.reused === "string") return `the render of ${detail.reused}, unchanged`;
   if ("agrees" in detail) return `agrees: ${detail.agrees === null ? "–" : detail.agrees ? "yes" : "no"}`;
   if ("similarity" in detail) return `similarity ${detail.similarity ?? "–"}`;
   try {

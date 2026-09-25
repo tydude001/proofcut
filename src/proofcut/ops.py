@@ -4472,7 +4472,9 @@ def finish_report(
         burn_stage = run.get("stages", {}).get("burn")
         if burn_stage is None:
             burned = "unknown"
-        elif burn_stage.get("outcome") == "done":
+        elif burn_stage.get("outcome") in ("done", "reused"):
+            # `reused`: the web pipeline served the last run's burned file
+            # unchanged (webui.RenderJob), so the captions are in it.
             burned = "yes"
         else:
             burned = "no"
@@ -19737,7 +19739,9 @@ def add_captions(
     project = Project.open(path)
     # The captions are the edit's words, so a burn reads the project as surely
     # as `export` does; its stamp is what the render log checks it against.
-    edit_stamp = renderlog.stamp(project)
+    # With the lexicon: its `hear` table is what the captions print, so a
+    # burn that read one is stale once it changes (renderlog.py).
+    edit_stamp = renderlog.stamp(project, lexicon=True)
     edit = _load_edit(project)
 
     stored = _stored_caption_style(project)

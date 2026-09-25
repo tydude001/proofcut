@@ -40,6 +40,21 @@ the two files and never an mtime: a clock is the wrong witness for "did the
 bytes change" (HISTORY.md § The stamp that was a clock). A line written
 before this has no `sources`, and `current` answers `None` for it, never
 `True`.
+
+**A burn's stamp carries a third hash, `lexicon`**, because a burn reads
+`lexicon.json` (its `hear` table is what the captions print, CLAUDE.md) and
+an export does not. `current` compares each hash a source carries and no
+other, so an export is still current after a lexicon edit and a burn is not,
+and a line stamped before the key existed reads as it always did.
+
+**A line's `request` is what the web pipeline was asked for** — preset,
+resolution and whether it burned — and only that writer records one. It is
+what lets `RenderJob` answer "would rendering again produce this file?": the
+same request against the same stamps is the same film, and the job then
+reuses the file and runs only the checks (HISTORY.md § A render on an
+unchanged edit is not re-rendered). A line with no `request`, which is every
+agent-assembled render, is never reused, because its export may have been
+asked for things the log does not record (a loudness target, say).
 """
 
 from __future__ import annotations
@@ -50,24 +65,29 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from proofcut import lexicon as lex
 from proofcut.project import Project
 
 
-def stamp(project: Project) -> dict[str, str | None]:
+def stamp(project: Project, *, lexicon: bool = False) -> dict[str, str | None]:
     """The project's edit as a stage is about to read it: a sha256 of each file's bytes.
 
     `timeline` is `None` for a project with no `project.otio`, which no render
     can come from, but a stamp is a record and not a check, so it says so
-    rather than raising.
+    rather than raising. `lexicon=True` adds `lexicon.json`'s hash under
+    `lexicon`, for the one stage that reads it (a burn; module docstring).
     """
 
     def digest(path: Path) -> str | None:
         return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
 
-    return {
+    stamped = {
         "timeline": digest(project.timeline_path),
         "manifest": digest(project.manifest_path),
     }
+    if lexicon:
+        stamped["lexicon"] = digest(lex.project_path(project.root))
+    return stamped
 
 
 def current(project: Project, run: dict[str, Any]) -> bool | None:
@@ -76,13 +96,15 @@ def current(project: Project, run: dict[str, Any]) -> bool | None:
     `None` when the line has no `sources` — one older than the stamp, or a
     run that failed before any stage finished — because "not recorded" is not
     "unchanged". `False` means the edit has moved since the render, so the
-    render is not the film the project describes any more.
+    render is not the film the project describes any more. Each source is
+    compared on the hashes it carries: a burn's `lexicon`, and never a key
+    the stage did not stamp.
     """
     sources = [s for s in (run.get("sources") or {}).values() if s]
     if not sources:
         return None
-    now = stamp(project)
-    return all(source == now for source in sources)
+    now = stamp(project, lexicon=True)
+    return all(now.get(key) == value for source in sources for key, value in source.items())
 
 
 def append(
@@ -93,13 +115,16 @@ def append(
     expected_duration: float,
     stages: dict[str, dict[str, Any]],
     sources: dict[str, dict[str, str | None]] | None = None,
+    request: dict[str, Any] | None = None,
 ) -> None:
     """Append one run to the log. Stamps its own timestamp — callers never pass one.
 
     Only stages actually *attempted* belong in `stages`; a run that failed at
     `export` writes a `stages` dict holding only `export`, nothing for the
     stages never reached (`check_frames`/`verify` in particular, since those
-    are always the last two attempted).
+    are always the last two attempted). `request` is the web pipeline's
+    (module docstring); `amend` never carries one forward, since a later
+    stage added by hand is no longer the run that request describes.
     """
     project.renders_log_path.parent.mkdir(parents=True, exist_ok=True)
     record = {
@@ -113,6 +138,8 @@ def append(
         # Absent rather than `{}` when no stage stamped anything, so a run
         # that failed before its export finished reads like a pre-stamp line.
         record["sources"] = sources
+    if request is not None:
+        record["request"] = request
     with project.renders_log_path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, default=str) + "\n")
 

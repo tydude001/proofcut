@@ -317,6 +317,8 @@ installed package or the upstream repo, not your memory.
   - **`GET /api/output` is the only route that serves `renders/`, and it
     resolves through `renderlog.last` — never the manifest and never
     `preview_path()`.**
+  - **A Render click on unchanged stamps reuses the last web run's file and
+    runs only the checks; a burn's stamp carries the lexicon.**
   - **A thumbnail is a preview artifact and keeps the same containment rather
     than adding a caller to it.**
 - **Trust a transcript's word order, never its word durations.** → TRAPS.md §

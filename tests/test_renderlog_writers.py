@@ -325,6 +325,31 @@ def test_a_manifest_change_counts_too(project: Project, stub_render: None) -> No
     assert ops.finish_report(project.root)["last_render"]["current"] is False
 
 
+def test_a_burn_goes_stale_on_a_lexicon_edit_and_an_export_does_not(
+    project: Project, stub_render: None, stub_burn: None
+) -> None:
+    """The lexicon's `hear` table is what the captions print, so a burn that
+    read one stamps it and is stale once it changes; an export never read it,
+    and stays current — `current` compares each source on the hashes it
+    carries (renderlog.py's module docstring)."""
+    out = project.render_dir / "cut.wav"
+    ops.export(project.root, out, export_format=None)
+    export_run = renderlog.last(project)
+    assert set(export_run["sources"]["export"]) == {"timeline", "manifest"}
+
+    ops.lexicon_add(project.root, "teh", "the")
+    assert renderlog.current(project, export_run) is True
+
+    result = ops.add_captions(project.root, project.render_dir / "cut.ass", burn=out)
+    assert set(result["source"]) == {"timeline", "manifest", "lexicon"}
+    burned_run = renderlog.last(project)
+    assert renderlog.current(project, burned_run) is True
+
+    ops.lexicon_add(project.root, "teh", "thee")
+    assert renderlog.current(project, burned_run) is False
+    assert renderlog.current(project, export_run) is True
+
+
 def test_a_burn_stamps_itself_and_keeps_the_export_s_stamp(
     project: Project, stub_render: None, stub_burn: None
 ) -> None:

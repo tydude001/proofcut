@@ -18645,3 +18645,51 @@ no longer registers. `derived_from` gains `short`.
 because the box may be running an encoder. The design's deferrals stand:
 opening a short from the window, and audio-only recordings in a seed of
 several.
+
+## A render on an unchanged edit is not re-rendered — 2026-09-24
+
+An efficiency review of the repo ranked the web pipeline's Render button
+second: `RenderJob` ran `export`, the caption burn, `check_frames` and
+`verify` from scratch on every click, and nothing compared the edit against
+the last run, though `renderlog.stamp` had recorded exactly that since
+2026-09-04 (§ A render knows which edit it was made from).
+
+**What changed.** `RenderJob` now asks the log first. When the last run was
+this pipeline's, was asked for the same preset, resolution and burn, read
+the project as it is now, finished its export (and its burn, when one was
+asked for), and its file is still inside the project, the job reports
+`export` and `burn` as `reused`, points the run at the last file, and runs
+only the checks. Three things made that safe to state rather than guess:
+
+- **The log gained `request`.** Only the web writer records what a run was
+  asked for, so only a web run is ever reused; an agent-assembled render
+  (`export` then `add_captions` over MCP) may have been asked for a loudness
+  target the log does not carry, and is never matched.
+- **A burn's stamp carries the lexicon.** `lexicon.json`'s `hear` table is
+  what the captions print, and `lexicon_add` touches neither `project.otio`
+  nor the manifest, so a stamp of those two alone would have called a
+  burned render current after its captions changed. `renderlog.stamp`
+  takes `lexicon=True` for the burn, and `current` compares each source on
+  the hashes it carries, so an export is still current after a lexicon edit
+  and a burn is not. `finish_report`'s `captions.burned` reads `reused` as
+  `yes`.
+- **`stop()` cannot delete a reused file.** The job's own output slot is
+  cleared before the checks run, since the file belongs to the run that
+  made it. A test stops a reused run mid-verify and reads the file after.
+
+**Measured**, on a copy of the demo project through the real server
+(`~/proofcut-work/spikes/render-reuse/`): the first click took 10.9 s, of
+which export and burn were 2.3 s and the checks 8.6 s; the second took 8.7 s,
+`export` and `burn` reused at 0.0 s and the same 8.7 s of checks. On a film
+of twelve seconds the whisper verify is the cost, and the saving is small;
+on a real film the export is the minutes and the verify stays at twenty-odd
+seconds (LOCAL.md's numbers), which is the case the change is for.
+
+**Not done.** The checks are re-run on a reused file, on purpose: a check
+skipped last time (no whisper on PATH) may run now, and the completion card
+states what this run measured. Reusing the last run's check results on a
+byte-identical file would remove most of the remaining cost, and is a
+decision to take when a short film's Render click is the complaint.
+Tests: five in `tests/test_webui_http.py` (reuse, an edit between,
+a different request, a deleted output, Stop during reuse) and one in
+`tests/test_renderlog_writers.py` (the lexicon stamp).

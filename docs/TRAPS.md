@@ -1283,6 +1283,20 @@ built; docs/plans/INSTALL.md):
     `stages`, never inside one), or `finish_report`'s `last_render.current`
     reads that render as unknown. HISTORY.md § A render knows which edit it
     was made from.
+  - **A Render click on an edit whose stamps have not moved reuses the last
+    web run's file and runs only the checks.** `webui.RenderJob._reusable`
+    reads the log's last line: it must carry a `request` (which only the web
+    writer records — an agent-assembled render may have asked `export` for
+    things the log does not hold), match this click's preset, resolution and
+    burn, be `renderlog.current`, have finished its export and burn, and
+    name a file still inside the project. The stages then read `reused`,
+    which `finish_report` counts as burned and `finish.js` badges `ok`.
+    **A burn's stamp carries `lexicon`**: the `hear` table is what captions
+    print and `lexicon_add` touches neither stamped file, so `stamp(project,
+    lexicon=True)` is the burn's, and `current` compares each source on the
+    hashes it has. `stop()` clears the job's output slot before the checks,
+    so it cannot delete the reused file. HISTORY.md § A render on an
+    unchanged edit is not re-rendered.
   - **A thumbnail is a preview artifact and keeps the same containment rather
     than adding a caller to it.** `ops.thumbnail` never enters the manifest
     and never calls `preview_path()` — it resolves media through

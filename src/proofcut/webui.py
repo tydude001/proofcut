@@ -1215,6 +1215,21 @@ class RenderJob:
     and appending the whole run to `renderlog` exactly once, on every exit
     path (success, error, or cancelled).
 
+    **A render of an edit that has not moved is not rendered again.** When
+    the log's last run was this pipeline's, asked for the same preset,
+    resolution and burn, read the project as it is now (`renderlog.current`,
+    which for a burn includes the lexicon) and its file is still on disk in
+    the project, `export` and `burn` are reported `reused` and only the
+    checks run — a whisper pass rather than a melt encode, a caption
+    re-encode and then the whisper pass. Measured 2026-09-24 as the largest
+    waste a Render click could pay: every stage from scratch for a film
+    whose stamps had not changed (HISTORY.md § A render on an unchanged
+    edit is not re-rendered). The checks do run again, because a check that
+    was skipped last time (no whisper on PATH) may run now, and because the
+    completion card states what this run measured. An agent-assembled render
+    is never reused: the log does not record what its export was asked for
+    (`renderlog.append`'s `request`).
+
     `stop()` kills the encode and deletes whatever the partial output
     currently is, per PLAN.md's explicit "not left". The pipeline runs under
     `progress.cancellable`, so the melt, auto-editor and ffmpeg calls under
@@ -1316,6 +1331,42 @@ class RenderJob:
         except OSError:
             pass
 
+    @staticmethod
+    def _reusable(project: Project, request: dict[str, Any]) -> tuple[Path, dict[str, Any]] | None:
+        """The last run's output and line, when rendering again would only reproduce it.
+
+        Four things have to hold, each read rather than assumed: the last run
+        was this pipeline's and asked for the same thing (`request`, which
+        only this writer records); every stage that read the project read it
+        as it is now; its export, and its burn when one was asked for,
+        finished; and the file is still on disk, inside the project — the
+        same confinement `_send_last_render` applies before streaming it.
+        Anything else renders.
+        """
+        run = renderlog.last(project)
+        if run is None or run.get("request") != request:
+            return None
+        if renderlog.current(project, run) is not True:
+            return None
+        stages = run.get("stages") or {}
+        finished = ("done", "reused")
+        if stages.get("export", {}).get("outcome") not in finished:
+            return None
+        if request["burn"] and stages.get("burn", {}).get("outcome") not in finished:
+            return None
+        named = str(run.get("output") or "")
+        if not named:
+            return None
+        target = Path(named)
+        try:
+            resolved = target.resolve()
+            resolved.relative_to(project.root.resolve())
+        except (OSError, ValueError):
+            return None
+        if not resolved.is_file():
+            return None
+        return target, run
+
     def _report_error(self, exc: Exception, job_id: str) -> None:
         # Reached only for EXPECTED exceptions (CLAUDE.md's family) — anything
         # outside it is a bug and is left to propagate and keep its traceback
@@ -1391,6 +1442,20 @@ class RenderJob:
                 },
             )
 
+        # `burn is None` means "apply the project's own default": on when a
+        # caption style is configured, off otherwise — docs/plans/STUDIO.md's rule.
+        # `burn is True`/`burn is False` overrides it explicitly either way.
+        should_burn = (
+            ops.CAPTION_STYLE_KEY in project.read_manifest() if burn is None else burn
+        )
+        # What this run was asked for, resolved — the line's `request`, and
+        # the thing a later run has to match to reuse this one's file.
+        request = {
+            "preset": preset,
+            "resolution": list(resolution) if resolution else None,
+            "burn": should_burn,
+        }
+
         def append_run(final_output: Path) -> None:
             renderlog.append(
                 project,
@@ -1399,7 +1464,29 @@ class RenderJob:
                 expected_duration=expected_duration,
                 stages=stages_log,
                 sources=sources_log,
+                request=request,
             )
+
+        # -- reuse ---------------------------------------------------------
+        reusable = self._reusable(project, request)
+        if reusable is not None:
+            final_output, previous = reusable
+            # The file belongs to the run that made it: `stop()` must not
+            # delete it the way it deletes this job's own partial output.
+            with self._lock:
+                self._output = None
+            previous_sources = previous.get("sources") or {}
+            publish_stage(
+                "export", "reused",
+                {"output": str(final_output), "reused": previous.get("timestamp")},
+                source=previous_sources.get("export"),
+            )
+            if should_burn:
+                publish_stage("burn", "reused", source=previous_sources.get("burn"))
+            else:
+                publish_stage("burn", "skipped", {"reason": "burn not requested"})
+            self._check_and_finish(job_id, final_output, append_run, publish_stage)
+            return
 
         # -- export ------------------------------------------------------
         # Only passed on when actually set, so a plain `/api/render {}` call
@@ -1452,12 +1539,6 @@ class RenderJob:
         )
 
         # -- burn ----------------------------------------------------------
-        # `burn is None` means "apply the project's own default": on when a
-        # caption style is configured, off otherwise — docs/plans/STUDIO.md's rule.
-        # `burn is True`/`burn is False` overrides it explicitly either way.
-        should_burn = (
-            ops.CAPTION_STYLE_KEY in project.read_manifest() if burn is None else burn
-        )
         final_output = output
         if should_burn:
             try:
@@ -1492,6 +1573,19 @@ class RenderJob:
         else:
             publish_stage("burn", "skipped", {"reason": "burn not requested"})
 
+        self._check_and_finish(job_id, final_output, append_run, publish_stage)
+
+    def _check_and_finish(
+        self,
+        job_id: str,
+        final_output: Path,
+        append_run: Callable[[Path], None],
+        publish_stage: Callable[..., None],
+    ) -> None:
+        """Probe the file, run the checks, log the run, publish `done`.
+
+        The tail of the pipeline, shared by a fresh render and a reused one.
+        """
         try:
             # (a) auto-editor's/melt's exit code does not mean success — this
             # probes the actual file that landed on disk, the same way every

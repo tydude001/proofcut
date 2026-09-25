@@ -2570,6 +2570,211 @@ def test_the_render_pipeline_logs_the_edit_its_export_read(
     assert ops.finish_report(str(project))["last_render"]["current"] is True
 
 
+def _render_stages(events: Iterator[tuple[str, Any]], job_id: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Every `stage` event for `job_id`, then its terminal event."""
+    stages: list[dict[str, Any]] = []
+    for event, data in events:
+        if event != "render" or data.get("job_id") != job_id:
+            continue
+        if data.get("status") == "stage":
+            stages.append(data)
+        elif data.get("status") != "running":
+            return stages, data
+    raise AssertionError("the event stream ended before the render did")
+
+
+def _stamping_export_stub(calls: list[str]) -> Callable[..., dict[str, Any]]:
+    """`ops.export` as the pipeline sees it, counting its calls and stamping
+    the edit it read the way the real op does."""
+
+    def _stub(path: str, output: str, **kwargs: Any) -> dict[str, Any]:
+        calls.append(output)
+        _make_wav(Path(output), duration=0.3)
+        return {"output": output, "format": "media", "source": renderlog.stamp(Project.open(path))}
+
+    return _stub
+
+
+def test_a_render_of_an_unchanged_edit_reuses_the_last_output_and_reruns_the_checks(
+    server: str, project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nothing moved between two Render clicks, so the second one is the same
+    film: `export` is not called again, the completion event names the first
+    run's file, both stages read `reused`, and the checks ran a second time
+    (webui.RenderJob's docstring says why they do)."""
+    exports: list[str] = []
+    verifies: list[str] = []
+    monkeypatch.setattr(ops, "export", _stamping_export_stub(exports))
+    monkeypatch.setattr(
+        ops, "verify", lambda path, output, **k: verifies.append(output) or {"agrees": True, "stub": True}
+    )
+    host, port = _host_and_port(server)
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    try:
+        conn.request("GET", "/api/events")
+        events = _sse_events(conn.getresponse())
+        next(events)
+
+        status, first = _post(f"{server}/api/render", {"burn": False})
+        assert status == 202
+        first_stages, first_done = _render_stages(events, first["job_id"])
+        assert first_done["status"] == "done"
+        assert [s["outcome"] for s in first_stages if s["stage"] == "export"] == ["done"]
+
+        status, second = _post(f"{server}/api/render", {"burn": False})
+        assert status == 202
+        stages, done = _render_stages(events, second["job_id"])
+    finally:
+        conn.close()
+
+    assert done["status"] == "done"
+    assert done["output"] == first_done["output"]
+    assert len(exports) == 1
+    assert len(verifies) == 2
+    by_stage = {s["stage"]: s for s in stages}
+    assert by_stage["export"]["outcome"] == "reused"
+    assert by_stage["export"]["detail"]["output"] == first_done["output"]
+    assert by_stage["burn"]["outcome"] == "skipped"
+    assert by_stage["verify"]["outcome"] == "done"
+
+    runs = renderlog.all_runs(Project.open(project))
+    assert len(runs) == 2
+    assert runs[1]["output"] == runs[0]["output"]
+    assert runs[1]["sources"] == runs[0]["sources"]
+    assert runs[1]["request"] == {"preset": None, "resolution": None, "burn": False}
+    assert runs[1]["stages"]["export"]["detail"]["reused"] == runs[0]["timestamp"]
+    assert ops.finish_report(str(project))["last_render"]["current"] is True
+
+
+def test_a_render_after_an_edit_renders_again(
+    server: str, project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    exports: list[str] = []
+    monkeypatch.setattr(ops, "export", _stamping_export_stub(exports))
+    monkeypatch.setattr(ops, "verify", lambda *a, **k: {"agrees": True, "stub": True})
+    host, port = _host_and_port(server)
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    try:
+        conn.request("GET", "/api/events")
+        events = _sse_events(conn.getresponse())
+        next(events)
+
+        status, first = _post(f"{server}/api/render", {"burn": False})
+        assert status == 202
+        _, first_done = _render_stages(events, first["job_id"])
+
+        status, _ = _post(f"{server}/api/cut", {"clip_id": "vo", "ranges": [[3, 4]], "mode": "cut"})
+        assert status == 200
+
+        status, second = _post(f"{server}/api/render", {"burn": False})
+        assert status == 202
+        stages, done = _render_stages(events, second["job_id"])
+    finally:
+        conn.close()
+
+    assert done["status"] == "done"
+    assert done["output"] != first_done["output"]
+    assert len(exports) == 2
+    assert {s["stage"]: s["outcome"] for s in stages}["export"] == "done"
+
+
+def test_a_render_asked_for_differently_renders_again(
+    server: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same edit at another resolution, or with a burn the last run
+    skipped, is not the last run's file."""
+    exports: list[str] = []
+    monkeypatch.setattr(ops, "export", _stamping_export_stub(exports))
+    monkeypatch.setattr(ops, "verify", lambda *a, **k: {"agrees": True, "stub": True})
+    host, port = _host_and_port(server)
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    try:
+        conn.request("GET", "/api/events")
+        events = _sse_events(conn.getresponse())
+        next(events)
+        for payload in ({"burn": False}, {"burn": False, "resolution": [320, 240]}, {"burn": False}):
+            status, accepted = _post(f"{server}/api/render", payload)
+            assert status == 202
+            _, done = _render_stages(events, accepted["job_id"])
+            assert done["status"] == "done"
+    finally:
+        conn.close()
+
+    # The third asks for what the first made, but the last run is the second,
+    # which was asked for something else — so it renders.
+    assert len(exports) == 3
+
+
+def test_a_render_whose_last_output_is_gone_renders_again(
+    server: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    exports: list[str] = []
+    monkeypatch.setattr(ops, "export", _stamping_export_stub(exports))
+    monkeypatch.setattr(ops, "verify", lambda *a, **k: {"agrees": True, "stub": True})
+    host, port = _host_and_port(server)
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    try:
+        conn.request("GET", "/api/events")
+        events = _sse_events(conn.getresponse())
+        next(events)
+        status, first = _post(f"{server}/api/render", {"burn": False})
+        assert status == 202
+        _, first_done = _render_stages(events, first["job_id"])
+        Path(first_done["output"]).unlink()
+
+        status, second = _post(f"{server}/api/render", {"burn": False})
+        assert status == 202
+        stages, done = _render_stages(events, second["job_id"])
+    finally:
+        conn.close()
+
+    assert done["status"] == "done"
+    assert len(exports) == 2
+    assert {s["stage"]: s["outcome"] for s in stages}["export"] == "done"
+
+
+def test_stop_during_a_reused_render_leaves_the_reused_file(
+    server: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`stop()` deletes this job's partial output; a reused file is the last
+    run's and must survive a Stop that lands while the checks run."""
+    exports: list[str] = []
+    monkeypatch.setattr(ops, "export", _stamping_export_stub(exports))
+    gate = threading.Event()
+    checking = threading.Event()
+    monkeypatch.setattr(ops, "verify", lambda *a, **k: {"agrees": True, "stub": True})
+    host, port = _host_and_port(server)
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    try:
+        conn.request("GET", "/api/events")
+        events = _sse_events(conn.getresponse())
+        next(events)
+        status, first = _post(f"{server}/api/render", {"burn": False})
+        assert status == 202
+        _, first_done = _render_stages(events, first["job_id"])
+
+        def _gated_verify(*a: Any, **k: Any) -> dict[str, Any]:
+            checking.set()
+            gate.wait(timeout=5)
+            return {"agrees": True, "stub": True}
+
+        monkeypatch.setattr(ops, "verify", _gated_verify)
+        status, second = _post(f"{server}/api/render", {"burn": False})
+        assert status == 202
+        assert checking.wait(timeout=5)
+        status, _ = _post(f"{server}/api/render/stop", {})
+        assert status == 200
+        gate.set()
+        _, done = _render_stages(events, second["job_id"])
+    finally:
+        gate.set()
+        conn.close()
+
+    assert Path(first_done["output"]).exists()
+    assert done["status"] == "done"
+    assert len(exports) == 1
+
+
 def test_render_completion_event_carries_dimensions_and_check_results(
     server: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
