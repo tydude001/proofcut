@@ -16332,8 +16332,20 @@ the fix, the same stress passed 8 rounds of 8, and the full suite passed
 Two smaller changes came with it. `tests/conftest.py` passes
 `QT_QPA_PLATFORM` through to the stdio server when it is set, replacing the
 scratch plugin of § The capped render with no runtime dir, so a headless run
-needs only the variable. `pytest-xdist` is in the dev group. CI stays
-serial, since its runners have 2 to 4 cores and nobody has measured them.
+needs only the variable. `pytest-xdist` is in the dev group. CI stayed
+serial until 2026-09-24, since its runners have 2 to 4 cores and nobody had
+measured them.
+
+**CI measured, then flipped (2026-09-24).** The serial runs were the
+measurement: on the last run before the flip, the pytest step alone took
+13:42 on Linux, 11:34 on macOS and 22:29 on Windows, over 90% of each job's
+wall time, with `uv sync`, the ffmpeg install, doctor and the browser pin
+all under 30 s apiece. The hazard that kept CI serial, the flatpak melt
+launch race above, cannot occur on a runner, because no runner has melt.
+So `ci.yml` runs `pytest -n auto` from the next push. The parallel times
+belong here beside the three serial ones once a run has produced them; the
+repo is public, so the saving is wall clock, not billed minutes
+(`wiki/git-server.md`).
 
 ## Retime, built — 2026-09-17
 

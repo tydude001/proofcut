@@ -84,8 +84,8 @@ to a tool function takes no lock, and a SIGTERM handler must never
 How the 13-minute suite became two — measured, then xdist against a serial
 control — is [docs/plans/SUITE-SPEED.md](docs/plans/SUITE-SPEED.md), built
 2026-09-17: **run it as `QT_QPA_PLATFORM=offscreen pytest -n auto`, about
-2 minutes**, and CI stays serial (HISTORY.md § The suite in two minutes, and
-the flatpak launch race).
+2 minutes**, and CI runs the same flag since 2026-09-24 (HISTORY.md § The
+suite in two minutes, and the flatpak launch race).
 What proofcut needs so an agent's re-cut of the launch clip comes out as the
 approved `clip-v6` — Tyler picked it at all nine moments of B7's native cut —
 is [docs/plans/RECUT.md](docs/plans/RECUT.md), written 2026-09-18: events

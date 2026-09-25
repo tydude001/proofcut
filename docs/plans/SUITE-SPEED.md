@@ -67,7 +67,8 @@ cheapest first.
    `run-the-suite-to-a-file-not-a-pipe` gets the new duration.
    - CI (Linux, macOS, Windows) stays serial unless it is measured
      separately. GitHub's runners have 2–4 cores, and the Windows runner
-     cannot run the melt tests anyway.
+     cannot run the melt tests anyway. (Measured 2026-09-24; see the
+     decision below.)
 
 ## Also worth a look, after step 1
 
