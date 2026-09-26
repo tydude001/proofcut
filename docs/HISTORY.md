@@ -18791,3 +18791,41 @@ on identical windows and never on the single pass's entry.
 Not yet built: steps 4 to 6 (`describe`, `faces`, `agent_trial.py` reading
 hits), and the plan's `doctor` report and `setup --uninstall`/`--clear` for the
 store.
+
+## The model store, steps 4 to 6, and the store in doctor and setup — 2026-09-26
+
+The rest of docs/plans/MODEL-CACHE.md, built the same day as steps 1 to 3.
+
+**What was built.** `describe.describe_windows` and `faces.detect` look up each
+window in the store before the worker runs, and send it only what missed —
+per window for the VLM (keyed on the digest, `MODEL`, a sha256 of the prompt,
+`frame_size`, `max_new_tokens`, the frame timestamps and the worker script's
+own digest), per timestamp for faces (the digest, `MODEL`, `DET_SIZE`, the
+worker's digest, the timestamp). Neither `device` nor `PROVIDERS` is in a key.
+Every window held means no worker at all, and a failed window is never stored.
+Each result carries `store`; `describe` and `reframe_detect` report a
+`{"hit", "miss"}` count. `describe(force=True)` passes `refresh`, which skips
+the lookup and replaces the entries. **The digest rides in each job dict**
+(`ops._digested`, from the project's memo) rather than as an argument,
+because the suite's detector fakes take one positional argument and a changed
+signature would have meant editing them. `agent_trial.py` reads every `store`
+field out of the full reply text, before the 4000-character cut, into
+`store_hits`/`store_misses`, and the report prints a warm/cold line beside the
+timings. `doctor` has a model-store section (entries, size, folder).
+`setup --clear` empties the store, and `--uninstall` takes it too. Both
+delete only `store.KINDS`' folders, and an uninstall with no setup record
+clears the store without touching `deps.root()`.
+
+**The controls, on `final-cut/clipC.mp4` (16 s) with the real models, two
+windows of three frames.** Faces: 3.14 s cold; a copy at another path hit in
+0.01 s with identical boxes; an x264 re-encode missed (2.96 s). VLM: 22.87 s
+cold; the copy hit in 0.01 s with identical text; the re-encode missed
+(20.07 s) and described the same kitchen in different words, which is the
+case a sampled digest would have answered from the wrong entry. The
+store-off control: with `store.get` forced to miss, 4 of the 5 selected
+new tests fail. The one that still passes asserts only misses.
+
+Tests: eight more in `tests/test_store.py` (describe hit/miss/refresh/failed
+window/two projects, faces per timestamp/detector size, doctor and
+`setup --clear`, an unrecorded uninstall), three in
+`tests/test_trial_store.py`. Full suite 2837 passed.

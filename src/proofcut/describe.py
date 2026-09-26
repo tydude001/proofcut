@@ -34,11 +34,18 @@ Two residual error classes are known, measured, and not bugs:
   like a complete one. `truncated` is computed per entry rather than assumed
   away by a generous limit.
 
-This module has no proofcut dependencies on purpose, the same as `asr`.
+**What the model said is kept in the model store** (`store.py`), per window,
+keyed by the media's content and everything the worker is given — so a second
+project on the same shoot, or a `--fresh` trial, describes nothing it has seen
+(docs/plans/MODEL-CACHE.md step 4).
+
+This module has no proofcut dependencies on purpose, the same as `asr` — its
+one import, `store`, is the same one `asr` takes.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -48,7 +55,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from proofcut import progress
+from proofcut import progress, store
 
 #: What `_vlm_worker.py` loads, as a Hugging Face id — fetched into the
 #: interpreter's own HF cache on first use, and 4-bit quantised at load.
@@ -200,6 +207,7 @@ def describe_windows(
     prompt: str = PROMPT,
     frame_size: str = FRAME_SIZE,
     max_new_tokens: int = MAX_NEW_TOKENS,
+    refresh: bool = False,
 ) -> list[dict[str, Any]]:
     """Describe every window in one worker process, in order.
 
@@ -217,9 +225,62 @@ def describe_windows(
     Deliberately no timeout, for `asr.transcribe`'s reason: a project's worth
     of footage legitimately takes minutes, and killing a run that is nearly
     done is worse than waiting.
+
+    **Each window is looked up in the model store first**, and only the misses
+    go to the worker — so a project with one new clip loads the weights for
+    that clip and not at all when every window hits. Each result carries
+    `"store": "hit" | "miss"`. A window may carry its media's `digest`, which
+    is how a project's `cache/digests.json` saves the re-hash; without one the
+    file is hashed here, and a file that cannot be read is simply not stored.
+    `refresh` skips the lookup and replaces the entries with what the model
+    says now, which is `describe(force=True)`: a person asking for the model to
+    run, which a cached answer is not. What is stored is the model's own text,
+    before `truncated` or any trimming, so those rules run on every call.
     """
     if not windows:
         return []
+
+    fields = {
+        "model": MODEL,
+        "prompt": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+        "frame_size": frame_size,
+        "max_new_tokens": max_new_tokens,
+        "worker": store.digest(_WORKER),
+    }
+    keys: dict[int, dict[str, Any] | None] = {}
+    answers: dict[int, dict[str, Any]] = {}
+    for window in windows:
+        keys[window["index"]] = key = _store_fields(window, fields)
+        text = None if refresh or key is None else store.get("describe", key)
+        if isinstance(text, str):
+            answers[window["index"]] = {"index": window["index"], "text": text, "store": "hit"}
+    misses = [w for w in windows if w["index"] not in answers]
+    if misses:
+        for result in _run_worker(misses, prompt, frame_size, max_new_tokens):
+            key = keys[result["index"]]
+            if key is not None and "text" in result:
+                store.put("describe", key, result["text"])
+            answers[result["index"]] = {**result, "store": "miss"}
+    return [answers[w["index"]] for w in windows]
+
+
+def _store_fields(window: dict[str, Any], fields: dict[str, Any]) -> dict[str, Any] | None:
+    """The store key for one window, or None when its media cannot be hashed.
+
+    None is not an error here: the worker is what reports an unreadable file,
+    against the window, the way it always has.
+    """
+    try:
+        digest = window.get("digest") or store.digest(window["media"])
+    except OSError:
+        return None
+    return {**fields, "digest": digest, "timestamps": list(window["timestamps"])}
+
+
+def _run_worker(
+    windows: list[dict[str, Any]], prompt: str, frame_size: str, max_new_tokens: int
+) -> list[dict[str, Any]]:
+    """Describe `windows` in one worker process — the part that loads the model."""
     if refusal := platform_refusal():
         raise DescribeError(refusal)
     python = vlm_python()

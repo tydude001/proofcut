@@ -498,6 +498,45 @@ def _result_text(block: dict[str, Any]) -> str:
     return ""
 
 
+def _store_reads(text: str) -> dict[str, int] | None:
+    """How many model answers a tool reply says came from the model store.
+
+    Read from the reply's `store` fields wherever they sit — top level for
+    `transcribe`, `describe` and `reframe_detect`, nested under the windowed
+    pass for `verify` and `finish_check` — as `"hit"`/`"miss"` or as a
+    `{"hit", "miss"}` count. None when the reply is not JSON or carries no
+    such field, which is every tool that runs no model (MODEL-CACHE.md step 6).
+    """
+    try:
+        reply = json.loads(text)
+    except ValueError:
+        return None
+    counts = {"hit": 0, "miss": 0}
+    seen = False
+    stack = [reply]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, list):
+            stack.extend(node)
+            continue
+        if not isinstance(node, dict):
+            continue
+        value = node.get("store")
+        if value in ("hit", "miss"):
+            counts[value] += 1
+            seen = True
+        elif (
+            isinstance(value, dict)
+            and set(value) == {"hit", "miss"}
+            and all(isinstance(n, int) for n in value.values())
+        ):
+            counts["hit"] += value["hit"]
+            counts["miss"] += value["miss"]
+            seen = True
+        stack.extend(v for k, v in node.items() if k != "store")
+    return counts if seen else None
+
+
 # ------------------------------------------------------------------ reading
 
 
@@ -529,6 +568,7 @@ def analyse(events: list[dict[str, Any]]) -> dict[str, Any]:
                         "is_error": None,
                         "result_text": None,
                         "images": 0,
+                        "store": None,
                     }
                     calls.append(record)
                     by_id[block.get("id")] = record
@@ -542,7 +582,11 @@ def analyse(events: list[dict[str, Any]]) -> dict[str, Any]:
                 if record is None:
                     continue
                 record["is_error"] = bool(block.get("is_error"))
-                record["result_text"] = _result_text(block)[:4000]
+                full = _result_text(block)
+                # Read before the text is cut: a long reply's `store` count can
+                # sit past the first 4000 characters.
+                record["store"] = _store_reads(full)
+                record["result_text"] = full[:4000]
                 content = block.get("content")
                 if isinstance(content, list):
                     record["images"] = sum(
@@ -585,6 +629,12 @@ def analyse(events: list[dict[str, Any]]) -> dict[str, Any]:
         "unknown_tool_calls": [c["name"] for c in unknown],
         "repeated_calls": sorted(repeats, key=lambda r: -r["count"]),
         "images_returned": sum(c["images"] for c in calls),
+        # A trial against a warm model store is not a cold run, and its
+        # timings say nothing about what the models cost: MODEL-CACHE.md
+        # step 6. Zero hits is the only reading under which the wall clock
+        # is comparable to a TRIAL.md row taken before the store existed.
+        "store_hits": sum(c["store"]["hit"] for c in calls if c["store"]),
+        "store_misses": sum(c["store"]["miss"] for c in calls if c["store"]),
         "sheet_calls": [c["name"] for c in calls if c["name"].endswith(("_sheet",))],
         "assistant_texts": texts,
         "final_text": texts[-1] if texts else None,
@@ -1159,6 +1209,17 @@ def _wall(run: dict[str, Any], analysis: dict[str, Any]) -> str:
     return "duration not recorded"
 
 
+def _store_line(analysis: dict[str, Any]) -> str:
+    """The report's line on the model store — warm or cold, said beside the timings."""
+    hits, misses = analysis.get("store_hits", 0), analysis.get("store_misses", 0)
+    if not hits and not misses:
+        return "- model store: no model ran"
+    if hits:
+        return (f"- model store: **warm** — {hits} answers from the store, {misses} from a "
+                "model; the timings above are not a cold run")
+    return f"- model store: cold — {misses} answers from a model, none from the store"
+
+
 def write_report(run_dir: Path, run: dict[str, Any], analysis: dict[str, Any] | None,
                  scored: dict[str, Any], brief: str) -> Path:
     """One JSON of everything, one Markdown of what a person reads first.
@@ -1204,6 +1265,7 @@ def write_report(run_dir: Path, run: dict[str, Any], analysis: dict[str, Any] | 
              f"{analysis['images_returned']} images returned"),
             (f"- {_wall(run, analysis)}, ${analysis['cost_usd']}, result "
              f"`{analysis['result_subtype']}`" + (", **timed out**" if run["timed_out"] else "")),
+            _store_line(analysis),
         ]
     else:
         lines.append(f"- {run['wall_seconds']}s wall, no agent — `docs/DEMO.md`'s own commands")

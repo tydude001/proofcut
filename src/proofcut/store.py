@@ -32,6 +32,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,11 @@ from proofcut import deps
 #: Read size for the digest. A 251 MB render hashed at 1.6 GB/s from a cold
 #: read on 2026-09-24 (MODEL-CACHE.md § The digest).
 _CHUNK = 1 << 20
+
+#: Every kind of entry the store holds, one folder each. `clear` removes these
+#: folders and nothing else, so a `PROOFCUT_STORE` pointed somewhere unwise
+#: costs the store, never the folder it names.
+KINDS = ("whisper", "describe", "faces")
 
 #: Bumped only if an entry's file layout changes, never for a model change —
 #: those are in the key.
@@ -161,3 +167,41 @@ def _write_atomic(path: Path, text: str) -> None:
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+
+
+def usage() -> dict[str, Any]:
+    """The store's folder, entry count and size on disk, for `doctor`.
+
+    There is no eviction (MODEL-CACHE.md § What the store is: a year of shoots
+    is tens of megabytes), so this report is how anyone learns what it holds.
+    """
+    folder = root()
+    entries = 0
+    size = 0
+    for kind in KINDS:
+        for path in (folder / kind).rglob("*"):
+            if path.is_file():
+                size += path.stat().st_size
+                entries += path.name == "entry.json"
+    return {"root": str(folder), "entries": entries, "bytes": size}
+
+
+def clear() -> list[str]:
+    """Delete every entry — `proofcut setup --clear`, and part of `--uninstall`.
+
+    The only deletion the store has. Removes each kind's folder, then the
+    store's own folder only if that leaves it empty; returns what went.
+    """
+    folder = root()
+    removed = []
+    for kind in KINDS:
+        if (folder / kind).is_dir():
+            shutil.rmtree(folder / kind)
+            removed.append(str(folder / kind))
+    if removed:
+        try:
+            folder.rmdir()
+            removed.append(str(folder))
+        except OSError:
+            pass
+    return removed

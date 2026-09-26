@@ -48,6 +48,7 @@ from proofcut import (
     progress,
     renderlog,
     stills,
+    store,
     tts,
 )
 
@@ -380,6 +381,25 @@ DIGESTS_FILE = "cache/digests.json"
 
 def _digests(project: Project) -> Path:
     return project.root / DIGESTS_FILE
+
+
+def _digested(project: Project, jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`jobs` for `describe_windows` or `faces.detect`, each carrying its media's
+    digest from the project's memo, so the model store does not re-hash a
+    source per call. A file that cannot be read goes without one, and the
+    worker reports it against the window, as it always has."""
+    for job in jobs:
+        try:
+            job["digest"] = store.digest(job["media"], _digests(project))
+        except OSError:
+            pass
+    return jobs
+
+
+def _store_counts(results: list[dict[str, Any]]) -> dict[str, int]:
+    """How many windows the model store answered, for a reply's `store`."""
+    hits = sum(1 for r in results if r.get("store") == "hit")
+    return {"hit": hits, "miss": len(results) - hits}
 
 
 def transcribe(
@@ -1062,8 +1082,17 @@ def describe(
     # The worker takes the whole list at once and loads the model once for
     # it — ~15s of loading against ~3s per window, so a process per clip
     # would spend most of the run loading the same weights again.
+    # `force` skips the model store too: a person asking for the model to run
+    # is not answered by a cached identical description (MODEL-CACHE.md).
     results = dsc.describe_windows(
-        [{"index": w["index"], "media": w["media"], "timestamps": w["timestamps"]} for w in windows]
+        _digested(
+            project,
+            [
+                {"index": w["index"], "media": w["media"], "timestamps": w["timestamps"]}
+                for w in windows
+            ],
+        ),
+        refresh=force,
     )
 
     stored: list[dict[str, Any]] = []
@@ -1098,6 +1127,7 @@ def describe(
     project.write_manifest(manifest)
 
     report["described"] = len(stored)
+    report["store"] = _store_counts(results)
     report["errors"] = errors
     report["truncated"] = truncations
     report["seconds"] = round(time.monotonic() - started, 1)
@@ -9516,6 +9546,7 @@ def _is_sliding(entry: mlt.Reframe | None, next_edge: float | None) -> bool:
 
 
 def _sheet_extremes(
+    project: Project,
     stretches: list[tuple[dict[str, Any], float, float, int, float | None]],
     at: Sequence[float],
 ) -> dict[int, dict[str, Any]]:
@@ -9584,7 +9615,7 @@ def _sheet_extremes(
         probes[row] = times
         jobs.append({"index": row, "media": str(placement["path"]), "timestamps": times})
 
-    detections = {result["index"]: result for result in faces.detect(jobs)}
+    detections = {result["index"]: result for result in faces.detect(_digested(project, jobs))}
 
     found: dict[int, dict[str, Any]] = {}
     for row, times in probes.items():
@@ -10003,7 +10034,7 @@ def reframe_sheet(
         drawn_rows = stretches[start : start + per_page]
     # Keyed by position within the page, while `row` below stays the window's
     # project-wide number — the number a reader takes back to `reframe`.
-    probed = _sheet_extremes(drawn_rows, at) if extremes else {}
+    probed = _sheet_extremes(project, drawn_rows, at) if extremes else {}
     # The montage is a fixed grid (`-tile {columns}x`), so every row has to
     # emit the same tile count or the rows after a short one shift into its
     # gap (SHEET_PICKS's own reasoning). A sliding row needs at least its two
@@ -10457,7 +10488,7 @@ def reframe_detect(
         }
         for index, window in enumerate(windows)
     ]
-    detections = {result["index"]: result for result in faces.detect(jobs)}
+    detections = {result["index"]: result for result in faces.detect(_digested(project, jobs))}
 
     stored = _stored_reframes(project)
     # **A frame, not an epsilon.** ffmpeg reports this cut at 0.834167 and the
@@ -10621,6 +10652,9 @@ def reframe_detect(
         # decides whether `apply` leaves a hand-framed shot alone.
         "same_window_within": round(same_window, 5),
         "detector": detector,
+        # How many windows the model store answered without the detector
+        # running (docs/plans/MODEL-CACHE.md step 5).
+        "store": _store_counts(list(detections.values())),
         "windows": report,
         "count": len(report),
         "proposed": sum(1 for entry in report if entry["rect"] is not None),

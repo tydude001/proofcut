@@ -240,3 +240,224 @@ def test_a_windowed_hit_is_not_the_single_pass_s_entry(tmp_path: Path, whisper: 
     asr.transcribe(audio, model="small")
     assert asr.transcribe_windowed(audio, model="small")["store"] == "miss"
     assert asr.transcribe(audio, model="small")["store"] == "hit"
+
+
+# --- steps 4 and 5: the vision model and the face detector -------------------
+#
+# Both are an interpreter that runs proofcut's worker script, so the stub is an
+# interpreter: it ignores the worker path, answers the job, and logs the
+# timestamps it was asked for — which is "the model ran, and on what".
+
+
+def _counting_worker(folder: Path, kind: str) -> Path:
+    folder.mkdir(parents=True, exist_ok=True)
+    answer = (
+        "{'index': w['index'], 'text': 'A kitchen at ' + str(w['timestamps'][0]) + '.'}"
+        if kind == "vlm"
+        else "{'index': w['index'], 'frames': [{'ts': ts, 'faces': [{'box': [ts, 0.0, ts + 10, 10.0], 'score': 0.9}]} for ts in w['timestamps']]}"
+    )
+    return write_stub(
+        folder / f"fake-{kind}-python",
+        "import json, sys\n"
+        "job = json.load(open(sys.argv[2]))\n"
+        f"with open({str(folder / 'calls')!r}, 'a') as f:\n"
+        "    f.write(json.dumps([w['timestamps'] for w in job['windows']]) + '\\n')\n"
+        f"results = [{answer} for w in job['windows']]\n"
+        "json.dump({'results': results}, open(sys.argv[3], 'w'))\n",
+    )
+
+
+def _asked(folder: Path) -> list[list[list[float]]]:
+    log = folder / "calls"
+    return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+
+
+@pytest.fixture
+def vlm(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    folder = tmp_path / "vlm"
+    monkeypatch.setenv("PROOFCUT_VLM", str(_counting_worker(folder, "vlm")))
+    monkeypatch.delenv("PROOFCUT_VLM_DEVICE", raising=False)
+    # `platform_refusal` refuses macOS before any worker runs, and CI has one.
+    monkeypatch.setattr("sys.platform", "linux")
+    return folder
+
+
+@pytest.fixture
+def detector(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    folder = tmp_path / "face"
+    monkeypatch.setenv("PROOFCUT_FACE", str(_counting_worker(folder, "face")))
+    return folder
+
+
+def _media(dest: Path, content: bytes = b"footage" * 100) -> Path:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(content)
+    return dest
+
+
+def test_a_described_window_is_not_described_again_and_only_misses_reach_the_model(
+    tmp_path: Path, vlm: Path
+) -> None:
+    from proofcut import describe as dsc
+
+    clip = _media(tmp_path / "a.mp4")
+    first = dsc.describe_windows([{"index": 0, "media": str(clip), "timestamps": [1.0, 2.0]}])
+    assert [r["store"] for r in first] == ["miss"] and len(_asked(vlm)) == 1
+
+    # The same window from a copy, beside a new one: the worker sees only the new one.
+    copy = _media(tmp_path / "other" / "a-copy.mp4")
+    both = dsc.describe_windows(
+        [
+            {"index": 0, "media": str(copy), "timestamps": [1.0, 2.0]},
+            {"index": 1, "media": str(copy), "timestamps": [3.0, 4.0]},
+        ]
+    )
+    assert [r["store"] for r in both] == ["hit", "miss"]
+    assert both[0]["text"] == first[0]["text"]
+    assert _asked(vlm)[-1] == [[3.0, 4.0]]
+
+    # Every window held: no worker at all.
+    again = dsc.describe_windows([{"index": 5, "media": str(clip), "timestamps": [3.0, 4.0]}])
+    assert again == [{"index": 5, "text": both[1]["text"], "store": "hit"}]
+    assert len(_asked(vlm)) == 2
+
+
+def test_a_description_misses_on_other_bytes_frames_prompt_size_or_a_refresh(
+    tmp_path: Path, vlm: Path
+) -> None:
+    from proofcut import describe as dsc
+
+    clip = _media(tmp_path / "a.mp4")
+    window = {"index": 0, "media": str(clip), "timestamps": [1.0]}
+    dsc.describe_windows([window])
+
+    other = _media(tmp_path / "b.mp4", b"other footage" * 50)
+    misses = [
+        dsc.describe_windows([{**window, "media": str(other)}]),
+        dsc.describe_windows([{**window, "timestamps": [1.5]}]),
+        dsc.describe_windows([window], prompt="Say what is there."),
+        dsc.describe_windows([window], frame_size="840x720"),
+        dsc.describe_windows([window], max_new_tokens=120),
+        dsc.describe_windows([window], refresh=True),
+    ]
+    assert [r[0]["store"] for r in misses] == ["miss"] * 6
+    assert len(_asked(vlm)) == 7
+    # A refresh replaces the entry rather than bypassing the store for good.
+    assert dsc.describe_windows([window])[0]["store"] == "hit"
+
+
+def test_a_window_the_model_failed_on_is_not_stored(tmp_path: Path, vlm: Path) -> None:
+    from proofcut import describe as dsc
+
+    missing = str(tmp_path / "gone.mp4")
+    for _ in range(2):
+        (result,) = dsc.describe_windows([{"index": 0, "media": missing, "timestamps": [1.0]}])
+        assert result["store"] == "miss"
+    assert len(_asked(vlm)) == 2
+    assert not list(store.root().rglob("entry.json"))
+
+
+def test_describe_on_a_second_project_hits_and_force_runs_the_model(
+    tmp_path: Path, vlm: Path
+) -> None:
+    clip = _media(tmp_path / "a.mp4")
+    replies = []
+    for name in ("one", "two"):
+        project = Project.create(tmp_path / name)
+        manifest = project.read_manifest()
+        manifest["clips"] = [
+            {"clip_id": "a", "source": str(clip), "duration": 25.0, "has_video": True, "has_audio": False}
+        ]
+        project.write_manifest(manifest)
+        replies.append(ops.describe(project.root))
+    assert [r["store"] for r in replies] == [{"hit": 0, "miss": 3}, {"hit": 3, "miss": 0}]
+    assert len(_asked(vlm)) == 1
+    assert (project.root / ops.DIGESTS_FILE).exists()
+
+    forced = ops.describe(project.root, force=True)
+    assert forced["store"] == {"hit": 0, "miss": 3} and len(_asked(vlm)) == 2
+
+
+def test_faces_are_stored_per_timestamp_and_only_the_new_ones_are_detected(
+    tmp_path: Path, detector: Path
+) -> None:
+    from proofcut import faces
+
+    clip = _media(tmp_path / "a.mp4")
+    first = faces.detect([{"index": 0, "media": str(clip), "timestamps": [1.0, 2.0]}])
+    assert first[0]["store"] == "miss" and _asked(detector) == [[[1.0, 2.0]]]
+
+    # One timestamp held, one new: the worker is asked for the new one only,
+    # and the window comes back whole and in the order asked.
+    mixed = faces.detect([{"index": 0, "media": str(clip), "timestamps": [2.0, 3.0]}])
+    assert _asked(detector)[-1] == [[3.0]]
+    assert [f["ts"] for f in mixed[0]["frames"]] == [2.0, 3.0]
+    assert mixed[0]["frames"][0] == first[0]["frames"][1]
+    assert mixed[0]["store"] == "miss"
+
+    held = faces.detect([{"index": 7, "media": str(clip), "timestamps": [3.0, 1.0]}])
+    assert held[0]["store"] == "hit" and len(_asked(detector)) == 2
+    assert [f["ts"] for f in held[0]["frames"]] == [3.0, 1.0]
+
+    other = _media(tmp_path / "b.mp4", b"another shoot" * 50)
+    assert faces.detect([{"index": 0, "media": str(other), "timestamps": [1.0]}])[0]["store"] == "miss"
+    assert len(_asked(detector)) == 3
+
+
+def test_faces_miss_on_another_detector_size(
+    tmp_path: Path, detector: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from proofcut import faces
+
+    clip = _media(tmp_path / "a.mp4")
+    faces.detect([{"index": 0, "media": str(clip), "timestamps": [1.0]}])
+    monkeypatch.setattr(faces, "DET_SIZE", 640)
+    assert faces.detect([{"index": 0, "media": str(clip), "timestamps": [1.0]}])[0]["store"] == "miss"
+    assert len(_asked(detector)) == 2
+
+
+# --- the store in doctor and setup ------------------------------------------
+
+
+def test_doctor_reports_the_store_and_setup_clear_empties_only_its_own_folders(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from proofcut import doctor
+    from proofcut.cli import main
+
+    store.put("whisper", {"digest": "a" * 64}, {"words": []})
+    store.put("faces", {"digest": "b" * 64, "ts": 1.0}, [])
+    # Something of the user's beside the store's own folders, in case
+    # PROOFCUT_STORE names a folder that holds other things.
+    theirs = store.root() / "notes.txt"
+    theirs.write_text("mine")
+
+    held = store.usage()
+    assert held["entries"] == 2 and held["bytes"] > 0
+    assert "2 entries" in doctor.render({**doctor.report(), "model_store": held})
+
+    assert main(["setup", "--clear", "--yes"]) == 0
+    assert store.usage()["entries"] == 0
+    assert theirs.read_text() == "mine"
+    assert "Removed:" in capsys.readouterr().out
+
+    assert main(["setup", "--clear", "--yes"]) == 0
+    assert "already empty" in capsys.readouterr().out
+
+
+def test_uninstall_with_nothing_installed_takes_the_store_and_not_setup_s_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from proofcut import deps
+    from proofcut.cli import main
+
+    monkeypatch.setattr(deps, "root", lambda: tmp_path / "deps")
+    unrecorded = tmp_path / "deps" / "somebody's.bin"
+    unrecorded.parent.mkdir()
+    unrecorded.write_bytes(b"x")
+    store.put("describe", {"digest": "c" * 64}, "A kitchen.")
+
+    assert main(["setup", "--uninstall", "--yes"]) == 0
+    assert store.usage()["entries"] == 0
+    assert unrecorded.exists()
+    assert "the model store: 1 entries" in capsys.readouterr().out

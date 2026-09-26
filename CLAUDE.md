@@ -121,9 +121,10 @@ A store outside every project for what whisper, the vision model and the
 face detector say about a source, keyed by the media's content and what the
 model was given, so a second project on the same shoot or a `--fresh` trial
 pays no model time — the efficiency review's largest finding — is
-[docs/plans/MODEL-CACHE.md](docs/plans/MODEL-CACHE.md), written 2026-09-24;
-steps 1 to 3 (`store.py` and both whisper passes) built 2026-09-26 and
-controlled (HISTORY.md § The model store, steps 1 to 3).
+[docs/plans/MODEL-CACHE.md](docs/plans/MODEL-CACHE.md), written 2026-09-24
+and built and controlled 2026-09-26 — whisper, the VLM, faces, the trial's
+warm/cold line, `doctor` and `setup --clear` (HISTORY.md § The model store,
+steps 1 to 3, and § steps 4 to 6).
 **Competitor research and anything copied from another product follows
 docs/plans/DAYDREAM.md § Copyright, the DMCA, and this work**: a research
 download stays private and is deleted once its notes are checked, never commit

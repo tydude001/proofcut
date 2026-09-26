@@ -1,4 +1,4 @@
-# A content-keyed store for what the models say about a source — written 2026-09-24, steps 1 to 3 built 2026-09-26
+# A content-keyed store for what the models say about a source — written 2026-09-24, built 2026-09-26
 
 An efficiency review of the repo (HISTORY.md § A render on an unchanged edit
 is not re-rendered records the second finding; this note is the first) ranked

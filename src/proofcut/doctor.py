@@ -47,6 +47,7 @@ from proofcut import (
     graphics,
     picture,
     project,
+    store,
     tts,
 )
 
@@ -949,6 +950,10 @@ def report() -> dict[str, Any]:
         "agent": _agent(),
         "legacy_env": _legacy_env(),
         "long_paths": _long_paths(),
+        # What the models have said about sources, kept outside every project.
+        # A report, never a ✗: an empty store is a cold one, not a broken one
+        # (docs/plans/MODEL-CACHE.md § What the store is).
+        "model_store": store.usage(),
     }
 
 
@@ -1088,6 +1093,21 @@ def render(payload: dict[str, Any]) -> str:
             lines.append(f"  {_DASH} off — a project folder can be at most {long_paths['max_root']} characters")
             lines += _wrap(f"note: {long_paths['note']}", indent="      ")
             lines += _wrap(f"fix: {long_paths['fix']}", indent="      ")
+
+    # `.get`, the agent section's reason: hand-built payloads predate it.
+    model_store = payload.get("model_store")
+    if model_store is not None:
+        lines += ["", "Model store (what whisper, the vision model and faces said)"]
+        size = model_store["bytes"]
+        shown = f"{size / 1e6:.1f} MB" if size >= 1e5 else f"{size / 1e3:.0f} KB"
+        lines.append(
+            f"  {_DASH} {model_store['entries']} entries, {shown} — {model_store['root']}"
+        )
+        lines += _wrap(
+            "note: never evicted; `proofcut setup --clear` empties it, and "
+            "`--uninstall` removes it with the rest.",
+            indent="      ",
+        )
 
     failures = [e["name"] for e in payload["required"] if not e["ok"]]
     lines.append("")

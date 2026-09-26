@@ -363,6 +363,7 @@ what takes it away. Sizes are a Linux x86_64 bare machine; `proofcut setup
 | whisper | a uv tool, plus the Python 3.12 uv fetches for it | 1.9 GB, or 5.5 GB with an NVIDIA GPU | `proofcut setup --uninstall` |
 | proofcut and its Python dependencies | uv's cache | 230 MB | `uv cache clean`, `uv tool uninstall proofcut` |
 | the demo's media | the directory you name it | under 2 MB | delete that directory |
+| the model store: what whisper, the vision model and the face detector said about each source | `~/.local/share/proofcut/store`, beside setup's folder | tens of MB a year of shoots | `proofcut setup --clear`, or `--uninstall` |
 
 "Setup's folder" is one directory: `~/.local/share/proofcut/deps`
 (`$XDG_DATA_HOME` if you set it), or `%LOCALAPPDATA%\proofcut\deps` on

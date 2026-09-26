@@ -35,8 +35,13 @@ behind a binary (`asr.py`'s docstring) and the vision model behind an interprete
 (`describe.py`) puts this behind one too. `proofcut status` should not pay for an
 ONNX runtime.
 
+**What the detector found is kept in the model store** (`store.py`), per
+timestamp, keyed by the media's content — so a second project on the same
+shoot, or a sheet re-drawn over the same stretch, finds nothing twice
+(docs/plans/MODEL-CACHE.md step 5).
+
 This module has no proofcut dependencies on purpose, the same as `asr` and
-`describe`.
+`describe` — its one import, `store`, is the same one they take.
 """
 
 from __future__ import annotations
@@ -50,7 +55,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from proofcut import progress
+from proofcut import progress, store
 
 #: RetinaFace, via insightface's model zoo. The weights are already on this box
 #: under `~/.insightface/models/`; nothing here downloads them, because a
@@ -137,9 +142,70 @@ def detect(windows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     Deliberately no timeout, for `asr.transcribe`'s reason: a film's worth of
     windows legitimately takes minutes on CPU, and killing a run that is nearly
     done is worse than waiting.
+
+    **Each timestamp is looked up in the model store first**, and a window goes
+    to the worker holding only the timestamps that missed — so the detector
+    never runs when all of them hit. Each result carries `"store": "hit"` when
+    every frame came from the store, else `"miss"`. A window may carry its
+    media's `digest`, which is how a project's `cache/digests.json` saves the
+    re-hash; a file that cannot be hashed is simply not stored. The boxes are
+    stored as the worker wrote them, so `frame_centre` and every rule after it
+    run on every call. `PROVIDERS` is not in the key, for the same reason
+    `describe`'s device is not: the same weights are the same answer.
     """
     if not windows:
         return []
+
+    fields = {"model": MODEL, "det_size": DET_SIZE, "worker": store.digest(_WORKER)}
+    keys: dict[int, dict[str, Any] | None] = {}
+    found: dict[int, dict[float, list[dict[str, Any]]]] = {}
+    asked: list[dict[str, Any]] = []
+    for window in windows:
+        keys[window["index"]] = key = _store_fields(window, fields)
+        held: dict[float, list[dict[str, Any]]] = {}
+        for ts in window["timestamps"] if key is not None else ():
+            boxes = store.get("faces", {**key, "ts": ts})
+            if isinstance(boxes, list):
+                held[ts] = boxes
+        found[window["index"]] = held
+        rest = [ts for ts in window["timestamps"] if ts not in held]
+        if rest:
+            asked.append({**window, "timestamps": rest})
+
+    ran = {r["index"]: r for r in _run_worker(asked)} if asked else {}
+    results: list[dict[str, Any]] = []
+    for window in windows:
+        index, held = window["index"], found[window["index"]]
+        result = ran.get(index)
+        if result is not None and "error" in result:
+            results.append({**result, "store": "miss"})
+            continue
+        key = keys[index]
+        for frame in result["frames"] if result is not None else ():
+            held[frame["ts"]] = frame["faces"]
+            if key is not None:
+                store.put("faces", {**key, "ts": frame["ts"]}, frame["faces"])
+        results.append(
+            {
+                "index": index,
+                "frames": [{"ts": ts, "faces": held[ts]} for ts in window["timestamps"]],
+                "store": "miss" if result is not None else "hit",
+            }
+        )
+    return results
+
+
+def _store_fields(window: dict[str, Any], fields: dict[str, Any]) -> dict[str, Any] | None:
+    """The store key for one window's frames, less the timestamp, or None when
+    its media cannot be hashed — which the worker then reports, as it always has."""
+    try:
+        return {**fields, "digest": window.get("digest") or store.digest(window["media"])}
+    except OSError:
+        return None
+
+
+def _run_worker(windows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Detect faces in `windows` in one worker process — the part that builds the session."""
     python = face_python()
 
     with tempfile.TemporaryDirectory(prefix="proofcut-face-") as tmp:

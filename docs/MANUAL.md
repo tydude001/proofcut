@@ -101,7 +101,14 @@ yours now.
 ```sh
 uv run proofcut setup --uninstall --plan   # what would go
 uv run proofcut setup --uninstall          # lists it, asks, removes it
+uv run proofcut setup --clear              # empties the model store only
 ```
+
+The model store (`~/.local/share/proofcut/store`, or `$PROOFCUT_STORE`) keeps
+what whisper, the vision model and the face detector said about each source,
+keyed by the file's content, so a second project on the same footage runs no
+model. `proofcut doctor` reports its size. It is never evicted; `--clear` is
+its only deletion (docs/plans/MODEL-CACHE.md).
 
 `tests/test_install.py` installs everything into a fake home, uninstalls, and
 asserts the home's listing is what it was before

@@ -51,7 +51,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from proofcut import deps, doctor, picture
+from proofcut import deps, doctor, picture, store
 
 
 class InstallError(Exception):
@@ -960,13 +960,17 @@ def uninstall_plan() -> dict[str, Any]:
         "root": str(deps.root()),
         "pieces": {name: {"links": e.get("links", []) + [p["path"] for p in e.get("placed", [])], "uv_tool": e.get("uv_tool"), "dir": e.get("dir")} for name, e in record["pieces"].items()},
         "recorded": _record_path().is_file(),
+        # The model store is not a piece setup installed, but it is a folder
+        # proofcut made outside every project, so uninstall takes it too
+        # (docs/plans/MODEL-CACHE.md § What the store is).
+        "store": store.usage(),
     }
 
 
 def uninstall() -> dict[str, Any]:
     """Remove everything the record names, and nothing else."""
     record = read_record()
-    removed: list[str] = []
+    removed: list[str] = store.clear()
     for entry in record["pieces"].values():
         removed += _remove_entry(entry)
     root = deps.root()

@@ -237,6 +237,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_setup.add_argument(
         "--uninstall", action="store_true", help="remove everything setup installed, and nothing else"
     )
+    p_setup.add_argument(
+        "--clear",
+        action="store_true",
+        help="empty the model store (what whisper, the vision model and faces said about sources)",
+    )
     p_setup.add_argument("--json", action="store_true", help="emit JSON instead of prose")
 
     p_unlock = sub.add_parser(
@@ -3848,11 +3853,31 @@ def _cmd_setup(args: argparse.Namespace) -> int:
     Exit 0 when doctor reports everything required afterwards (or, for
     `--plan`, already), 1 otherwise — the gate doctor's own exit code is.
     """
-    from proofcut import install
+    from proofcut import install, store
+
+    if args.clear:
+        held = store.usage()
+        if not held["entries"]:
+            print(f"The model store is already empty ({held['root']}).")
+            return 0
+        if args.plan:
+            _emit(held)
+            return 0
+        print(f"Will delete {held['entries']} model-store entries in {held['root']}.")
+        print("Every later transcribe, describe and face pass runs its model again.")
+        if not _confirm("Delete them?", args):
+            return 1
+        removed = store.clear()
+        if args.json:
+            _emit({"removed": removed})
+        else:
+            print("\n".join(["Removed:", *(f"  {item}" for item in removed)]))
+        return 0
 
     if args.uninstall:
         steps = install.uninstall_plan()
-        if not steps["recorded"]:
+        held = steps["store"]["entries"]
+        if not steps["recorded"] and not held:
             print(f"Nothing to remove: setup has installed nothing here ({steps['root']}).")
             return 0
         if args.plan:
@@ -3864,10 +3889,15 @@ def _cmd_setup(args: argparse.Namespace) -> int:
             if entry["uv_tool"]:
                 parts.append(f"uv tool {entry['uv_tool']}")
             print(f"  {name}: " + ", ".join(p for p in parts if p))
-        print(f"  and {steps['root']}")
+        if steps["recorded"]:
+            print(f"  and {steps['root']}")
+        if held:
+            print(f"  the model store: {held} entries in {steps['store']['root']}")
         if not _confirm("Remove them?", args):
             return 1
-        result = install.uninstall()
+        # With no record, setup installed nothing, so only the store is taken:
+        # `install.uninstall` removes setup's folder whole, whoever filled it.
+        result = install.uninstall() if steps["recorded"] else {"removed": store.clear()}
         if args.json:
             _emit(result)
         else:
