@@ -919,7 +919,8 @@ bullets acquire code; new.opencut.app serves more than a title; the two READMEs
 stop disagreeing about which app is live. Stars that day: `OpenCut-app/OpenCut`
 89,994, opencut-classic 253.
 
-**Not confirmed.** That opencut.app serves the classic commit; the running
+**Not confirmed.** That opencut.app serves the classic commit (settled
+2026-09-26: § OpenCut classic, driven); the running
 behaviour of either app; classic's export at any length or resolution (the
 memory limits are issue reports); the audio-fade absence beyond a grep; the
 Whisper weights' licences; issue counts, which are title-keyword matches over a
@@ -987,6 +988,51 @@ OpenCut's own release, which would mean `pin.ts` landed.
 pins. That is inferred from the workflow's comment and the release notes,
 because `pin.ts` is absent. Also unconfirmed: whether `crates/media` will do
 the export as well as the decode. Only "decodes with" is written anywhere.
+
+## OpenCut classic, driven — 2026-09-26
+
+The cheap evaluation § OpenCut, read in full asked for: opencut.app in a
+headless Chrome over CDP (proofcut's `verify-live` driver, extended in
+`~/proofcut-work/spikes/opencut-hands/`), with a generated test clip, no
+login. **A scripted pass, not a hand one**: it settles what is there and how
+it is reached, never how it feels.
+
+**opencut.app serves classic, v0.3.0** (its changelog banner, dated
+2026-04-15). That settles the first "not confirmed" above. No commit hash is
+shown. It needs WebGL: under `--disable-gpu` the editor throws "GPU context not
+initialized" and shows an error boundary. Media drags are native HTML5
+drag-and-drop, so a synthetic mouse drag moves nothing.
+
+- **Snapping: not settled.** The magnet is on by default, and at the default
+  zoom (~325 px/s) drops at raw gaps of 0 to 40 px landed on a frame ladder
+  ~10 px apart with no extra pull to the neighbour's edge. A gap of 0 did not
+  land flush. Either snapping does not act on that path or a CDP drop skips the
+  preview's snap math; the pass could not tell which. The source's 10 px
+  `snapTolerance()` is unverified live.
+- **The curve graph exists and was not reached.** A keyframe diamond per
+  transform property, then the clip's context menu "Expand keyframes" for a
+  lane, then the graph button, which stays disabled until the earlier of two
+  keyframes is selected ("Select a keyframe that has an outgoing segment").
+  The ~10 px diamond defeated scripted clicks, so the easing picker itself is
+  unmeasured.
+- **Bookmarks work**: the toolbar button drops a tick on the ruler at the
+  playhead, and clicking it returned the playhead to the same frame. **Scenes**:
+  one "Main scene" by default, and no add-scene control was found.
+- **Layout**: at 1440x900, an icon rail (Media, Text, Stickers, Effects,
+  Transitions, Captions, Adjustment, Settings), an assets panel, the preview,
+  and an inspector tabbed Transform/Audio/Speed/Blending/Masks/Effects. At
+  390x844 nothing reflows: the desktop panes clip and scroll inside
+  themselves. The freeze-frame button is disabled.
+
+**Reading.** Bookmarks are the one candidate this pass settles: cheap, and
+proven to work. The layout is worth reading for the desktop inspector's tabs
+only, since proofcut's rail already handles a phone and OpenCut does not.
+Snapping and the curve graph still need the ten minutes by hand; if snapping is
+built, its tolerance is measured on proofcut's own timeline, never copied.
+
+**Not confirmed.** Whether snapping pulls at all under a real mouse; the easing
+picker's curves; how to add a scene; export. The screenshots were deleted once
+these notes were checked, per DAYDREAM.md § Copyright, the DMCA, and this work.
 
 ## Stateless-ffmpeg MCP servers
 
