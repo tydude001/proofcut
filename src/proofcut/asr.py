@@ -32,7 +32,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from proofcut import progress
+from proofcut import progress, store
 
 FFMPEG = "ffmpeg"
 
@@ -127,6 +127,7 @@ def transcribe(
     model: str = DEFAULT_MODEL,
     language: str | None = None,
     duration: float | None = None,
+    digests: Path | None = None,
 ) -> dict[str, Any]:
     """Transcribe `media` with word timestamps, returning whisper's JSON.
 
@@ -148,12 +149,34 @@ def transcribe(
     stamped on as `hallucinated_words` rather than only logged, because quietly
     discarding ASR output is how a transcript ends up wrong in a way nobody can
     see, and every caller here reports it.
+
+    **Whisper's JSON is kept in the model store** (`store.py`), keyed by the
+    media's content, the model, the language and the whisper binary's own
+    stamp, so the same bytes are never transcribed twice on this machine —
+    by a second project, a `--fresh` trial, or `verify` on a reused render.
+    What is stored is whisper's output before `clean_payload`, so the guard
+    still runs on every call. `store` in the result says `"hit"` or `"miss"`;
+    `digests` is the calling project's `cache/digests.json`, which saves
+    re-hashing the file (docs/plans/MODEL-CACHE.md).
     """
     source = Path(media).expanduser()
     if not source.exists():
         raise ASRError(f"no media to transcribe: {source}")
 
     binary = whisper_binary()
+    fields = {
+        "pass": "single",
+        "digest": store.digest(source, digests),
+        "model": model,
+        "language": language,
+        "whisper": store.stamp(binary),
+    }
+    payload = store.get("whisper", fields)
+    if payload is not None:
+        payload["hallucinated_words"] = clean_payload(payload)
+        payload["store"] = "hit"
+        return payload
+
     with tempfile.TemporaryDirectory(prefix="proofcut-asr-") as tmp:
         cmd = [
             str(binary),
@@ -194,7 +217,9 @@ def transcribe(
             )
         payload = json.loads(written.read_text(encoding="utf-8"))
 
+    store.put("whisper", fields, payload)
     payload["hallucinated_words"] = clean_payload(payload)
+    payload["store"] = "miss"
     return payload
 
 
@@ -387,6 +412,7 @@ def transcribe_windowed(
     start: float = 0.0,
     end: float | None = None,
     allow_silence: bool = False,
+    digests: Path | None = None,
 ) -> dict[str, Any]:
     """Transcribe `media` in short overlapping windows, stamped back to absolute time.
 
@@ -417,6 +443,12 @@ def transcribe_windowed(
     happens to be mostly breath can come back as something surprising — the
     detected languages are counted and the majority is reported, but a wrong
     detection still costs that window's words.
+
+    Kept in the model store as `transcribe` is, keyed additionally by the
+    windows themselves — which carry `window`, `overlap` and the span — and
+    stored as whisper's own JSON per window, so `_absolute`, `_reconcile` and
+    `clean` still run on every call. The file is still decoded on a hit: the
+    windows are laid over its duration, and the decode is the cheap part.
     """
     source = Path(media).expanduser()
     if not source.exists():
@@ -441,54 +473,29 @@ def transcribe_windowed(
             (a + start, b + start)
             for a, b in plan_windows(stop - start, window=window, overlap=overlap)
         ]
-        parts = _slice(mono, windows, scratch)
+        fields = {
+            "pass": "windowed",
+            "digest": store.digest(source, digests),
+            "model": model,
+            "language": language,
+            "whisper": store.stamp(binary),
+            "window": window,
+            "overlap": overlap,
+            "rate": SLICE_RATE,
+            "windows": [list(w) for w in windows],
+        }
+        raw = store.get("whisper", fields)
+        hit = isinstance(raw, list) and len(raw) == len(windows)
+        if not hit:
+            raw = _run_windows(binary, source, mono, windows, scratch, model, language)
+            store.put("whisper", fields, raw)
 
-        out = scratch / "json"
-        out.mkdir()
-        cmd = [
-            str(binary),
-            *(str(p) for p in parts),
-            "--model",
-            model,
-            "--output_format",
-            "json",
-            "--word_timestamps",
-            "True",
-            "--output_dir",
-            str(out),
-            # Forty-four files of per-segment progress is noise, and it is the
-            # only thing on this pipe if whisper fails.
-            "--verbose",
-            "False",
-        ]
-        if language:
-            cmd += ["--language", language]
-
-        try:
-            subprocess.run(cmd, capture_output=True, text=True, check=True)
-        except FileNotFoundError as exc:
-            raise ASRError(f"{binary} is not executable") from exc
-        except subprocess.CalledProcessError as exc:
-            detail = (exc.stderr or exc.stdout or "").strip().splitlines()
-            raise ASRError(
-                f"whisper failed on {source.name} ({len(parts)} windows, model "
-                f"{model}). It fails this way when another job holds the GPU — "
-                "check `nvidia-smi`.\n" + "\n".join(detail[-12:])
-            ) from exc
-
-        heard: list[list[dict[str, Any]]] = []
-        languages: Counter[str] = Counter()
-        for part, (w_start, _) in zip(parts, windows, strict=True):
-            written = out / f"{part.stem}.json"
-            if not written.exists():
-                raise ASRError(
-                    f"whisper exited cleanly but wrote no {written.name} for the "
-                    f"window at {w_start:.1f}s"
-                )
-            payload = json.loads(written.read_text(encoding="utf-8"))
-            if payload.get("language"):
-                languages[payload["language"]] += 1
-            heard.append(_absolute(payload, w_start))
+    heard: list[list[dict[str, Any]]] = []
+    languages: Counter[str] = Counter()
+    for payload, (w_start, _) in zip(raw, windows, strict=True):
+        if payload.get("language"):
+            languages[payload["language"]] += 1
+        heard.append(_absolute(payload, w_start))
 
     words, hallucinated = clean(_reconcile(windows, heard))
     if not words and not allow_silence:
@@ -514,7 +521,68 @@ def transcribe_windowed(
         # `_drop_stacked`. Non-zero means whisper stumbled somewhere in this
         # pass, which is worth knowing even though the damage was contained.
         "hallucinated_words": hallucinated,
+        "store": "hit" if hit else "miss",
     }
+
+
+def _run_windows(
+    binary: Path,
+    source: Path,
+    mono: Path,
+    windows: list[tuple[float, float]],
+    scratch: Path,
+    model: str,
+    language: str | None,
+) -> list[dict[str, Any]]:
+    """Slice `mono` into `windows` and run whisper once over every slice.
+
+    Returns whisper's own JSON for each window, in window order and relative
+    to the window's start — the raw output the model store keeps.
+    """
+    parts = _slice(mono, windows, scratch)
+    out = scratch / "json"
+    out.mkdir()
+    cmd = [
+        str(binary),
+        *(str(p) for p in parts),
+        "--model",
+        model,
+        "--output_format",
+        "json",
+        "--word_timestamps",
+        "True",
+        "--output_dir",
+        str(out),
+        # Forty-four files of per-segment progress is noise, and it is the
+        # only thing on this pipe if whisper fails.
+        "--verbose",
+        "False",
+    ]
+    if language:
+        cmd += ["--language", language]
+
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except FileNotFoundError as exc:
+        raise ASRError(f"{binary} is not executable") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip().splitlines()
+        raise ASRError(
+            f"whisper failed on {source.name} ({len(parts)} windows, model "
+            f"{model}). It fails this way when another job holds the GPU — "
+            "check `nvidia-smi`.\n" + "\n".join(detail[-12:])
+        ) from exc
+
+    payloads: list[dict[str, Any]] = []
+    for part, (w_start, _) in zip(parts, windows, strict=True):
+        written = out / f"{part.stem}.json"
+        if not written.exists():
+            raise ASRError(
+                f"whisper exited cleanly but wrote no {written.name} for the "
+                f"window at {w_start:.1f}s"
+            )
+        payloads.append(json.loads(written.read_text(encoding="utf-8")))
+    return payloads
 
 
 #: How many words have to be stacked on one instant before the run is read as a

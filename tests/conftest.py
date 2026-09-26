@@ -8,6 +8,11 @@ it: CLAUDE.md § the melt tests, docs/plans/SUITE-SPEED.md. `PROOFCUT_MELT`
 rides along for the same reason, so the melt tests can be pointed at a
 second melt (Shotcut's portable one) and actually reach it, and
 `PROOFCUT_CHROME` so the animated-graphics tests reach the browser named.
+
+`PROOFCUT_STORE` points every test at its own empty model store
+(`proofcut.store`), and rides the same pass-through so a spawned server uses
+it too: a test counting whisper invocations must never be answered from a
+store another test, or a real run on this box, filled.
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ import os
 import mcp.client.stdio as _stdio
 import pytest
 
-_PASSED_THROUGH = ("QT_QPA_PLATFORM", "PROOFCUT_MELT", "PROOFCUT_CHROME")
+_PASSED_THROUGH = ("QT_QPA_PLATFORM", "PROOFCUT_MELT", "PROOFCUT_CHROME", "PROOFCUT_STORE")
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -34,3 +39,8 @@ def _stdio_server_sees_qt_platform():
     _stdio.get_default_environment = widened
     yield
     _stdio.get_default_environment = original
+
+
+@pytest.fixture(autouse=True)
+def _model_store_per_test(tmp_path_factory, monkeypatch):
+    monkeypatch.setenv("PROOFCUT_STORE", str(tmp_path_factory.mktemp("store")))

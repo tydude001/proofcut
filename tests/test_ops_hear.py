@@ -129,6 +129,9 @@ def test_the_default_pass_is_byte_identical_to_a_full_span(tmp_path: Path, monke
     audio = _wav(tmp_path / "a.wav", duration=12.0)
     whole = asr.transcribe_windowed(audio)
     spanned = asr.transcribe_windowed(audio, start=0.0, end=12.0)
+    # The same windows are the same model-store entry (MODEL-CACHE.md), so the
+    # span is answered from the store; everything else must match exactly.
+    assert (whole.pop("store"), spanned.pop("store")) == ("miss", "hit")
     assert whole == spanned
 
 

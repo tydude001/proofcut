@@ -18752,3 +18752,42 @@ retried).
 and the Intel runner still left one crash report with the same
 `cache_object_close` fault: the retry caught a live crash and the render
 came out whole. The same push's mac-demo passed on both CPUs.
+
+## The model store, steps 1 to 3 — 2026-09-26
+
+docs/plans/MODEL-CACHE.md's decision was to build its first three steps and run
+the controls before the VLM and faces steps copy the key. Both are done.
+
+**What was built.** `store.py`: `root()` (a sibling of `deps.root()`, or
+`PROOFCUT_STORE`), `digest(path, memo)` — a full sha256 memoised per project in
+`cache/digests.json` under `(size, mtime_ns)` — and `get`/`put` keyed by a
+sha256 of the kind and its fields, written temp-then-`os.replace`. An entry
+records its own fields, and one that does not match or cannot be read is a
+miss. `asr.transcribe` keys on the digest, model, language and the whisper
+binary's stamp; `asr.transcribe_windowed` adds `window`, `overlap`, the slice
+rate and the exact windows, so a span is its own entry. Both store whisper's
+raw JSON (per window, for the windowed pass), so `clean_payload`, `_absolute`,
+`_reconcile` and `clean` run on every call. `transcribe`, `hear`, `verify` and
+`finish_check` pass their project's memo and report `store: hit | miss`. The
+suite gets a fresh store per test through `PROOFCUT_STORE` (conftest.py, and
+passed through to spawned servers).
+
+**The controls, run on the demo VO with the real whisper (turbo, GPU).**
+Positive: two projects on the same `vo.wav` — the first transcribed in 7.90 s,
+the second answered `hit` in 0.00 s with a byte-identical
+`cache/transcripts/vo.json`; `hear` over 0–10 s went 4.46 s → 0.09 s.
+Negative: the design's `ffmpeg -i vo.wav vo2.wav` **writes byte-identical
+output** on this ffmpeg, so it hits, correctly, and controls nothing. A real
+re-encode of the same audio (`-c:a pcm_s24le`) misses and runs whisper
+(7.82 s). The version key is `tests/test_store.py`'s rebuilt-stub test: same
+name, different size, miss.
+
+Tests: ten in `tests/test_store.py` — the memo answering and going stale, an
+unreadable memo, a mismatched or truncated entry, a copy at another path
+hitting, other bytes / model / language / binary each missing, the raw payload
+stored, two projects via `ops.transcribe`, and the windowed pass hitting only
+on identical windows and never on the single pass's entry.
+
+Not yet built: steps 4 to 6 (`describe`, `faces`, `agent_trial.py` reading
+hits), and the plan's `doctor` report and `setup --uninstall`/`--clear` for the
+store.

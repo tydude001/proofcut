@@ -371,6 +371,17 @@ def attach_transcript(
     }
 
 
+#: Where a project memoises its media's content digests for the model store
+#: (`store.digest`), under `(size, mtime_ns)`. Derived and per project, like
+#: `THUMBS_DIR`'s keys; never the manifest, which holds the edit
+#: (docs/plans/MODEL-CACHE.md § What this deliberately does not do).
+DIGESTS_FILE = "cache/digests.json"
+
+
+def _digests(project: Project) -> Path:
+    return project.root / DIGESTS_FILE
+
+
 def transcribe(
     path: Path | str,
     clip_id: str,
@@ -393,7 +404,11 @@ def transcribe(
     clip = media.get_clip(project, clip_id)
     source = media.media_path(project, clip)
     payload = asr.transcribe(
-        source, model=model, language=language, duration=clip.get("duration")
+        source,
+        model=model,
+        language=language,
+        duration=clip.get("duration"),
+        digests=_digests(project),
     )
     # Whisper returns an empty `segments` list rather than failing when it
     # hears no speech, and parse_whisper would then blame the missing word
@@ -413,6 +428,7 @@ def transcribe(
         "cached": str(project.transcript_path(clip_id)),
         "duration": parsed.words[-1].end,
         "hallucinated_words": payload.get("hallucinated_words", 0),
+        "store": payload["store"],
         "near_duplicates": _near_duplicates(parsed),
         "suspect_durations": _suspect_durations(parsed),
         "overlaps": _overlaps(parsed),
@@ -477,6 +493,7 @@ def hear(
         start=start,
         end=end,
         allow_silence=True,
+        digests=_digests(project),
     )
     heard = [
         {
@@ -512,6 +529,7 @@ def hear(
         "windows": payload["windows"],
         "silent_windows": payload["silent_windows"],
         "hallucinated_words": payload["hallucinated_words"],
+        "store": payload["store"],
         "heard_words": heard,
         "heard_text": " ".join(w["text"] for w in heard if w["text"]),
         "transcript_words": attached,
@@ -19450,7 +19468,10 @@ def unspoken_detect(
     else:
         model = model or asr.DEFAULT_MODEL
         payload = asr.transcribe(
-            render_path, model=model, language=language or _shared_language(transcripts)
+            render_path,
+            model=model,
+            language=language or _shared_language(transcripts),
+            digests=_digests(project),
         )
         if not payload.get("words") and not payload.get("segments"):
             raise vfy.VerifyError(
@@ -20583,6 +20604,7 @@ def verify(
             overlap=overlap,
             model=model,
             language=language or _shared_language(transcripts),
+            digests=_digests(project),
         )
         heard_transcript = tx.parse_whisper(
             payload, clip_id="render", origin=f"whisper:{model} windowed"
@@ -20592,6 +20614,7 @@ def verify(
                 "windows": payload["windows"],
                 "silent_windows": payload["silent_windows"],
                 "hallucinated_words": payload["hallucinated_words"],
+                "store": payload["store"],
                 "window": window,
                 "overlap": overlap,
             }
@@ -20605,7 +20628,10 @@ def verify(
     else:
         result["mode"] = "single-pass"
         payload = asr.transcribe(
-            render_path, model=model, language=language or _shared_language(transcripts)
+            render_path,
+            model=model,
+            language=language or _shared_language(transcripts),
+            digests=_digests(project),
         )
         # Whisper returns an empty `segments` list rather than failing when it
         # hears no speech, and `parse_whisper` would then blame the missing
@@ -20623,6 +20649,7 @@ def verify(
         # needed it: a run-away tail read as words the render does not play,
         # which is a `verify` miss rather than a `verify` finding.
         result["hallucinated_words"] = payload.get("hallucinated_words", 0)
+        result["store"] = payload["store"]
         # Keep the expensive artifact, but never read it back automatically: a
         # re-render under the same filename would then verify against the
         # previous render's audio and pass. Reuse is explicit, via
@@ -20976,6 +21003,7 @@ def finish_check(
             overlap=overlap,
             model=model,
             language=language or _shared_language(transcripts),
+            digests=_digests(project),
         )
         heard_transcript = tx.parse_whisper(
             payload, clip_id="render", origin=f"whisper:{model} windowed"
@@ -20985,6 +21013,7 @@ def finish_check(
                 "windows": payload["windows"],
                 "silent_windows": payload["silent_windows"],
                 "hallucinated_words": payload["hallucinated_words"],
+                "store": payload["store"],
                 "window": window,
                 "overlap": overlap,
             }
