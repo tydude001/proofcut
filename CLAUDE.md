@@ -100,8 +100,9 @@ Qwen3.6-35B-A3B passed all four runs' checks — and left a stutter the checks
 cannot see in two of the four films; on the real-footage brief it scored
 10/10 once the map named `hear`, and by ear **failed** — it heard the
 hidden retake, explained both flags away, and ran 93.7 s against 45
-(LOCAL.md § The rerun with `hear` on the map). **A trial score on that
-brief is not a clean film until the render's head is heard.**
+(LOCAL.md § The rerun with `hear` on the map). The score now hears the
+whole render for a repeated line and checks a declared length band
+(HISTORY.md § The score hears the render, and checks its length).
 What a check for frozen and silent spans in a render would need — measured
 on two films, where 13 of 14 frozen spans were cards, so the finding is a
 span nothing explains — is

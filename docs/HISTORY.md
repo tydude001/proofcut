@@ -18829,3 +18829,33 @@ Tests: eight more in `tests/test_store.py` (describe hit/miss/refresh/failed
 window/two projects, faces per timestamp/detector size, doctor and
 `setup --clear`, an unrecorded uninstall), three in
 `tests/test_trial_store.py`. Full suite 2837 passed.
+
+## The score hears the render, and checks its length — 2026-09-26
+
+`agent_trial.py`'s `score()` gains two checks off the delivered file, on
+Tyler's call (LOCAL.md § The rerun with `hear` on the map proposed it): the
+local director's real-footage film scored 10/10 while opening with its first
+line twice and running 93.7 s against an asked-for 45.
+
+- **`no_repeat_heard`** runs the windowed whisper pass (`hear`'s and
+  `verify --windowed`'s) over the whole render and fails on any run of
+  `RETAKE_MIN_WORDS` = 5 words heard twice within `STUTTER_GAP`.
+  `find_restart` takes `min_run`; `no_stutter` keeps its two. Five, not two
+  or three, because ordinary speech repeats three words inside one sentence:
+  "12 minutes of" is heard twice in Claude's 71 s and 45 s cuts of the same
+  brief. Five is the shortest restart on record.
+- **`length_on_brief`** reads a band from the `--phrases` file's `length`
+  (`{"min": s, "max": s}`, either side optional). Undeclared is unsettled.
+  The real-footage brief declares `{"max": 80}`, not 45: the brief asks for
+  45 s *and* for nothing the narrator meant to be cut, which leave ~71 s
+  (TRIAL.md § The real-footage run chose the other side), and the retakes
+  left in add ~22 s. Run directories scored before keep their persisted pair
+  and read the length unsettled.
+
+**The control, real renders, no stubs.** `no_repeat_heard` fails the
+2026-09-22 local film (seventeen words heard twice) and passes Claude's 71 s
+and 45 s real-footage cuts, the demo trial and its control, and the local
+film-brief cut. Under `max 80`, `length_on_brief` fails 93.7 s and passes
+71.0 and 45.2. One failing film is the whole positive sample.
+
+Tests: `tests/test_trial_render_checks.py`, thirteen.

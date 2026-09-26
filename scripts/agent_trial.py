@@ -93,7 +93,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import make_demo
 import trial_check
 
-from proofcut import briefs, finish, ops, projectlock, webui
+from proofcut import asr, briefs, finish, ops, projectlock, webui
 from proofcut import media as proofcut_media
 from proofcut.project import LEGACY_MANIFEST_NAME, MANIFEST_NAME, TIMELINE_NAME, Project
 
@@ -161,6 +161,16 @@ STUTTER_STOPWORDS = frozenset(
     ("a", "an", "the", "of", "to", "in", "on", "at", "and", "or", "but", "is", "it",
      "its", "as", "for", "with", "that", "this", "be")
 )
+
+#: `no_repeat_heard` calls a repeat in the *heard render* a retake only at this
+#: many words. The timeline-side `no_stutter` counts two, but it reads a
+#: 14-word window; over a whole film ordinary speech repeats three words inside
+#: one sentence ("the first 12 minutes of Scream are still the best 12 minutes
+#: of…", heard in Claude's 71 s and 45 s real-footage cuts). Five is the
+#: shortest restart on record (LOCAL.md § The score cannot see a stutter), and
+#: the retake it exists for — the local director's 2026-09-22 film — repeats
+#: seventeen (LOCAL.md § The rerun with `hear` on the map).
+RETAKE_MIN_WORDS = 5
 
 #: How many registered clips the demo brief's three files should produce. It
 #: is a parameter because a real folder is not three files and an agent is not
@@ -715,7 +725,9 @@ def score(
     which is why they are arguments and the rest is not: a real-footage run is
     the same instrument over different material, and a second scoring function
     would be a second opinion about what a finished cut is. Both default to
-    the demo's, so every run scored before they existed re-scores identically.
+    the demo's, so every run scored before they existed re-scores identically
+    — but for `no_repeat_heard` and `length_on_brief`, added 2026-09-26, which
+    a re-score now carries (the latter unsettled unless its file declares one).
     `film` adds `--film`'s three checks (`_film_checks`) after the rest.
     """
     phrases = DEMO_PHRASES if phrases is None else phrases
@@ -805,6 +817,8 @@ def score(
     if final is None:
         checks.append(_check("frames_agree", None, "no render to check"))
         checks.append(_check("verify_similarity", None, "no render to check"))
+        checks.append(_check("no_repeat_heard", None, "no render to check"))
+        checks.append(_check("length_on_brief", None, "no render to check"))
         checks.append(_check("captions_burned", None, "no render to check"))
     else:
         facts["final_render"] = str(final)
@@ -835,6 +849,8 @@ def score(
             )
         except Exception as exc:  # noqa: BLE001
             checks.append(_check("verify_similarity", None, f"verify refused: {exc}"))
+        checks.append(_repeat_heard_check(final, facts))
+        checks.append(_length_check(final, phrases.get("length"), facts))
         checks.append(_captions_check(final, evidence))
     if film:
         checks.extend(_film_checks(project, final, vo, facts))
@@ -943,14 +959,9 @@ def _end_card_check(project: Path, final: Path, facts: dict[str, Any]) -> dict[s
     if not isinstance(edit_seconds, int | float):
         return _check("end_card_rendered", None, f"no edit length to find the tail by: {status}")
     at = float(head) + float(edit_seconds) + float(record.get("seconds") or 0.0) / 2
-    probe = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(final)],
-        capture_output=True, text=True, check=False,
-    )
-    try:
-        length = float(probe.stdout.strip())
-    except ValueError:
-        return _check("end_card_rendered", None, f"could not read the render's length: {probe.stderr[-200:]}")
+    length, why = _render_seconds(final)
+    if length is None:
+        return _check("end_card_rendered", None, f"could not read the render's length: {why}")
     if length <= at:
         return _check("end_card_rendered", False,
                       f"{record['asset']} recorded for {record.get('seconds')}s, but the render ends at "
@@ -968,6 +979,70 @@ def _end_card_check(project: Path, final: Path, facts: dict[str, Any]) -> dict[s
     return _check("end_card_rendered", ymax > INK_YMAX,
                   f"{record['asset']} for {record.get('seconds')}s; YMAX {ymax:g} at {at:.2f}s "
                   f"(ink above {INK_YMAX})")
+
+
+def _render_seconds(final: Path) -> tuple[float | None, str]:
+    """The delivered file's length by ffprobe, or `None` and why not."""
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(final)],
+        capture_output=True, text=True, check=False,
+    )
+    try:
+        return float(probe.stdout.strip()), ""
+    except ValueError:
+        return None, probe.stderr[-200:]
+
+
+def _repeat_heard_check(final: Path, facts: dict[str, Any]) -> dict[str, Any]:
+    """Does the delivered film say any stretch of five words or more twice running?
+
+    Heard off the render itself, never the timeline: the retake this exists for
+    was inside one word's duration, so the transcript held one take, `no_stutter`
+    and `retake_removed` both passed, and `verify`'s one-pass whisper tidied the
+    repeat away in the render as it had in the source — similarity 1.0 over a
+    film that opens with its first line twice (LOCAL.md § The rerun with `hear`
+    on the map). The windowed pass is the one `hear` and `verify --windowed`
+    use, because short windows are what does not tidy a retake away; over that
+    film it heard all seventeen words twice.
+    """
+    name = "no_repeat_heard"
+    length, why = _render_seconds(final)
+    if length is None:
+        return _check(name, None, f"could not read the render's length: {why}")
+    try:
+        heard = asr.transcribe_windowed(final, start=0.0, end=length, allow_silence=True)
+    except Exception as exc:  # noqa: BLE001
+        return _check(name, None, f"the render could not be heard: {exc}")
+    words = [str(w.get("word") or "").strip() for w in heard.get("words") or []]
+    facts["heard_render_words"] = len(words)
+    if not words:
+        return _check(name, None, "no words heard in the render")
+    found = find_restart(words, min_run=RETAKE_MIN_WORDS)
+    if found:
+        return _check(name, False, f"{' '.join(found)!r} is heard twice running in the render")
+    return _check(name, True, f"no run of {RETAKE_MIN_WORDS}+ words heard twice in {len(words)} words")
+
+
+def _length_check(final: Path, want: dict[str, Any] | None, facts: dict[str, Any]) -> dict[str, Any]:
+    """Is the delivered file inside the length band the brief declared?
+
+    The band is the `--phrases` file's `length` — `{"min": s, "max": s}`, either
+    side optional — because "about 45 seconds" is prose, and the real-footage
+    brief's own contradiction (TRIAL.md § The real-footage run chose the other
+    side) means the honest bound is not the number it states. Undeclared is
+    unsettled, `score()`'s rule for every brief check.
+    """
+    name = "length_on_brief"
+    if not want or (want.get("min") is None and want.get("max") is None):
+        return _check(name, None, "no length declared for this run (--phrases \"length\")")
+    length, why = _render_seconds(final)
+    if length is None:
+        return _check(name, None, f"could not read the render's length: {why}")
+    facts["render_seconds"] = length
+    low, high = want.get("min"), want.get("max")
+    ok = (low is None or length >= float(low)) and (high is None or length <= float(high))
+    band = f"{low if low is not None else '…'}–{high if high is not None else '…'}s"
+    return _check(name, ok, f"render is {length:.1f}s against a declared {band}")
 
 
 def _voiceover_clip(project: Path, clips: list[dict[str, Any]]) -> str | None:
@@ -1021,13 +1096,14 @@ def _phrase_check(
     return _check(name, ok, detail)
 
 
-def find_restart(words: list[str]) -> list[str] | None:
+def find_restart(words: list[str], *, min_run: int = 2) -> list[str] | None:
     """The longest run of words that repeats within `STUTTER_GAP` words of itself.
 
     Order-only, like every reader of a transcript here: it takes the words as
     spoken and knows nothing of their durations. A run repeats when a second
     copy starts at most `STUTTER_GAP` words after the first one ends, and a run
-    of two or more words with at least one word that is not a stopword counts.
+    of `min_run` or more words with at least one word that is not a stopword
+    counts.
     """
     tokens = ["".join(ch for ch in w.lower() if ch.isalnum()) for w in words]
     tokens = [t for t in tokens if t]
@@ -1037,7 +1113,7 @@ def find_restart(words: list[str]) -> list[str] | None:
             run = 0
             while j + run < len(tokens) and tokens[i + run] == tokens[j + run] and i + run < j:
                 run += 1
-            if run < 2 or j - (i + run) > STUTTER_GAP:
+            if run < min_run or j - (i + run) > STUTTER_GAP:
                 continue
             found = tokens[i : i + run]
             if all(t in STUTTER_STOPWORDS for t in found):
@@ -1318,8 +1394,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source", help="a directory of real footage to edit instead of "
                         "generated demo media (requires --brief-file)")
     parser.add_argument("--phrases", metavar="FILE",
-                        help='JSON {"remove": "...", "keep": "..."} — the two lines the '
-                        "brief's own checks ask about; unset leaves both unsettled")
+                        help='JSON {"remove": "...", "keep": "...", "length": {"min": s, "max": s}} '
+                        "— the two lines the brief's own checks ask about, and its "
+                        "length band; anything unset is unsettled")
     parser.add_argument("--output", help="where the agent is told to render (default <work>/cut.mp4)")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
     parser.add_argument("--model", default=None, help="pin the model (default: whatever claude picks)")

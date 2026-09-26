@@ -379,3 +379,8 @@ length check, so this is the third thing a 10/10 here does not say.
 **Pictures stay unjudged**: 5 images dropped again for a model with no
 vision projector, and 8 shots hung off `broll_brief`, 5 of them on
 `scream1_reveal`.
+
+**Both scorer gaps closed 2026-09-26** (HISTORY.md § The score hears the
+render, and checks its length): `no_repeat_heard` hears the whole render and
+`length_on_brief` reads a declared band. Under them this run scores 10 of 12,
+failing both new ones. The map's retake-trigger proposal above is still open.
