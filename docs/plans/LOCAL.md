@@ -383,4 +383,6 @@ vision projector, and 8 shots hung off `broll_brief`, 5 of them on
 **Both scorer gaps closed 2026-09-26** (HISTORY.md § The score hears the
 render, and checks its length): `no_repeat_heard` hears the whole render and
 `length_on_brief` reads a declared band. Under them this run scores 10 of 12,
-failing both new ones. The map's retake-trigger proposal above is still open.
+failing both new ones. The map's retake-trigger proposal above was
+made the same day (HISTORY.md § The map's retake rule, widened) and has not
+yet been run.

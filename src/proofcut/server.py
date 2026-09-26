@@ -83,9 +83,9 @@ INSTRUCTIONS = (
     "or approving framing.\n"
     "- export does not burn captions, and a render existing is not a render being "
     "right: run check_frames and verify after every export.\n"
-    "- When verify hears words the timeline does not have, whisper hid a retake "
-    "inside one word's duration: the transcript looks right and the audio is not. "
-    "hear that source span, then cut by time.\n"
+    "- A retake can hide inside one word: verify hears words the timeline lacks, "
+    "or its loud gaps cover a word import flagged as a suspect duration. Not a "
+    "pause: hear that source span, cut by time.\n"
 )
 
 #: Where Claude Code silently cuts both `instructions` and a tool description.

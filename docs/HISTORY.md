@@ -18859,3 +18859,23 @@ film-brief cut. Under `max 80`, `length_on_brief` fails 93.7 s and passes
 71.0 and 45.2. One failing film is the whole positive sample.
 
 Tests: `tests/test_trial_render_checks.py`, thirteen.
+
+## The map's retake rule, widened — 2026-09-26
+
+On Tyler's call, the rule LOCAL.md § The rerun with `hear` on the map
+proposed: `server.INSTRUCTIONS`' retake line fired only "when verify hears
+words the timeline does not have", and in the 2026-09-22 local run the
+diff read 211 against 211 while the retake played. It now names both
+shapes: verify hearing words the timeline lacks, or its loud gaps covering
+a word import flagged as a suspect duration, and it says outright that this
+is not a pause, which is how that run's agent explained both flags away.
+
+The instructions sit at 2,042 of `INSTRUCTIONS_CAP`'s 2,048 bytes, the same
+as before; the line was rewritten to fit rather than grown. It names no
+field in snake_case because the instructions test reads every snake_case
+word as a tool name.
+
+**Not yet measured.** No trial has run under the new line. Runs before it
+and after it are scored against different maps, and the next local-director
+rerun on the real-footage brief is the first to say whether it moves the
+agent.
