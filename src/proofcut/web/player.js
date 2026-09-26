@@ -1313,6 +1313,21 @@ function seamStep(t, dir) {
   return after.length ? Math.min(...after) : v ? v.timeline_duration : t;
 }
 
+/* The nearest bookmark strictly before/after `t`, or null when there is
+ * none that way — unlike `seamStep`, no edge to fall back to, because a
+ * bookmark key that jumps to the end would read as a bookmark there.
+ * `bookmarks` is ops.py `_bookmarks_view`; only `time` is read. */
+function bookmarkStep(t, dir) {
+  const v = view();
+  const times = ((v && v.bookmarks) || []).map((b) => b.time);
+  if (dir < 0) {
+    const before = times.filter((x) => x < t - 1e-6);
+    return before.length ? Math.max(...before) : null;
+  }
+  const after = times.filter((x) => x > t + 1e-6);
+  return after.length ? Math.min(...after) : null;
+}
+
 /* L and K are directional, not a flip: pressing L while already playing (or
  * K while already paused) must be a no-op, which is why these are not just
  * `toggle()` called conditionally from two different keys. */
@@ -1487,6 +1502,19 @@ export function init(passedCtx) {
     if (key === "[" || key === "]") {
       event.preventDefault();
       seek(seamStep(now(), key === "[" ? -1 : 1));
+      return;
+    }
+    if (key === "{" || key === "}") {
+      event.preventDefault();
+      const to = bookmarkStep(now(), key === "{" ? -1 : 1);
+      if (to !== null) seek(to);
+      return;
+    }
+    if (lower === "m" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      // Adding or removing is a mutation, and the timeline owns the ruler it
+      // is drawn on, so this only says the key was pressed.
+      event.preventDefault();
+      ctx.emit("shortcut-bookmark");
       return;
     }
   });

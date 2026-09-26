@@ -1025,7 +1025,8 @@ drag-and-drop, so a synthetic mouse drag moves nothing.
   themselves. The freeze-frame button is disabled.
 
 **Reading.** Bookmarks are the one candidate this pass settles: cheap, and
-proven to work. The layout is worth reading for the desktop inspector's tabs
+proven to work. **Built the same day** (HISTORY.md § Bookmarks on
+the ruler). The layout is worth reading for the desktop inspector's tabs
 only, since proofcut's rail already handles a phone and OpenCut does not.
 Snapping and the curve graph still need the ten minutes by hand; if snapping is
 built, its tolerance is measured on proofcut's own timeline, never copied.

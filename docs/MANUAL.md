@@ -295,6 +295,20 @@ brings, so a marks file and a keystroke file combine. A name that repeats
 has to be addressed as `name#k`, counted from 0 in time order, and every
 resolution echoes three events either side.
 
+**Bookmarks are events named `bookmark`.** In `proofcut web`, `M` (or the
+timeline's **bookmark** button) adds one at the playhead, or removes the one
+already there. They show as flags on the ruler: click one to seek to it, and
+`{` / `}` step between them. Snapping includes them. From the command line
+the same thing takes an edit second rather than a source one:
+
+```sh
+proofcut events --name bookmark --add-at-edit 12.4    # whatever plays 12.4 s into the edit
+proofcut events rec --remove 'bookmark#1'             # drop one by address
+```
+
+A bookmark keeps its place in the source, so a cut over it hides the flag
+and a restore brings it back.
+
 ## Captions
 
 Captions are generated from the *timeline*, not the transcript, so they stay

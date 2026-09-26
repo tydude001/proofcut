@@ -11003,3 +11003,37 @@ def test_caption_span_style_arrives_as_an_object_over_the_wire(tmp_path: Path) -
     added, view = anyio.run(_with_server, body)
     assert added["look"]["size"] == 150
     assert [c["style"] for c in view["cues"] if c["text"] == "two"] == [1]
+
+
+def test_a_bookmark_is_added_at_an_edit_second_and_removed_over_stdio(tmp_path: Path) -> None:
+    """`events` with `time=` and `remove=` through the real server: the
+    bookmark lands on the clip playing at that edit second, `timeline_view`
+    draws it, and `remove` takes it off. PRIOR-ART.md § OpenCut classic, driven."""
+    film = tmp_path / "tone.mp4"
+    subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-y",
+         "-f", "lavfi", "-i", "color=c=gray:size=160x90:rate=30:duration=3",
+         "-f", "lavfi", "-i", "sine=frequency=440:duration=3:sample_rate=48000",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(film)],
+        capture_output=True, check=True,
+    )  # fmt: skip
+    project = tmp_path / "proj"
+
+    async def body(session: ClientSession) -> Any:
+        client = Client(session)
+        await client.call("init", path=str(project))
+        clip = (await client.call("import_media", path=str(project), source=str(film)))["clip_id"]
+        await client.call("seed_timeline", path=str(project), clip_id=clip, remove_silences=False)
+        added = await client.call("events", path=str(project), name="bookmark", time=1.5)
+        drawn = (await client.call("timeline_view", path=str(project)))["bookmarks"]
+        removed = await client.call("events", path=str(project), clip_id=clip, remove="bookmark")
+        after = (await client.call("timeline_view", path=str(project)))["bookmarks"]
+        return clip, added, drawn, removed, after
+
+    clip, added, drawn, removed, after = anyio.run(_with_server, body)
+
+    assert added["clip_id"] == clip
+    assert added["resolved"]["at"] == pytest.approx(1.5, abs=1e-3)
+    assert [(b["address"], round(b["time"], 3)) for b in drawn] == [("bookmark#0", 1.5)]
+    assert removed["removed"]["address"] == "bookmark#0"
+    assert after == []

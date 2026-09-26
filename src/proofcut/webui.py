@@ -3439,6 +3439,22 @@ def _restore(root: str, payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _bookmark(root: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """`POST /api/bookmark` — the ruler's `M`. `{"time"}` adds a bookmark at
+    whatever plays that far into the edit; `{"clip_id", "remove"}` drops one
+    by the address `timeline_view`'s `bookmarks` gave it. Which of the two a
+    press means is the page's call (is a tick already under the playhead?);
+    where a bookmark lands is `ops.events`'."""
+    remove = payload.get("remove")
+    if remove is not None:
+        if not isinstance(remove, str) or not remove:
+            raise WebUIError("'remove' must be an event address")
+        return ops.events(root, _clip_arg(payload), remove=remove)
+    if "time" not in payload:
+        raise WebUIError("'time' or 'remove' is required")
+    return ops.events(root, name=ops.BOOKMARK_EVENT, time=_float_arg(payload, "time"))
+
+
 def _undo(root: str, _payload: dict[str, Any]) -> dict[str, Any]:
     return ops.undo(root)
 
@@ -3732,6 +3748,7 @@ _POST_ROUTES: dict[str, Callable[[str, dict[str, Any]], dict[str, Any]]] = {
     "/api/cut-at": _cut_at,
     "/api/restore": _restore,
     "/api/undo": _undo,
+    "/api/bookmark": _bookmark,
     "/api/unlock": _unlock,
     "/api/cue": _cue_add,
     "/api/music": _music,

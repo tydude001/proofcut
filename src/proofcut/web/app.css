@@ -181,6 +181,9 @@
  *                             are two columns of one flex row, not two
  *                             independent scrollers
  *   .ruler / .ruler-tick / .ruler-label
+ *   .ruler-bookmark            one `bookmarks` entry from the view, a flag
+ *                             on the ruler; click seeks, `M` toggles
+ *   #bookmark-toggle           the same `M`, as a button — reuses `.toggle`
  *   .lane                     one lane's row; modifiers .lane-v2 .lane-v1
  *                             .lane-a1 .lane-a2 .lane-cc are cosmetic only — *which*
  *                             lanes exist is a data question answered by the
@@ -494,6 +497,7 @@
   --ok: var(--kept);
   --err: var(--cut);
   --skip: var(--dim);
+  --mark: var(--partial);
 
   /* Tinted washes — the same accents at surface strength. */
   --wash-accent: light-dark(hsl(216 70% 50% / 0.12), hsl(213 71% 68% / 0.16));
@@ -3575,6 +3579,39 @@ textarea {
   bottom: 0;
   width: 1px;
   background: var(--line);
+}
+
+/* A bookmark: a flag on the ruler, a hit target wider than its ink so a
+   click finds it at any zoom. Above the labels, below the playhead. */
+.ruler-bookmark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 11px;
+  margin-left: -5px;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.ruler-bookmark::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--mark);
+}
+
+.ruler-bookmark::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0;
+  width: 7px;
+  height: 7px;
+  background: var(--mark);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 70%, 0 100%);
 }
 
 .ruler-label {

@@ -18879,3 +18879,37 @@ word as a tool name.
 and after it are scored against different maps, and the next local-director
 rerun on the real-footage brief is the first to say whether it moves the
 agent.
+
+## Bookmarks on the ruler — 2026-09-26
+
+The one OpenCut harvest candidate the scripted pass settled (PRIOR-ART.md §
+OpenCut classic, driven), built on Tyler's call. **A bookmark is an event
+named `bookmark`** (`ops.BOOKMARK_EVENT`), not a new store: it sits in the
+clip's own source seconds, so no cut moves it, a derivation inherits it,
+and `locate --event` already answers where one plays.
+
+- `events` gains `time=` (add one at whatever plays that many seconds into
+  the edit, the clip read off `Edit.source_at`) and `remove=` (drop one by
+  address). CLI `--add-at-edit` and `--remove`; no new tool.
+- `timeline_view` reports `bookmarks` (each still-playing one, in Edit
+  seconds) and `bookmarks_cut`. A recorder's keystrokes are events too, and
+  a ruler is not a list, so only bookmarks are drawn.
+- The web ruler draws each as an amber flag (`--mark`, an alias of
+  `--partial`). A click seeks; `M` or the timeline's **bookmark** button
+  removes the one within half a frame of the playhead or adds one
+  (`POST /api/bookmark`); `{` / `}` step between them; `snap` considers
+  them. Deciding whether a press adds or removes is the page's call; where
+  one lands is the op's.
+
+**Driven in a real browser** on a copy of the demo project, at 0 and 120 ms
+dwell: three frames in, the flag drew at the playhead's own 13.6 px; `M`
+again removed it; a click on a flag moved the playhead to it; `}` from the
+start reached it and `{` with none earlier stayed put; the button worked
+at both dwells; no console errors. The first capture showed the success
+toast in the error style, because a string toast defaults to `error`; it
+now passes `severity: "ok"`. At 390 px the page already overflowed (the
+preview pane, 526 px with the button hidden), and the timeline head, now
+533 px, overflowed before this change too.
+
+Tests: `tests/test_bookmarks.py` (five), one HTTP route test, one over
+stdio.

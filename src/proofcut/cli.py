@@ -845,7 +845,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_events = sub.add_parser(
         "events",
         help="named instants in a recording (sent, typing_started, a keystroke) — "
-        "list, import a recorder's JSON, add one, or clear",
+        "list, import a recorder's JSON, add or remove one, or clear",
     )
     p_events.add_argument("clip_id", nargs="?", help="omit to count every clip's events")
     p_events.add_argument(
@@ -870,6 +870,19 @@ def _build_parser() -> argparse.ArgumentParser:
         type=_parse_timecode,
         metavar="TIMECODE",
         help="add one event, named by --name, at this source instant",
+    )
+    p_events.add_argument(
+        "--add-at-edit",
+        dest="time",
+        type=_parse_timecode,
+        metavar="TIMECODE",
+        help="add one event, named by --name, at whatever plays this far into the "
+        "edit; the clip is read off the timeline (the web ruler's bookmark)",
+    )
+    p_events.add_argument(
+        "--remove",
+        metavar="NAME[#K]",
+        help="drop one event by its address",
     )
     p_events.add_argument(
         "--resolve",
@@ -3685,7 +3698,9 @@ def _cmd_events(args: argparse.Namespace) -> int:
             origin=args.origin,
             offset=args.offset,
             at=args.at,
+            time=args.time,
             event=args.event,
+            remove=args.remove,
             clear=args.clear,
             plan=args.plan,
         )

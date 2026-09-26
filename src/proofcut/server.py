@@ -1816,10 +1816,15 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         ),
         "offset": "Seconds subtracted from every imported time, after `origin`.",
         "at": "Seconds into the recording for the one event being added.",
+        "time": (
+            "Seconds into the edit for the one event being added, instead of `at`: "
+            "the clip and source instant are whatever plays there."
+        ),
         "event": (
             "Resolve one address — `name`, or `name#k` when the name repeats — and "
             "echo it with its neighbours, writing nothing."
         ),
+        "remove": "Drop one event by address (`name` or `name#k`).",
         "clear": "Remove every event on this clip.",
     },
     "caption_style_save": {
@@ -5496,7 +5501,9 @@ def events(
     origin: str | None = None,
     offset: float = 0.0,
     at: float | None = None,
+    time: float | None = None,
     event: str | None = None,
+    remove: str | None = None,
     clear: bool = False,
     plan: bool = False,
 ) -> dict[str, Any]:
@@ -5513,7 +5520,10 @@ def events(
     marks file and a keystroke file combine. A recorder usually logs wall-clock stamps: pass
     `origin` naming the key that holds the recording's start. A set with any
     event outside the clip is refused whole, because a wrong clock moves every
-    event by the same amount. `name` + `at` adds one event by hand.
+    event by the same amount. `name` + `at` adds one event by hand; `name` +
+    `time` adds one at whatever plays that many seconds into the edit, clip
+    read off the timeline. `remove` drops one by address. A `bookmark` event
+    is what the web ruler draws.
 
     Events index the source, so no cut invalidates one; `locate` with `event=`
     says where one plays now, and `present: false` means it was cut.
@@ -5526,7 +5536,9 @@ def events(
         origin=origin,
         offset=offset,
         at=at,
+        time=time,
         event=event,
+        remove=remove,
         clear=clear,
         plan=plan,
     )

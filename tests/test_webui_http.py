@@ -5597,3 +5597,24 @@ def test_the_truth_strip_reads_the_lock_and_clears_only_a_dead_one(
     status, cleared = _post(f"{server}/api/unlock", {})
     assert status == 200 and cleared["broken"] is True
     assert _json(f"{server}/api/lock")[1] == {"held": False}
+
+
+def test_a_bookmark_goes_on_at_the_playhead_and_comes_off_by_address(server: str) -> None:
+    """`POST /api/bookmark` — the ruler's `M`: `{time}` adds, `{clip_id,
+    remove}` drops, and `/api/view`'s `bookmarks` is what the ruler draws."""
+    status, added = _post(f"{server}/api/bookmark", {"time": 1.0})
+    assert status == 200
+    assert added["written"] is True
+
+    _, view = _json(f"{server}/api/view")
+    assert [(b["clip_id"], b["address"]) for b in view["bookmarks"]] == [(added["clip_id"], "bookmark#0")]
+    assert view["bookmarks"][0]["time"] == pytest.approx(1.0, abs=1e-3)
+
+    status, _ = _post(f"{server}/api/bookmark", {"clip_id": added["clip_id"], "remove": "bookmark#0"})
+    assert status == 200
+    _, view = _json(f"{server}/api/view")
+    assert view["bookmarks"] == []
+
+    status, refused = _post(f"{server}/api/bookmark", {})
+    assert status == 400
+    assert "'time' or 'remove'" in refused["error"]

@@ -396,7 +396,7 @@ function contentDuration(state, captions) {
   return end;
 }
 
-function buildRuler(duration, pxPerSec) {
+function buildRuler(duration, pxPerSec, bookmarks) {
   const ruler = el("div", "ruler");
   const width = Math.max(1, duration * pxPerSec);
   ruler.style.width = `${width}px`;
@@ -421,7 +421,46 @@ function buildRuler(duration, pxPerSec) {
       ruler.append(label);
     }
   }
+  // After the labels, so a flag draws over a label it lands on.
+  for (const mark of bookmarks || []) {
+    const flag = el("div", "ruler-bookmark");
+    flag.title = `bookmark at ${fmt(mark.time)} (${mark.clip_id} ${mark.address}) — click to seek`;
+    flag.style.left = `${(mark.time * pxPerSec).toFixed(1)}px`;
+    flag.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (ctx) ctx.player.seek(mark.time);
+    });
+    ruler.append(flag);
+  }
   return ruler;
+}
+
+/** The bookmark under the playhead, if any: within half a frame, since the
+ * tick a press just wrote comes back through the edit's own arithmetic. */
+function bookmarkAt(t) {
+  const half = 0.5 / ((lastState && lastState.shots_rate) || 30);
+  return ((lastState && lastState.bookmarks) || []).find((b) => Math.abs(b.time - t) <= half) || null;
+}
+
+/** `M` and the bookmark button: remove the bookmark under the playhead, or
+ * add one there. Which of the two is the page's call; where it lands is
+ * `ops.events`' (webui.py `_bookmark`). The redraw arrives as
+ * `project-changed`, like every other mutation's. */
+async function toggleBookmark() {
+  if (!ctx || !lastState) return;
+  const t = ctx.player.now();
+  const existing = bookmarkAt(t);
+  try {
+    if (existing) {
+      await ctx.api("/api/bookmark", { clip_id: existing.clip_id, remove: existing.address });
+      ctx.emit("toast", { message: `Bookmark at ${fmt(existing.time)} removed.`, severity: "ok" });
+    } else {
+      await ctx.api("/api/bookmark", { time: t });
+      ctx.emit("toast", { message: `Bookmarked ${fmt(t)}.`, severity: "ok" });
+    }
+  } catch (err) {
+    ctx.emit("toast", err.message);
+  }
 }
 
 /** The CC lane: one block per *cue*, straight off `/api/captions`.
@@ -1165,6 +1204,7 @@ function snap(t) {
     consider(shot.start);
     consider(shot.start + shot.duration);
   }
+  for (const mark of lastState.bookmarks || []) consider(mark.time);
   if (ctx) consider(ctx.player.now());
   return best;
 }
@@ -2054,6 +2094,8 @@ function handleLanesMouseDown(event) {
   if (planToolbarEl && planToolbarEl.contains(event.target)) return;
   if (musicToolbarEl && musicToolbarEl.contains(event.target)) return;
   if (!lastState) return;
+  // A bookmark flag is a click target of its own (seek), never a gesture.
+  if (event.target.closest && event.target.closest(".ruler-bookmark")) return;
 
   const handle = event.target.closest && event.target.closest(".trim-handle");
   if (handle) {
@@ -2322,7 +2364,7 @@ function render() {
   const pxPerSec = computePxPerSec(duration);
   currentPxPerSec = pxPerSec;
   laidOutWidth = lanes.clientWidth; // 0 while Edit is hidden — see the declaration
-  lanes.append(buildRuler(duration, pxPerSec));
+  lanes.append(buildRuler(duration, pxPerSec, state.bookmarks));
 
   const clip = state.clips.find((c) => c.clip_id === state.clip_id) || {};
 
@@ -2506,6 +2548,10 @@ export function init(passedCtx) {
       if (lanes) lanes.style.cursor = toolMode === "razor" ? "col-resize" : "";
     });
   }
+
+  const bookmarkBtn = $("bookmark-toggle");
+  if (bookmarkBtn) bookmarkBtn.addEventListener("click", toggleBookmark);
+  ctx.on("shortcut-bookmark", toggleBookmark);
 
   const snapBtn = $("snap-toggle");
   if (snapBtn) {

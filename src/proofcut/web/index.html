@@ -574,7 +574,10 @@
         <button id="razor-tool" class="toggle" type="button" title="drag across a lane to select a range to cut or place b-roll over">razor</button>
         <!-- On by default, class present in the markup for the same
              no-flash-of-wrong-state reason as follow-playhead's 'on'. -->
-        <button id="snap-toggle" class="toggle on" type="button" title="snap drags to word boundaries, cue edges, and the playhead">snap</button>
+        <button id="snap-toggle" class="toggle on" type="button" title="snap drags to word boundaries, cue edges, bookmarks, and the playhead">snap</button>
+        <!-- An action, not a mode: adds a bookmark at the playhead, or drops
+             the one already there. The same as pressing M. -->
+        <button id="bookmark-toggle" class="toggle" type="button" title="bookmark the playhead, or remove the bookmark there (M)">bookmark</button>
       </div>
       <div id="timeline-tracks">
         <div id="track-headers" class="track-headers"></div>
@@ -641,6 +644,8 @@
             <tr><td>Shift + ← / →</td><td>step one second</td></tr>
             <tr><td>Home / End</td><td>start / end</td></tr>
             <tr><td>[ / ]</td><td>previous / next cut</td></tr>
+            <tr><td>M</td><td>bookmark the playhead, or remove the bookmark there</td></tr>
+            <tr><td>{ / }</td><td>previous / next bookmark</td></tr>
             <tr><td>Ctrl/Cmd + Z</td><td>undo</td></tr>
             <tr>
               <td>Shift + Ctrl/Cmd + Z</td>
@@ -661,6 +666,9 @@
             <tr class="group"><th colspan="2">Transcript — with the mouse</th></tr>
             <tr><td>Click</td><td>seek there, and select that word</td></tr>
             <tr><td>Drag, or Shift + click</td><td>extend the selection across words</td></tr>
+
+            <tr class="group"><th colspan="2">Timeline — with the mouse</th></tr>
+            <tr><td>Click a bookmark</td><td>seek to it</td></tr>
 
             <tr class="group"><th colspan="2">Timeline — in the cue or music panel</th></tr>
             <tr><td>Enter</td><td>place the cue / apply the music bed</td></tr>

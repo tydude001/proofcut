@@ -1328,6 +1328,13 @@ EVENTS_KEY = "events"
 #: meant to be `key#13`.
 EVENT_ECHO = 3
 
+#: The event name a bookmark is: the web ruler's `M` writes one at the
+#: playhead through `events(time=)`, and `timeline_view` draws only these —
+#: a recorder's keystrokes are events too, hundreds of them, and a ruler is
+#: not a list. A bookmark is an ordinary event, so it indexes the source and
+#: no cut moves it. PRIOR-ART.md § OpenCut classic, driven.
+BOOKMARK_EVENT = "bookmark"
+
 #: A value this large is a wall-clock stamp, not a second into a recording —
 #: the refusal says to pass `origin` rather than listing thousands of
 #: out-of-range events.
@@ -1488,11 +1495,13 @@ def events(
     origin: str | None = None,
     offset: float = 0.0,
     at: float | None = None,
+    time: float | None = None,
     event: str | None = None,
+    remove: str | None = None,
     clear: bool = False,
     plan: bool = False,
 ) -> dict[str, Any]:
-    """Read, import, add or clear a clip's named instants.
+    """Read, import, add, remove or clear a clip's named instants.
 
     One entry point, `synopsis`'s shape: no `clip_id` counts every clip's
     events; `clip_id` alone lists one clip's, each with the `address` other
@@ -1501,7 +1510,9 @@ def events(
     it brings**, leaving other names alone — a recorder writes its marks and its
     keystrokes to two files, and each import must not erase the other — so a
     repeat import lands the same set; `name` + `at` adds one (a repeat is a
-    no-op); `clear` removes them all.
+    no-op); `name` + `time` adds one at the instant playing at `time` seconds
+    into the Edit, the clip read off the timeline (a `clip_id` that disagrees
+    refuses); `remove` drops one by address; `clear` removes them all.
 
     Times are seconds into the clip's own recording. A recorder's file is on
     its own clock, so `origin`/`offset` move it onto the recording's, and a set
@@ -1512,8 +1523,18 @@ def events(
     manifest = project.read_manifest()
     clips = manifest.get("clips", [])
 
+    if time is not None:
+        if at is not None:
+            raise ProjectError("pass at= (seconds into the clip) or time= (seconds into the edit), not both")
+        found = _load_edit(project).source_at(float(time))
+        if found is None:
+            raise ProjectError(f"nothing plays at {float(time):.3f}s — it is past the end of the edit")
+        if clip_id is not None and clip_id != found[0]:
+            raise ProjectError(f"{clip_id} is not what plays at {float(time):.3f}s — {found[0]} is")
+        clip_id, at = found[0], round(found[1], 6)
+
     if clip_id is None:
-        if any(v is not None for v in (source, name, at, event)) or clear:
+        if any(v is not None for v in (source, name, at, event, remove)) or clear:
             raise ProjectError("naming a clip_id is what says whose events these are")
         return {
             "clips": [
@@ -1526,10 +1547,11 @@ def events(
     record = media.get_clip(project, clip_id)
     importing = source is not None
     adding = at is not None
-    if sum([importing, adding, bool(clear), event is not None]) > 1:
+    removing = remove is not None
+    if sum([importing, adding, removing, bool(clear), event is not None]) > 1:
         raise ProjectError(
-            "pass one of source= (import), name= with at= (add one), event= "
-            "(resolve one) or clear — not several"
+            "pass one of source= (import), name= with at= or time= (add one), "
+            "remove= (drop one), event= (resolve one) or clear — not several"
         )
     if not importing and (origin is not None or offset):
         raise ProjectError("origin= and offset= only move an imported file's clock")
@@ -1554,6 +1576,11 @@ def events(
         _check_event_times(pairs, duration, clip_id)
         entry = {"name": pairs[0][0], "at": round(pairs[0][1], 6)}
         after = before if entry in before else [*before, entry]
+    elif removing:
+        dropped = resolve_event(record, remove)
+        entry = {"name": dropped["name"], "at": dropped["at"]}
+        after = list(before)
+        after.remove(entry)
     elif clear:
         after = []
     else:
@@ -1585,6 +1612,8 @@ def events(
         report["resolved"] = resolve_event(
             {"clip_id": clip_id, EVENTS_KEY: after}, _address_of(after, entry)
         )
+    if removing:
+        report["removed"] = {"name": entry["name"], "at": entry["at"], "address": dropped["address"]}
     return report
 
 
@@ -5015,6 +5044,24 @@ def _seams(edit: tl.Edit, clip_id: str, placements: list[dict[str, Any]]) -> lis
     return seams
 
 
+def _bookmarks_view(edit: tl.Edit, clips: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """`timeline_view`'s `bookmarks` and `bookmarks_cut`, off every clip's
+    `BOOKMARK_EVENT` rows mapped through the Edit."""
+    placed: list[dict[str, Any]] = []
+    cut = 0
+    for clip_id, record in clips.items():
+        for row in _event_rows(record):
+            if row["name"] != BOOKMARK_EVENT:
+                continue
+            at = edit.timeline_time(clip_id, row["at"], closed_end=True)
+            if at is None:
+                cut += 1
+                continue
+            placed.append({"clip_id": clip_id, "address": row["address"], "at": row["at"], "time": round(at, 6)})
+    placed.sort(key=lambda b: b["time"])
+    return {"bookmarks": placed, "bookmarks_cut": cut}
+
+
 def timeline_view(
     path: Path | str,
     clip_id: str | None = None,
@@ -5461,6 +5508,11 @@ def timeline_view(
         "sounds": sounds_view,
         # [] with no insets; bottom of the stack first, each with its `dest`.
         "insets": insets_view,
+        # [] with none; each `bookmark` event that still plays, in Edit seconds
+        # and in time order. One whose instant was cut is counted in
+        # `bookmarks_cut` rather than drawn — it is kept, and a restore brings
+        # it back, because it indexes the source.
+        **_bookmarks_view(edit, clips),
         # Ruling: this view stays Edit-relative — `segments`/`shots`/`seams`
         # below are unchanged by a configured head, because the web player
         # cannot play one yet and shifting this view's clock would desync it
