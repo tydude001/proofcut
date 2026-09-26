@@ -1,4 +1,9 @@
-# proofcut
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/tydude001/proofcut/main/docs/img/logo/proofcut-horizontal-reversed.svg">
+    <img alt="proofcut" src="https://raw.githubusercontent.com/tydude001/proofcut/main/docs/img/logo/proofcut-horizontal-colour.svg" width="320">
+  </picture>
+</h1>
 
 [![PyPI](https://img.shields.io/pypi/v/proofcut)](https://pypi.org/project/proofcut/)
 [![Python](https://img.shields.io/pypi/pyversions/proofcut)](https://pypi.org/project/proofcut/)

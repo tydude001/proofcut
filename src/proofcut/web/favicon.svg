@@ -1,10 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- Two clips and a playhead: the timeline, which is what the window is.
-       Fixed colours rather than tokens — a favicon is painted by the browser
-       chrome, which never sees this page's stylesheet. The pastels are the
-       lavender and mint of the V2 and A1 lanes, mid-way between the light and
-       dark themes' versions so it reads on either tab bar. -->
-  <rect x="3" y="6" width="20" height="8" rx="2" fill="#a99ccc" />
-  <rect x="3" y="18" width="14" height="8" rx="2" fill="#8bc0a8" />
-  <rect x="24.5" y="3" width="2" height="26" rx="1" fill="#3f7ad1" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- The logo's symbol in its small-size drawing: a tick split by one
+       vertical cut, with the heavier stroke and wider gap that keep the cut
+       open at 16 px (docs/LOGO.md). Fixed colour rather than a token — a
+       favicon is painted by the browser chrome, which never sees this page's
+       stylesheet. The blue sits between the logo's deep and light blues so it
+       reads on either theme's tab bar. -->
+  <path fill="#3f7ad1" d="M24,143.07 L90.51,209.57 L90.51,130.72 L63.42,103.64 Z M116.39,210.68 L232,77.94 L189.96,41.32 L116.39,125.78 Z" />
 </svg>

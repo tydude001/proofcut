@@ -18913,3 +18913,26 @@ preview pane, 526 px with the button hidden), and the timeline head, now
 
 Tests: `tests/test_bookmarks.py` (five), one HTTP route test, one over
 stdio.
+
+## The logo — 2026-09-26
+
+proofcut had no logo; the favicon was the timeline drawn small (two clips
+and a playhead). Three concepts were drawn one-colour and tested at 16 to
+64 px: a tick split by a vertical cut, waveform bars tracing a tick, and a
+sliced "p" with a `proof|cut` wordmark. Tyler liked the first and third, so
+the logo is the first's symbol with the third's wordmark, one idea twice:
+the tick is cut, and so is the name. The rules and colours are
+[LOGO.md](LOGO.md); the files are `docs/img/logo/`.
+
+- The size test failed the first drawing: at 16 px its cut closed into a
+  plain tick. A second drawing with a heavier stroke and a gap twice as
+  wide holds it open, and the favicon is that drawing.
+- The minimum sizes are measured, not chosen: rendered smaller in steps, the
+  horizontal lockup's cut closes below 160 px wide and the stacked one's
+  below 120 px.
+- The blues are the web UI's `--accent` in each theme. The deep one is
+  3.1:1 on ink, so each theme gets its own.
+- `README.md` opens with the logo through `<picture>`, reversed in dark
+  mode. The favicon is also the MCP server's icon (`server._icons`), so the
+  registry listing changes with it.
+- Not trademark-searched, and no print colours yet.

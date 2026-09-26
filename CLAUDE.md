@@ -115,6 +115,8 @@ once-per-instance rule stays — is [docs/plans/GROUPED-UNDO.md](docs/plans/GROU
 written and built 2026-09-20 but for the panel's button.
 Whether a person's own b-roll picks could pick the next ones — checked and
 not built 2026-09-20 — is [docs/plans/PICKS-PRIOR.md](docs/plans/PICKS-PRIOR.md).
+The logo, its colours, sizes and rules are [docs/LOGO.md](docs/LOGO.md)
+(2026-09-26); the favicon is its small-size drawing.
 Whether proofcut wants a landing page (GitHub Pages) — not yet, because a site
 converts traffic and makes none; it waits on the launch recording or a paid
 tier — is [docs/plans/SITE.md](docs/plans/SITE.md), written 2026-09-24.
