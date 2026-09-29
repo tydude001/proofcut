@@ -386,8 +386,10 @@ A filtered `grep` once dropped two of its 201 `@mcp.tool(` lines and counted
 and output hashes, the ffmpeg version and a resume cursor. **Its input half
 was built 2026-09-21**: each render-log line stamps the edit it read, and
 `finish_report` says whether the last render is still the project's film
-(HISTORY.md § A render knows which edit it was made from). The output hash,
-tool versions and resume cursor are not built.
+(HISTORY.md § A render knows which edit it was made from). The output hash
+and tool versions were built 2026-09-28 (`renderlog.output_digest`,
+`renderlog.tools`); the resume cursor is not taken, because a render here is
+one melt run.
 
 ### Diffusion Studio
 
@@ -1449,13 +1451,15 @@ and PNG sequences are skipped. proofcut's count is exact.
   seek, and can seed `Math.random` per virtual millisecond. `browser.py`'s
   seek reaches CSS animations and WAAPI and leaves anything else to the page's
   own `proofcutSeek`; a page an agent writes that animates from rAF or `Date`
-  without that hook renders its first frame every time. This clock would make
-  such a page seek without the hook.
+  without that hook renders its first frame every time. **Built 2026-09-28**
+  as `browser.CLOCK`, without the `Math.random` seed.
 - **A liveness probe on the capture path** (`browserManager.ts:330-434`,
   `730-746`): one real frame at startup, and a fallback that strips the
   BeginFrame-only flags, because leaving them on makes screenshots blank. The
   shape applies to `DETERMINISTIC_FLAGS` even without BeginFrame: a capture
-  that comes back empty should fail loudly at the first frame.
+  that comes back empty should fail loudly at the first frame. **Built
+  2026-09-28 as "every frame", not "the first"**: an intro may open empty on
+  purpose, so `motion.capture` refuses only a capture where nothing drew.
 - **Hold dedup** (`frameCapture.ts:1058-1080`): skip re-capturing a frame
   predicted static, with a verification pass. A graphic's hold phase is the
   case, and a hold is already its own piece in proofcut.
@@ -1615,7 +1619,9 @@ The other end of the finishing handoff. Both need Resolve Studio running.
   contain before building**, warning on half-cut words, repeated runs of two
   or more words (two takes kept), low-confidence words and uncovered seams,
   under the rule "Nothing here is a judgement" (`:15`): a pre-render twin of
-  `verify`. `_verify` (`resolve/build.py:769-790`) reads the built timeline
+  `verify`. Its repeated-run half was built 2026-09-28 as `transcript_checks`'
+  `cut`: on the approved Scream cut it named 20 candidates, nearly all the
+  script's own repetition, so it stays out of `finish_report`. `_verify` (`resolve/build.py:769-790`) reads the built timeline
   back shot by shot and deletes the build on a mismatch. Renders through
   Resolve's queue and returns only size, codec and format (`deliver.py:271`).
 
