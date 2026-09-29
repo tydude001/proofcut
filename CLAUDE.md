@@ -128,6 +128,10 @@ pays no model time — the efficiency review's largest finding — is
 and built and controlled 2026-09-26 — whisper, the VLM, faces, the trial's
 warm/cold line, `doctor` and `setup --clear` (HISTORY.md § The model store,
 steps 1 to 3, and § steps 4 to 6).
+How the agent panel runs on any OpenRouter model, the local-director spike made a
+feature (stdin turns, interrupt, pictures, cost, a `/` in the model id picks it,
+supported means scored), is [docs/plans/OPENROUTER.md](docs/plans/OPENROUTER.md),
+written 2026-09-29 and unbuilt.
 **Competitor research and anything copied from another product follows
 docs/plans/DAYDREAM.md § Copyright, the DMCA, and this work**: a research
 download stays private and is deleted once its notes are checked, never commit
