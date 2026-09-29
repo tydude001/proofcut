@@ -12,6 +12,19 @@ For anything bigger than a bug fix, open an issue first. proofcut's design is
 recorded in [PLAN.md](docs/PLAN.md), and a change that fights it will usually be
 turned down however good the code is.
 
+## Where things live
+
+| Path | What it is |
+|---|---|
+| `src/proofcut/ops.py` | Every operation. The MCP tools, the CLI and the web UI all call these. |
+| `src/proofcut/server.py` | The MCP server. Register tools with `@_tool()`, never `@mcp.tool()`. |
+| `src/proofcut/cli.py` | The `proofcut` command: one subcommand per tool, printing JSON. |
+| `src/proofcut/webui.py`, `src/proofcut/web/` | The workspace. It posts to `ops` and renders what comes back; it never decides anything itself. |
+| `src/proofcut/project.py`, `timeline.py` | The project manifest (`proofcut.json`) and the OTIO timeline. |
+| `tests/` | `test_server_stdio.py` drives a real `proofcut mcp` subprocess; `test_webui_http.py` a real socket. |
+| `scripts/` | The demo maker, the Mac and Windows trial kits, screenshot capture. |
+| `docs/` | The manual, the demo, and the design record. |
+
 ## The rules a pull request is checked against
 
 [CLAUDE.md](CLAUDE.md) lists every trap in a line, and
@@ -45,18 +58,22 @@ already hit. These are the ones outside changes break most often:
 ```sh
 uv sync
 uv run ruff check .
-uv run pytest
+uv run pytest -n auto
 ```
 
 **Never run `ruff format`.** The repo has no ruff config, so the formatter
 applies its 88-column default to code written wider and rewrites almost every
 file, burying your actual change.
 
-The full suite takes about ten minutes. Tests that need a binary you don't
-have (whisper, auto-editor, melt, ImageMagick) skip rather than fail. The
-seven tests that render through `melt` also need a display. Without one, try
-`QT_QPA_PLATFORM=offscreen`, and run the suite under `xvfb-run -a` where
-`proofcut doctor`'s Display row says your MLT ignores it.
+`-n auto` spreads the suite across your cores, as CI does; on the maintainer's desktop it takes about two
+minutes that way and over ten without it. The suite talks to a real
+`proofcut mcp` subprocess, so it is slower than a pure unit suite. Tests that
+need a binary you don't have (whisper, auto-editor, melt, ImageMagick) skip
+rather than fail. Tests that render through `melt` also need a display.
+Without one, try `QT_QPA_PLATFORM=offscreen`, and run the suite under
+`xvfb-run -a` where `proofcut doctor`'s Display row says your MLT ignores it.
+Without either they fail with "no display for MLT's Qt module to open", which
+is the environment, not a regression.
 
 ## Commits
 

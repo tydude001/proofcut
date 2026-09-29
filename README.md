@@ -19,11 +19,35 @@ transcribes the render and checks that it says what the edit says.
 
 https://github.com/user-attachments/assets/4153d180-3d7c-4c70-af5f-54d63d0a8bd5
 
-Above: an agent cutting a demo video, unattended. The two runs it was cut
-from, uncut (silent: the recorder took frames only, and the voice is in the
-film the agent cut): [the workspace](https://github.com/tydude001/proofcut/releases/download/v0.23.0/proofcut-v0.23.0-uncut-workspace-run.mp4)
+An agent cutting a demo video, unattended, from a goal and no steps.
+
+<details>
+<summary>The two runs it was cut from, uncut</summary>
+
+Silent, because the recorder took frames only; the voice is in the film the
+agent cut. [The workspace](https://github.com/tydude001/proofcut/releases/download/v0.23.0/proofcut-v0.23.0-uncut-workspace-run.mp4)
 (2:26) and [Claude Code with the proofcut plugin](https://github.com/tydude001/proofcut/releases/download/v0.23.0/proofcut-v0.23.0-uncut-claude-code-run.mp4)
 (3:09).
+
+</details>
+
+Runs on Linux, where it is developed. macOS and Windows pass the test suite
+on CI; how far each has gone by hand is
+[§ Help wanted](#help-wanted-a-mac-or-a-windows-run).
+
+## Quickstart
+
+With [uv](https://docs.astral.sh/uv/) installed:
+
+```sh
+uvx proofcut doctor          # only looks: what is missing, and the fix for each
+uvx proofcut setup --plan    # what an install would fetch, and its size; touches nothing
+uvx proofcut setup           # installs it for you alone, no sudo; --uninstall reverses it
+```
+
+Then make [the two-minute demo](#the-two-minute-demo), or give an agent the
+tools with [the Claude Code plugin](#in-claude-code). [§ Try it](#try-it)
+walks all of it.
 
 ## Why it exists
 
@@ -45,6 +69,30 @@ timeline addressed by the words in it. proofcut renders it on your machine,
 then transcribes the render, counts its frames, and says where the file and
 the edit disagree.
 
+Here it is on the demo project. The retake is cut from the edit, and
+`verify` is pointed at a render made before the cut:
+
+```sh
+proofcut -C proj cut vo 11:23 --pad 0.1
+proofcut -C proj verify stale.mp4
+```
+
+```
+"expected_words": 34,
+"heard_words": 47,
+"similarity": 0.84,
+"diff": ["--- timeline", "+++ render", "@@ -10,4 +10,17 @@",
+         " video", " editor",
+         "+every", "+cut", "+you", "+make", "+names", "+a", "+um", "+no",
+         "+let", "+me", "+try", "+that", "+again",
+         " every", " cut"]
+```
+
+The file still says the thirteen words the edit took out, and `verify` names
+them. A render of the edit as it stands hears all 34
+([DEMO.md](https://github.com/tydude001/proofcut/blob/main/docs/DEMO.md)
+step 7).
+
 ## Run, not staged
 
 [TRIAL.md](https://github.com/tydude001/proofcut/blob/main/docs/TRIAL.md)
@@ -61,6 +109,28 @@ passed every one of its checks:
   music under the voice, ended on a card, mastered it to −16 LUFS, and
   checked it. The score, the level and the end card were each measured in
   the delivered file, not taken from the project.
+
+## How it compares
+
+[COMPETITORS.md](https://github.com/tydude001/proofcut/blob/main/docs/COMPETITORS.md)
+reads every entry from its source, most recently on 2026-09-28. In short:
+
+- **Transcript editors** (the Descript model, and its open-source
+  re-implementations) cut by deleting words, for a person's hands. None of
+  the open ones has an agent surface, and none checks its render.
+- **Agent editors over MCP** let an agent drive the edit. The nearest render
+  checks among them compare the duration within a tolerance, or transcribe
+  short windows around suspect seams. None diffs the whole render's words
+  against the cut.
+- **NLEs** (Kdenlive, Resolve, Premiere) are where a person finishes by hand,
+  and DaVinci Resolve 21.1 now ships an MCP server of its own. proofcut
+  exports to them rather than replacing them, and, with the trim brought back
+  by `import-edit`, `verify` checks what they deliver.
+- **auto-editor** removes silences headlessly. proofcut uses it as a render
+  backend.
+
+What proofcut lacks that others have: a check for frozen or silent spans in
+a render.
 
 ## What it can do
 
@@ -141,12 +211,7 @@ retakes, hangs footage off the lines it belongs to, scores, masters and
 checks the render, using proofcut's tools and nothing else. It can look at
 the picture track as a labelled grid while it works, so it sees what it
 placed rather than a filename. Every MCP client runs the same server; the
-plugin is the one that needs no setup.
-
-```
-/plugin marketplace add tydude001/proofcut
-/plugin install proofcut@proofcut
-```
+plugin is the one that needs no setup ([§ In Claude Code](#in-claude-code)).
 
 **Cut from a shell, by naming words.** Every tool is also a `proofcut`
 subcommand printing JSON, so a cut is a script you can read, re-run and
@@ -375,7 +440,8 @@ what takes it away. Sizes are a Linux x86_64 bare machine; `proofcut setup
 Windows. It holds everything except whisper, which is a uv tool because that is
 how whisper ships.
 
-Five rules it holds to, each one enforced by a test rather than promised here:
+<details>
+<summary>Five rules it holds to, each one enforced by a test rather than promised here</summary>
 
 - **`--plan` writes nothing at all**, and its exit code reports only what is
   missing (`test_setup_plan_writes_nothing_and_exits_by_what_is_missing`), so
@@ -395,6 +461,8 @@ Five rules it holds to, each one enforced by a test rather than promised here:
   (`test_install_then_uninstall_leaves_the_home_as_it_was`), so "removes
   exactly what it added" is checked on every run of the suite, not just meant.
   A link you repointed yourself is left alone, because it is yours now.
+
+</details>
 
 To see a removal before it happens:
 
@@ -420,7 +488,8 @@ records what it added, and removes exactly that on request, nothing you
 already had. A run that stops at the first step is just as useful, because
 where it stops is the finding.
 
-On a Mac:
+<details>
+<summary>On a Mac</summary>
 
 ```sh
 git clone https://github.com/tydude001/proofcut
@@ -436,7 +505,10 @@ missing. `bash proofcut/scripts/mac_trial.sh --uninstall` runs `proofcut
 setup --uninstall` and deletes that folder.
 Then [file the report](https://github.com/tydude001/proofcut/issues/new?template=mac-test.yml).
 
-On Windows, from PowerShell:
+</details>
+
+<details>
+<summary>On Windows, from PowerShell</summary>
 
 ```powershell
 git clone https://github.com/tydude001/proofcut
@@ -449,6 +521,8 @@ renderer and whisper your PC is missing. Nothing is installed system-wide
 and it needs no administrator rights. The same command with `-Uninstall`
 runs `proofcut setup --uninstall` and deletes that folder. It puts `proofcut-windows-report.zip` on
 your Desktop with your home folder's name taken out; [file the report](https://github.com/tydude001/proofcut/issues/new?template=windows-test.yml).
+
+</details>
 
 ## Requirements
 
@@ -476,8 +550,9 @@ build, which renders with no display at all;
 | **whisper** | word-timed transcription (30+ languages), render verification | Any `openai-whisper` install. `uv tool install --python 3.12 openai-whisper` is the short route (3.12 because torch's Intel-Mac builds stop there, and on an Intel Mac also `--with 'numpy<2'`, which that last torch needs); add `--torch-backend cpu` without an NVIDIA GPU (1.9 GB instead of 5.5 GB). Found via `PROOFCUT_WHISPER`, then `PATH`. The CPU build transcribed the demo's 19-second voiceover in 33 seconds. |
 | **MLT (`melt`)** | layered renders (b-roll, cards, music) | Your distribution's MLT package (`mlt` on Fedora, whose `melt` package is an unrelated compression tool), or Kdenlive, whose flatpak copy is found automatically. `PROOFCUT_MELT` overrides both. |
 
-Optional. Each unlocks one feature, `proofcut doctor` reports whether it is
-available, and everything else works without it:
+<details>
+<summary>Optional. Each unlocks one feature, <code>proofcut doctor</code> reports whether it is
+available, and everything else works without it</summary>
 
 | Optional | Unlocks | Notes |
 |---|---|---|
@@ -487,43 +562,17 @@ available, and everything else works without it:
 | **`PROOFCUT_FACE`** | `reframe-detect` (face-aware crops) | The python of a venv with insightface, onnxruntime and opencv-python. |
 | **`PROOFCUT_TTS`**, **`PROOFCUT_TTS_MODEL`**, **`PROOFCUT_TTS_VOICE`** | `vo-synth` (a line in a cloned voice) | A python with qwen-tts and a CUDA torch, a local Qwen3-TTS snapshot, and a directory holding a reference clip of the voice. There is no default voice, on purpose. |
 
+</details>
+
 ## Working on proofcut
 
-Whether you're a person or a coding agent, start with
-[CLAUDE.md](https://github.com/tydude001/proofcut/blob/main/CLAUDE.md). It holds the rules and the traps this repo has
-already hit, and Claude Code loads it automatically.
-[CONTRIBUTING.md](https://github.com/tydude001/proofcut/blob/main/CONTRIBUTING.md) is the short version a pull request is
-checked against, and [SECURITY.md](https://github.com/tydude001/proofcut/blob/main/SECURITY.md) says how to report a
-vulnerability.
-
-Where things live:
-
-| Path | What it is |
-|---|---|
-| `src/proofcut/ops.py` | Every operation. The MCP tools, the CLI and the web UI all call these. |
-| `src/proofcut/server.py` | The MCP server. Register tools with `@_tool()`, never `@mcp.tool()`. |
-| `src/proofcut/cli.py` | The `proofcut` command: one subcommand per tool, printing JSON. |
-| `src/proofcut/webui.py`, `src/proofcut/web/` | The workspace. It posts to `ops` and renders what comes back; it never decides anything itself. |
-| `src/proofcut/project.py`, `timeline.py` | The project manifest (`proofcut.json`) and the OTIO timeline. |
-| `tests/` | `test_server_stdio.py` drives a real `proofcut mcp` subprocess; `test_webui_http.py` a real socket. |
-| `scripts/` | The demo maker, the Mac and Windows trial kits, screenshot capture. |
-| `docs/` | The manual, the demo, and the design record (below). |
-
-Run the checks:
-
-```sh
-uv sync
-uv run ruff check .      # never `ruff format`; see CONTRIBUTING.md
-uv run pytest
-```
-
-The suite talks to a real `proofcut mcp` subprocess, so it is slower than a
-pure unit suite. Tests that need whisper, auto-editor, melt or ImageMagick
-skip when the tool is missing. Tests that render through `melt` also need a
-display: on a headless machine use `QT_QPA_PLATFORM=offscreen` or `xvfb-run
--a` (`proofcut doctor` tells you which your MLT needs). Without one they fail
-with "no display for MLT's Qt module to open", which is the environment, not a
-regression.
+[CONTRIBUTING.md](https://github.com/tydude001/proofcut/blob/main/CONTRIBUTING.md)
+is where to start: where things live, how to run the checks, and the rules a
+pull request is checked against. A coding agent starts with
+[CLAUDE.md](https://github.com/tydude001/proofcut/blob/main/CLAUDE.md), which
+Claude Code loads automatically and which holds the traps this repo has
+already hit. [SECURITY.md](https://github.com/tydude001/proofcut/blob/main/SECURITY.md)
+says how to report a vulnerability.
 
 The documentation:
 
