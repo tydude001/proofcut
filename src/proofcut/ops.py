@@ -30,7 +30,7 @@ from fractions import Fraction
 from itertools import pairwise
 from math import ceil, gcd, hypot
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from proofcut import (
     asr,
@@ -335,6 +335,78 @@ def _repeats(parsed: tx.Transcript) -> list[dict[str, Any]]:
     for item in repeats:
         item.update(_context(parsed, item["first_word"], item["last_word"]))
     return repeats
+
+
+class _CutWord(NamedTuple):
+    """A word the cut plays, in timeline seconds, with its source address."""
+
+    start: float
+    end: float
+    clip_id: str
+    text: str
+    index: int
+
+
+def _cut_repeats(project: Project, transcripts: dict[str, tx.Transcript]) -> dict[str, Any] | None:
+    """The words the cut plays, checked against themselves before any render.
+
+    `_repeats` reads a source and `verify` reads a render, and neither sees a
+    retake the *edit* kept: attach-time `repeats` names it once and nothing
+    asks again after the cut, and `verify` files a line the edit says twice
+    under `repeats_expected`, never a fault — correctly, since the edit said
+    it. This is that expectation read on its own, before a render is paid
+    for (resolve-mcp's `virtual_transcript`, COMPETITORS.md § DaVinci Resolve
+    drivers). Not a verdict, `find_adjacent_repeats`' own caveat: a callback
+    line reads the same as a kept retake.
+
+    The timeline's own words only, `captions.place`'s placement with the
+    source address kept, the never-spoken marks and a retime's muted spans
+    taken out the way `_expected_timed` takes them — a sound's words are not
+    the cut's, and have no word index to cut by. `None` with no timeline.
+    """
+    if not project.timeline_path.exists():
+        return None
+    edit = _load_edit(project)
+    spoken, _ = _spoken_transcripts(project, transcripts)
+    placed: list[_CutWord] = []
+    for clip_id, transcript in spoken.items():
+        for word in transcript.words:
+            span = edit.timeline_span(clip_id, word.start, max(word.end, word.start + captions.MIN_WORD))
+            if span is not None:
+                placed.append(_CutWord(span[0], span[1], clip_id, word.text, word.index))
+    placed.sort(key=lambda w: (w.start, w.end))
+    placed, _ = _unmuted(_project_warp(project, edit), placed)
+
+    # `find_adjacent_repeats` reads tokens, and a word can be several or none.
+    owners: list[_CutWord] = []
+    tokens: list[str] = []
+    for word in placed:
+        for token in vfy.tokens([word.text]):
+            tokens.append(token)
+            owners.append(word)
+
+    def side(at: int, text: str) -> dict[str, Any]:
+        first, last = owners[at], owners[at + len(text.split()) - 1]
+        return {
+            "text": text,
+            "clip_id": first.clip_id,
+            "first_word": first.index,
+            # A run across two clips has no one range to cut by.
+            "last_word": last.index if last.clip_id == first.clip_id else None,
+            "timeline_start": first.start,
+        }
+
+    return {
+        "words": len(placed),
+        "repeats": [
+            {
+                "first": side(r["first_word"], r["first_text"]),
+                "second": side(r["second_word"], r["second_text"]),
+                "similarity": r["similarity"],
+            }
+            for r in vfy.find_adjacent_repeats(tokens)
+        ],
+    }
 
 
 def attach_transcript(
@@ -746,6 +818,11 @@ def transcript_checks(path: Path | str, clip_id: str | None = None) -> dict[str,
     hunting down the original whisper JSON, so the checks are addressable on
     their own.
 
+    `cut` is the fifth, and the only one that reads the edit rather than the
+    source: `_cut_repeats` over the words the timeline plays, so a retake the
+    cut kept is named before a render rather than excused by `verify` after
+    one. `None` before a timeline is seeded.
+
     Reads only — nothing here writes to the project, which is what makes it
     safe to run over a finished cut.
     """
@@ -760,8 +837,9 @@ def transcript_checks(path: Path | str, clip_id: str | None = None) -> dict[str,
         ]
 
     clips = []
+    parsed_by_clip: dict[str, tx.Transcript] = {}
     for cid in wanted:
-        parsed = _transcript(project, cid)
+        parsed = parsed_by_clip[cid] = _transcript(project, cid)
         clips.append(
             {
                 "clip_id": cid,
@@ -772,7 +850,7 @@ def transcript_checks(path: Path | str, clip_id: str | None = None) -> dict[str,
                 "repeats": _repeats(parsed),
             }
         )
-    return {"clips": clips}
+    return {"clips": clips, "cut": _cut_repeats(project, parsed_by_clip)}
 
 
 # -- speaker attribution ----------------------------------------------------

@@ -393,6 +393,13 @@ proofcut transcript-checks                      # every clip with a transcript
 proofcut transcript-checks vo                   # just this one
 ```
 
+The same call also checks the cut. `cut` runs the repeat finder over the words
+the timeline plays, so a retake the edit kept both takes of shows up before a
+render rather than after one. Each hit names both sides' clip and word range,
+ready to cut. They are candidates: on the approved Scream cut it named 20,
+and nearly all were the script repeating itself on purpose ("the first 12
+minutes … the best 12 minutes").
+
 Finding one is not removing it, and the removing is settled by the render
 rather than by reading — nine invented words in 44 seconds of the Scream VO,
 one of which reads as perfect English. `unspoken` marks a word the recording

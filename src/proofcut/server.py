@@ -2850,7 +2850,13 @@ def transcript_checks(path: ProjectPath = None,
     read as ordinary English, so a human proofread finds some and is blind to
     the rest. `repeats` catches the other shape a retake takes: one that
     survived transcription as distinct, cleanly-timed duplicated words rather
-    than as an interleaved seam. Reads only; it never writes.
+    than as an interleaved seam.
+
+    `cut` runs the repeat finder over the words the timeline plays, so a
+    retake the edit kept is named before a render: each side's `clip_id`
+    and word range, ready for cut_by_transcript. Candidates, not verdicts:
+    a line written to repeat reads the same. `None` before seeding. Reads
+    only; it never writes.
     """
     return ops.transcript_checks(path, clip_id)
 
