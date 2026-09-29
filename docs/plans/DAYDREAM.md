@@ -7,7 +7,7 @@ throughout; nothing in it was rewritten for the rename (HISTORY.md § The rename
 feature set and the look/feel.** This is the one document for that work: what
 Daydream actually is (observed, not recalled), the design system to copy, the
 feature-by-feature map against lucid's shipped code, the detailed design notes
-per feature, and the build order. PLAN.md and PRIOR-ART.md point
+per feature, and the build order. PLAN.md and COMPETITORS.md point
 here rather than restating any of it.
 
 Three lucid constraints do not move, and where a Daydream behaviour conflicts,
@@ -35,7 +35,7 @@ pixel-testimony. The MCP tool schema remains unpublished anywhere on the site;
 everything below about tools is workflow-level, from their docs' prose.
 
 Older evidence — what Daydream is as a *competitor* (macOS-only, closed
-source, pricing-vs-privacy tension) — stays in PRIOR-ART.md § Daydream.
+source, pricing-vs-privacy tension) — stays in COMPETITORS.md § Daydream.
 
 ---
 

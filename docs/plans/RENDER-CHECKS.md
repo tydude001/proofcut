@@ -1,6 +1,6 @@
 # RENDER-CHECKS — frozen and silent spans in a render — 2026-09-20
 
-Provenance: PRIOR-ART.md § The re-check before Show HN found that OpenChatCut's
+Provenance: COMPETITORS.md § The re-check before Show HN found that OpenChatCut's
 `verify_export` and CutPilot's `visual-qa-engine.mjs` both scan a render for
 frozen video and long silences, and that proofcut does neither. This file is the
 measurement that came before any design, and the design it supports. **No code

@@ -1,6 +1,6 @@
 # Undoing an agent's turn as one decision
 
-Written 2026-09-20, off PRIOR-ART.md § OpenChatCut (its `begin_edit_session` /
+Written 2026-09-20, off COMPETITORS.md § OpenChatCut (its `begin_edit_session` /
 `review_edit_session` lands an agent's edits as a single undo step). Design
 steps 1–2 were built the same day; step 3 is not. Status of the work lives in
 the wiki, not here.

@@ -12,7 +12,7 @@ the answer, written as a plan. Sources: a native rebuild of Lambs/Longlegs v10
 (HISTORY.md § The Lambs/Longlegs native rebuild), a measurement of MLT's
 retime and easing (`~/proofcut-work/spikes/mlt-retime/FINDINGS.md`), and a
 prior-art survey of screen-recording editors
-(`~/proofcut-work/spikes/screen-mode/PRIOR-ART.md`).
+(`~/proofcut-work/spikes/screen-mode/COMPETITORS.md`).
 
 **The finding that frames it: the two claims cost very different amounts.**
 The essays are mostly proofcut already, and the native rebuild of v10 turned
@@ -158,7 +158,7 @@ measured). What remains of this step is the posting.
 
 ### What the field does, and the opening
 
-`PRIOR-ART.md`: every screen-recording editor surveyed (Screen Studio, Cap,
+`COMPETITORS.md`: every screen-recording editor surveyed (Screen Studio, Cap,
 Cursorful, Canvid, FocuSee, Camtasia, …) authors zoom as **segments** — start,
 end, target, easing — and speed as a **constant per segment**; only MLT and
 Remotion do a real ramp. Every auto-zoom decision found is made from clicks and
@@ -608,7 +608,7 @@ second where the preview's playback begins, plays at 1x, and its audio plays.
 9. **B5's open question — b-roll under a stretch — is closed as built**
    (recommended). A picture cue over a stretch speeds up with the film
    (HISTORY.md § Retime, built). The screen editors surveyed set a constant
-   speed per segment (PRIOR-ART.md), and B7 has no b-roll to argue
+   speed per segment (COMPETITORS.md), and B7 has no b-roll to argue
    otherwise. It reopens when a film shows b-roll that should hold 1x.
 
 Name: `inset` (`inset add/list/remove`, tools `inset_add` …).

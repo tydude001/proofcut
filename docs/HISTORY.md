@@ -9851,7 +9851,7 @@ file is named for it and an unexplained filename would be worse.
 
 Three docs asserted the old framing in the present tense and were fixed the
 same way HISTORY's own corrections work — PLAN.md § The third pass and
-PRIOR-ART.md's intro, its Daydream `##` (cited only as `§ Daydream`, so the
+COMPETITORS.md's intro, its Daydream `##` (cited only as `§ Daydream`, so the
 prefix still resolves) and its mindshare note. And the Corrections entry
 "Daydream hands off finishing work, same as lucid would" still carried an open
 action — *the clause is false and needs correcting* — for a clause cut in
@@ -12114,7 +12114,7 @@ and relicensing after the fact is the HashiCorp shape.
 
 The question was how lucid could earn anything rather than simply going
 public, and the honest answer is that the code is not what anyone would pay
-for. The field (PRIOR-ART.md) sells hour-metered subscriptions on a Mac app
+for. The field (COMPETITORS.md) sells hour-metered subscriptions on a Mac app
 or open-core over a closed renderer; nobody sells a Linux command-line tool,
 and lucid's own install story is `doctor` over a flatpak's melt and a
 hand-installed whisper. What the repo has that is worth something is the
@@ -14558,7 +14558,7 @@ NATIVE.md § Part B: MLT's `timeremap` rendered a 1x/6x/1x map on 150 of 150
 frames, its easing operators match their curves within 0.5 px, and a `length`
 on a remap chain freezes it on frame 0 at exit 0
 (`~/proofcut-work/spikes/mlt-retime/FINDINGS.md`). The survey behind it is
-`~/proofcut-work/spikes/screen-mode/PRIOR-ART.md`.
+`~/proofcut-work/spikes/screen-mode/COMPETITORS.md`.
 
 ## The Scream native rebuild — 2026-09-15
 
@@ -15644,7 +15644,7 @@ session, not by reading a tool body.
 ## Stop reaches the render, and `batch` was measured — 2026-09-16
 
 The two defects § The MCP surface, rebuilt for deferred loading left alone,
-fixed, and the one PRIOR-ART.md lead that could be settled by counting.
+fixed, and the one COMPETITORS.md lead that could be settled by counting.
 
 - **Stop kills the encode.** `progress.cancellable(event)` installs a cancel
   event beside the reporter, and `RenderJob` runs its pipeline under it.
@@ -15676,7 +15676,7 @@ fixed, and the one PRIOR-ART.md lead that could be settled by counting.
   was not selected, so the button was zero-sized. The harness refused the
   click, and both renders ran to completion.
 - **`batch` is not worth building yet.** NeuroCut's one-call bundle of ops
-  (PRIOR-ART.md § Glama's related servers) was measured on the recorded
+  (COMPETITORS.md § Glama's related servers) was measured on the recorded
   trial transcripts (`~/proofcut-work/spikes/batch-measure/measure_batch.py`).
   A turn counts as removable when it sits in a run of consecutive turns
   whose calls all mutate, with no error between them. Chains that contain a
@@ -15694,7 +15694,7 @@ fixed, and the one PRIOR-ART.md lead that could be settled by counting.
 
 ## `changes`: what the last edits did — 2026-09-16
 
-PRIOR-ART.md § The OTIO + MCP niche named chaoz23/otio-diff as the "what did
+COMPETITORS.md § The OTIO + MCP niche named chaoz23/otio-diff as the "what did
 the agent just change?" primitive, and proofcut had nothing like it: `undo`
 was the only history tool, and it only rolls back. `changes` (CLI
 `proofcut changes [--steps N]`, read-only) answers what `undo` N times would
@@ -15824,7 +15824,7 @@ because `Project.open` refuses it before `restore` runs. The copy in
 here and not fixed: nothing in proofcut can produce such a manifest any
 more.
 
-**The prior-art survey was re-checked in full before Show HN** (PRIOR-ART.md
+**The prior-art survey was re-checked in full before Show HN** (COMPETITORS.md
 § The re-check before Show HN). OpenChatCut now ships `verify_export`, a
 structural check of the render: duration within a tolerance, resolution,
 fps, black, frozen and silent spans. So "checks its own render" no longer
@@ -15836,7 +15836,7 @@ built already: the Edit lanes' drag-trim handles and the cut tools' `pad`.
 
 ## `proofcut setup`, built — 2026-09-16
 
-PRIOR-ART.md § FableCut, read called install the gap most likely to cost
+COMPETITORS.md § FableCut, read called install the gap most likely to cost
 proofcut a stranger. docs/plans/INSTALL.md planned the fix off measurements
 made the same day, and Tyler took all four of its decisions: Linux goes
 ahead of LAUNCH.md's install-script gate, the installer is a subcommand,
@@ -17623,7 +17623,7 @@ is less left to find than in run three.
 
 ## Embedding the footage did not pick the b-roll — 2026-09-20
 
-PRIOR-ART.md § Seven repos a new stargazer had starred left one question open:
+COMPETITORS.md § Seven repos a new stargazer had starred left one question open:
 sentrysearch embeds footage as video and matches a text query against it, which
 skips the lexical step § Choosing the b-roll measured at 2 of 25. The test was
 preregistered in docs/plans/FOOTAGE-EMBED.md before it ran, and it **failed its
@@ -17745,7 +17745,7 @@ the last place to read current state from. The bullet now says so.
 
 ## Undo takes steps, and a corrupt manifest names its snapshot — 2026-09-20
 
-Two items from PRIOR-ART.md's survey, built the day it was read; the ones it
+Two items from COMPETITORS.md's survey, built the day it was read; the ones it
 held are marked beside their bullets there.
 
 **A corrupt `proofcut.json` names the snapshot that recovers it** (CutPilot's
@@ -17807,7 +17807,7 @@ tests are `tests/test_trial_stutter.py`.
 
 ## The safe-zone guide, drawn — 2026-09-20
 
-The first item harvested from PRIOR-ART.md § OpenCut, read in full: `graphics.
+The first item harvested from COMPETITORS.md § OpenCut, read in full: `graphics.
 SAFE_ZONES` had been report-only data since the channel pack, measured against
 a card's ink by `card_safe_zones` and drawn nowhere. The preview now draws one
 platform's reserved bottom band and action rail over `#frame`, from a toggle
@@ -18007,7 +18007,7 @@ the dead gate, and the date lives only in the wiki row.
 
 ## A render knows which edit it was made from — 2026-09-21
 
-kinocut's "Video Receipt" (PRIOR-ART.md § kinocut), at its cheapest. Of what
+kinocut's "Video Receipt" (COMPETITORS.md § kinocut), at its cheapest. Of what
 the survey still held open, this was ranked first on a failure proofcut has
 already had four times: a project holding the wrong cut while `verify`,
 `check_frames` and the render all agreed with it (CLAUDE.md, the
@@ -18882,7 +18882,7 @@ agent.
 
 ## Bookmarks on the ruler — 2026-09-26
 
-The one OpenCut harvest candidate the scripted pass settled (PRIOR-ART.md §
+The one OpenCut harvest candidate the scripted pass settled (COMPETITORS.md §
 OpenCut classic, driven), built on Tyler's call. **A bookmark is an event
 named `bookmark`** (`ops.BOOKMARK_EVENT`), not a new store: it sits in the
 clip's own source seconds, so no cut moves it, a derivation inherits it,

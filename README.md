@@ -535,7 +535,7 @@ proofcut's reasoning is part of what it ships, so the design record is public:
 - [PLAN.md](https://github.com/tydude001/proofcut/blob/main/docs/PLAN.md): architecture, stack decisions, open questions.
 - [HISTORY.md](https://github.com/tydude001/proofcut/blob/main/docs/HISTORY.md): the dated record of what shipped and what the
   evidence said.
-- [PRIOR-ART.md](https://github.com/tydude001/proofcut/blob/main/docs/PRIOR-ART.md): what else exists in this space, and what
+- [COMPETITORS.md](https://github.com/tydude001/proofcut/blob/main/docs/COMPETITORS.md): what else exists in this space, and what
   proofcut does that they don't.
 - [NEXT.md](https://github.com/tydude001/proofcut/blob/main/docs/NEXT.md): the directions after the queues closed, ranked.
 - [TRIAL.md](https://github.com/tydude001/proofcut/blob/main/docs/TRIAL.md): an agent cutting a video end to end, unattended

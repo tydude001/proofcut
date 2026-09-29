@@ -1,6 +1,6 @@
 """`changes` — what the last mutations did, read off the undo history.
 
-PRIOR-ART.md § The OTIO + MCP niche names otio-diff as the "what did the agent
+COMPETITORS.md § The OTIO + MCP niche names otio-diff as the "what did the agent
 just change?" primitive. proofcut already keeps every pre-state in
 `cache/history/`, so the op compares a snapshot against the live project and
 stores nothing. What is asserted here: a cut reads as the words it removed and

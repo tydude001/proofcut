@@ -3,7 +3,7 @@
 Architecture, stack decisions, and open questions live in [PLAN.md](docs/PLAN.md).
 The build order and the rationale behind it is PLAN.md § Direction and
 order. The competitor/dependency survey behind those decisions is in
-[PRIOR-ART.md](docs/PRIOR-ART.md). The dated record of what shipped and what the
+[COMPETITORS.md](docs/COMPETITORS.md). The dated record of what shipped and what the
 evidence said — including the first real video's findings — is
 [HISTORY.md](docs/HISTORY.md). The Daydream parity plan — the product observed,
 its design system, the feature map and its build order — is
@@ -69,7 +69,7 @@ How a stranger gets from a bare machine to a checked render — doctor's
 advice corrected, a no-sudo Linux installer that fills only doctor's ✗s,
 where it lives, the PyPI name, and why Linux goes ahead of LAUNCH.md's
 install-script gate — is [docs/plans/INSTALL.md](docs/plans/INSTALL.md),
-written 2026-09-16 off PRIOR-ART.md's FableCut read and built for Linux the
+written 2026-09-16 off COMPETITORS.md's FableCut read and built for Linux the
 same day (HISTORY.md § `proofcut setup`, built). It measured **Shotcut's
 portable Linux melt drawing with no X server**, where both distro MLTs need
 `xvfb-run`.

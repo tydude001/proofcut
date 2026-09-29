@@ -1,6 +1,6 @@
 # proofcut — the install plan: a bare machine to a checked render
 
-Provenance: PRIOR-ART.md § FableCut, read names install as "the gap most
+Provenance: COMPETITORS.md § FableCut, read names install as "the gap most
 likely to cost proofcut a stranger". FableCut is `node server.js`; proofcut is
 uv plus four programs from four places. Tyler asked on 2026-09-16 to plan
 closing it. Sources: HISTORY.md § A stranger's install, on a clean Ubuntu,

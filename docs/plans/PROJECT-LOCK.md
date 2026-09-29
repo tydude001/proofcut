@@ -1,6 +1,6 @@
 # One agent per project: the project lock
 
-Written 2026-09-21, off PRIOR-ART.md § Glama's related servers (CutPilot's
+Written 2026-09-21, off COMPETITORS.md § Glama's related servers (CutPilot's
 `project-store.mjs` keeps a lock directory that expires) and TRIAL.md § 4.
 Built 2026-09-22; HISTORY.md § The project lock, built is the record. Status of the work lives in the wiki
 (`README.md` Open items, `proofcut-project-lock`), not here.

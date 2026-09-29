@@ -5,7 +5,7 @@ order of work. Decisions that get made move out of "Open questions" into
 "Decisions", with the reasoning that settled them.
 
 The other layers are elsewhere and this file cites rather than restates them:
-competitor and dependency research in [PRIOR-ART.md](PRIOR-ART.md); the dated
+competitor and dependency research in [COMPETITORS.md](COMPETITORS.md); the dated
 record of what shipped and what the evidence said in [HISTORY.md](HISTORY.md);
 the Daydream parity program in [docs/plans/DAYDREAM.md](plans/DAYDREAM.md); status
 in the wiki's Open items table.
@@ -31,7 +31,7 @@ written by a newer proofcut is refused rather than silently misread.
 ### What lucid is, stated narrowly
 
 Most of the MVP tool surface exists elsewhere already — see
-[PRIOR-ART.md](PRIOR-ART.md), particularly auto-editor. Three things were
+[COMPETITORS.md](COMPETITORS.md), particularly auto-editor. Three things were
 believed not to, and they were the original reason this project exists.
 Everything else is plumbing to make them usable:
 
@@ -51,7 +51,7 @@ to an existing tool, shell out. Reimplementation is only justified where one of
 the three above requires it.
 
 **The second survey sweep weakened this thesis.** OpenChatCut (see
-[PRIOR-ART.md](PRIOR-ART.md)) plausibly covers all three: word-level text-based
+[COMPETITORS.md](COMPETITORS.md)) plausibly covers all three: word-level text-based
 cuts, persistent projects with undo, and a real MCP endpoint with a
 proposal/review workflow. What it does not cover is the *form factor*: it is an
 Electron desktop app whose MCP endpoint requires the GUI process, with a custom
@@ -70,7 +70,7 @@ b-roll search, motion graphics, multi-format export — implying OpenChatCut's
 dependency scale rather than a Python package and three subprocesses. It is
 also a full desktop NLE that renders in-app, which falsified the README's
 claim that it hands finishing work off the way proofcut does. Evidence in
-[PRIOR-ART.md](PRIOR-ART.md) § Daydream.
+[COMPETITORS.md](COMPETITORS.md) § Daydream.
 
 What it cannot do is stand in for a trial. There is no Linux build, so unlike
 OpenChatCut it cannot be run on this box at all — the differentiators above are
@@ -127,7 +127,7 @@ a real VO before assuming it needs proofcut's architecture underneath.
 | `add_captions` | ffmpeg + ASS | word-timed, styled via a small preset set; sidecar `.ass` by default, burn-in opt-in. Built 2026-08-07 — HISTORY.md § Captions came out of the timeline, not the transcript |
 | `render` | OTIO → auto-editor v3 | a mapping layer, not a renderer — see the render decision below |
 | `verify` | openai-whisper + difflib + ffmpeg | not in the original surface. Transcribe the finished render and diff it against the words the timeline should play — the only check that catches a retake the transcript never contained. Added after the dogfood found two of them in a shipped render. Built 2026-08-07 — HISTORY.md § `verify` checks the render, because the transcript cannot. `--windowed` (a second reading in short overlapping windows, `asr.py`) and `loud_gaps` (the energy envelope, `energy.py` — the only check that answers to no transcript) followed the same day — HISTORY.md § `verify --windowed`, and what the Scream exports actually said |
-| `export_otio` | OTIO adapters | Lower urgency than it looks: auto-editor already exports six NLE formats via subprocess, and on Linux the ones that actually land are MLT (kdenlive/shotcut) — free Resolve decodes no H.264/AAC, so FCPXML only pays off for pre-transcoded footage. See PRIOR-ART.md |
+| `export_otio` | OTIO adapters | Lower urgency than it looks: auto-editor already exports six NLE formats via subprocess, and on Linux the ones that actually land are MLT (kdenlive/shotcut) — free Resolve decodes no H.264/AAC, so FCPXML only pays off for pre-transcoded footage. See COMPETITORS.md |
 
 Deliberately absent from MVP: motion graphics (tier 1.5, Motion Canvas),
 b-roll generation, any GUI.
@@ -144,7 +144,7 @@ This rests on OTIO alone, which is narrower than it looks. Revisit if
 performance actually hurts, or if OTIO stops being the source of truth.
 
 **And it now rests on OTIO literally alone.** auto-editor turned out to be Nim
-(PRIOR-ART.md), and ASR turned out to be a subprocess too once it was built —
+(COMPETITORS.md), and ASR turned out to be a subprocess too once it was built —
 so of the three Python dependencies the paragraph above reasons from, one is
 left. The conclusion survives because it was always the load-bearing one, but
 "the stack is Python" is no longer a reason for anything.
@@ -164,7 +164,7 @@ left. The conclusion survives because it was always the load-bearing one, but
   (ctranslate2 4.8.1 through cp314 including free-threaded, onnxruntime 1.28.0
   through cp314, PyAV and tokenizers via abi3 wheels). Pinned in
   `pyproject.toml`; `uv` fetches 3.13. Wheel matrix in
-  [PRIOR-ART.md](PRIOR-ART.md). Revisit when OTIO publishes cp314 — and check
+  [COMPETITORS.md](COMPETITORS.md). Revisit when OTIO publishes cp314 — and check
   the matrix rather than assuming, since this pin was stale against its own
   revisit condition once already.
 - **`render` is a mapping layer, not a renderer.** There is no first-party
@@ -764,7 +764,7 @@ a Chrome `--app` window or Tauri is a day's work against a week's. The shell is
 deferred because it is cheap and reversible, not because it is unwanted.
 
 **And the asymmetry that makes any of this worth doing: Daydream has no Linux
-build.** PRIOR-ART.md § Daydream — no Windows or Linux build on the download
+build.** COMPETITORS.md § Daydream — no Windows or Linux build on the download
 page, docs or FAQ. On this box the competitor cannot run at all.
 
 ### The design — panes, endpoints, and what each one is not allowed to do
@@ -4842,7 +4842,7 @@ end-screen row — belongs to that repo, not this queue.
 
 ## Blur-fill — the design note — 2026-09-16
 
-PRIOR-ART.md § Glama's related servers found blur-fill in vidcut, and it is
+COMPETITORS.md § Glama's related servers found blur-fill in vidcut, and it is
 the usual vertical-video treatment proofcut does not have. A shot whose
 aspect does not match the canvas is drawn *contained*, and a blurred,
 darkened copy of the same moment, scaled to *cover* the canvas, fills the

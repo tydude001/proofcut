@@ -11008,7 +11008,7 @@ def test_caption_span_style_arrives_as_an_object_over_the_wire(tmp_path: Path) -
 def test_a_bookmark_is_added_at_an_edit_second_and_removed_over_stdio(tmp_path: Path) -> None:
     """`events` with `time=` and `remove=` through the real server: the
     bookmark lands on the clip playing at that edit second, `timeline_view`
-    draws it, and `remove` takes it off. PRIOR-ART.md § OpenCut classic, driven."""
+    draws it, and `remove` takes it off. COMPETITORS.md § OpenCut classic, driven."""
     film = tmp_path / "tone.mp4"
     subprocess.run(
         ["ffmpeg", "-nostdin", "-v", "error", "-y",

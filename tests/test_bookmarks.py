@@ -5,7 +5,7 @@ A bookmark is an ordinary event, so it indexes the source: the properties
 pinned here are that `time=` finds the source instant under the playhead, that
 a cut hides a bookmark without losing it, that `remove` drops exactly one, and
 that the ruler draws bookmarks and not a recorder's keystrokes.
-PRIOR-ART.md § OpenCut classic, driven.
+COMPETITORS.md § OpenCut classic, driven.
 
 Built by hand, `test_ops_events.py`'s way: one 10s clip on a timeline with
 2.0-5.0 cut out of it, so edit second 3.0 is source second 6.0.

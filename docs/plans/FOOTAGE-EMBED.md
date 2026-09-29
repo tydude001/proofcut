@@ -1,6 +1,6 @@
 # Would embedding the footage pick the b-roll? — preregistered 2026-09-20
 
-The question PRIOR-ART.md § Seven repos a new stargazer had starred left open:
+The question COMPETITORS.md § Seven repos a new stargazer had starred left open:
 sentrysearch embeds footage *as video* and matches a text query against it, which
 skips the lexical step HISTORY.md § Choosing the b-roll measured at 2 of 25. Does
 that get anywhere `synopsis` does without a person writing the synopsis?

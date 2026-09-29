@@ -1,4 +1,12 @@
-# Prior art — the agent-driven video editing landscape
+# Competitors — the agent-driven video editing landscape
+
+Named `PRIOR-ART.md` until 2026-09-28, when it was renamed for what it had
+become: a watch on who else builds this, re-read as they move. The survey
+that began it was prior art in the planning sense, the survey done before the
+plan, and a few sections still read as that, auto-editor above all, which is
+a dependency as much as a rival. Every citation moved with it except
+docs/plans/RENAME.md's, whose counts were measured under the old name, and
+commits before the rename, which keep it.
 
 Survey conducted **2026-08-06**, in two sweeps the same day: the first missed
 the conversational-editor field entirely (see "Corrections"), and a second

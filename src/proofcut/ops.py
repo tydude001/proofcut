@@ -1332,7 +1332,7 @@ EVENT_ECHO = 3
 #: playhead through `events(time=)`, and `timeline_view` draws only these —
 #: a recorder's keystrokes are events too, hundreds of them, and a ruler is
 #: not a list. A bookmark is an ordinary event, so it indexes the source and
-#: no cut moves it. PRIOR-ART.md § OpenCut classic, driven.
+#: no cut moves it. COMPETITORS.md § OpenCut classic, driven.
 BOOKMARK_EVENT = "bookmark"
 
 #: A value this large is a wall-clock stamp, not a second into a recording —

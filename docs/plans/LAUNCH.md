@@ -394,7 +394,7 @@ test issue is pinned.
 
 "An MCP server that edits video" is **not** a category of one. The
 awesome-mcp-servers Multimedia section holds several on 2026-09-12, FableCut
-(667★, a browser NLE an agent drives live) and kinocut among them. PRIOR-ART.md
+(667★, a browser NLE an agent drives live) and kinocut among them. COMPETITORS.md
 had said so on 2026-08-25, before this sentence claimed the opposite. The MCP
 ecosystem is still the channel whose audience wants the shape, but a listing
 has to say what proofcut does that the line above it does not. What each
@@ -516,7 +516,7 @@ commenter could point at it. What nothing else found does is **transcribe the
 render and diff its words against the cut**, and the title now names that
 mechanism rather than the general claim. "Local-first" came out to fit 80
 characters; the first comment's opening sentence carries it.
-PRIOR-ART.md § The re-check before Show HN.
+COMPETITORS.md § The re-check before Show HN.
 
 **Retitled a third time 2026-09-21**, before posting, off "…an AI video
 editor that transcribes its render to check it": two pronouns made it hard
@@ -630,7 +630,7 @@ reasoning if anyone wants it, and it is public.
   no transcript addressing, and its export runs in the open browser tab — so
   its agent cannot render or check a cut on its own. Credit both, and concede
   FableCut's hand editing and its one-command install, which are real.
-  LISTINGS.md § kinocut's gate, read; PRIOR-ART.md § FableCut, read.
+  LISTINGS.md § kinocut's gate, read; COMPETITORS.md § FableCut, read.
 - *"Isn't this just a wrapper around ffmpeg?"* — yes, and around six other
   things, and the value is that an agent can drive them and *verify the
   result*: `verify`, `check_frames`, `film_check`. Point at the clip's last

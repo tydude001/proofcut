@@ -31,7 +31,7 @@ of `project.otio` and the manifest as that stage found them** (`stamp`).
 Only `export` and `burn` read the project; `check_frames` and `verify` read
 the render. It sits beside `stages` rather than inside each stage's dict, so
 a stage reads exactly as it did before stamps existed, and `amend` carries it
-forward the way it carries `stages`. It is kinocut's receipt idea at its cheapest (PRIOR-ART.md § kinocut),
+forward the way it carries `stages`. It is kinocut's receipt idea at its cheapest (COMPETITORS.md § kinocut),
 and it answers the question a render lying on disk otherwise cannot: which
 edit is this? A dogfood project has held the wrong cut while every check
 passed four times (CLAUDE.md), and each time the render was settled by length

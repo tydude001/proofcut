@@ -1,6 +1,6 @@
 # Could a person's own picks pick the b-roll? — checked 2026-09-20, not built
 
-PRIOR-ART.md § Seven repos a new stargazer had starred held one idea for a
+COMPETITORS.md § Seven repos a new stargazer had starred held one idea for a
 design note: **B-Roll-Finder's learned trims.** Re-importing the user's edited
 XML records their in and out points per clip (`clip_library.py:490-512`) — a
 human's pick, kept, as signal for the next one. Read, not run. proofcut already
