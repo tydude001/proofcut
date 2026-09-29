@@ -18936,3 +18936,33 @@ the tick is cut, and so is the name. The rules and colours are
   mode. The favicon is also the MCP server's icon (`server._icons`), so the
   registry listing changes with it.
 - Not trademark-searched, and no print colours yet.
+
+## Four ideas from the competitor survey, built — 2026-09-28
+
+COMPETITORS.md's "worth taking" lines, read against the code: four were
+missing and small, and were built; two were checked and are not needed.
+
+- **A kept retake, named before a render** (resolve-mcp's
+  `virtual_transcript`). `transcript_checks` returns `cut`: the repeat finder
+  over the words the timeline plays, each side with its clip and word range.
+  `verify` had filed a line the edit says twice as expected, never a fault,
+  so nothing named a retake the cut kept. On the approved Scream cut it
+  named 20 candidates and nearly all were the script repeating itself on
+  purpose, so the count stays out of `finish_report`.
+- **A graphic's page gets a clock only a seek moves** (hyperframes).
+  `browser.CLOCK` replaces `Date`, `performance.now` and
+  `requestAnimationFrame` before the page's scripts run. Control: a rAF page
+  read 69 ms at a 0.3 s seek without it and 300 ms with it. `CAPTURE_VERSION`
+  is 2, so every cached capture redraws once.
+- **A capture that drew nothing is refused** (hyperframes' liveness probe),
+  but only when every frame matches the empty tab: an intro may open empty
+  on purpose, which the first-frame form would refuse.
+- **A render-log line names its bytes and its tools** (kinocut's receipt):
+  `output_sha256`, and `tools` with proofcut's, melt's and ffmpeg's
+  versions. The flatpak melt is named by `flatpak info`, never launched.
+- **Not built:** palmier-pro's stale-index refusal, because proofcut's word
+  indices address the source and cuts commute (measured); and its per-edit
+  delta, which is `changes`.
+
+The suite: 2865 passed and one web-UI import test timed out at a load
+average of 50 to 89; alone it passed in 0.8 s.
