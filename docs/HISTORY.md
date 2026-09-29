@@ -18966,3 +18966,31 @@ missing and small, and were built; two were checked and are not needed.
 
 The suite: 2865 passed and one web-UI import test timed out at a load
 average of 50 to 89; alone it passed in 0.8 s.
+
+## The Mac melt crash, found — 2026-09-28
+
+mac-demo failed on Apple Silicon on 2026-09-28 (run 36512048924). The failure
+came at frame 18: melt crashed three times in a row, which used up both
+retries. A retry sized as 1 in 8,000 shouldn't fail in 1 of 6 runs, so the
+soak ran again on `a080e30`. It read 0 of 30 failed on both runners, but
+nine crashes sat under that number: 8 on Apple Silicon and 1 on Intel, all
+thrown away and re-run. Two of them came 2 seconds apart.
+
+**The cause.** All nine crash reports have the fault from § The Mac melt
+crash: `cache_object_close`'s `sprintf(key, "%p", …)` dies in `localeconv_l`
+at `0x48`. What the first read missed is that in every report another
+thread is inside `setlocale()`, called from `mlt_property_get_string_l_tf`
+through `mlt_properties_copy` in `producer_get_frame`. When a property has a
+numeric locale and no string yet, that function calls
+`setlocale(LC_NUMERIC, …)` around its own `sprintf` and then restores it.
+The mutex around that is the property's own, while the locale belongs to the
+whole process. A property gets a numeric locale because the document's root
+says `LC_NUMERIC="C"`, which `mlt.py` writes, as Kdenlive does. The frame
+number doesn't identify the crash: the race can hit any frame. Linux has not
+shown it.
+
+**What that changes.** The crashes are not independent draws. A run's odds
+depend on timing, which is why three came in a row. A report for MLT is
+drafted with the stacks and a `uselocale` fix (MLT's own `mlt_properties.c` already
+switches locale per thread that way). The crash reports are in
+`~/proofcut-work/scratch/soak/`.
