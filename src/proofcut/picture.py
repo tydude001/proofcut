@@ -466,9 +466,66 @@ def launch_raced(completed: subprocess.CompletedProcess[str]) -> bool:
 #: both Mac CPUs (melt-soak.yml, 2026-09-25); it had failed mac-demo five times.
 CRASH_SIGNALS = frozenset({"SIGSEGV", "SIGBUS"})
 
-#: How many times a crashed render is run again. At 3 in 60, two retries put
-#: a render that fails outright near 1 in 8,000.
-CRASH_RETRIES = 2
+#: How many times a crashed render is run again. Two were sized on 3 crashes
+#: in 60 renders as if each run were an independent draw; a second soak read 9
+#: in 60, and mac-demo failed with three crashes in a row (2026-09-28), so the
+#: draws are not independent and the margin is set by the failure seen, not by
+#: the product of the rate. HISTORY.md § The Mac melt crash, found.
+CRASH_RETRIES = 4
+
+
+#: The locale categories `LC_ALL` overrides, spelled out so `numeric_c_env`
+#: can drop it and keep what it set for every other category.
+_LOCALE_CATEGORIES = (
+    "LC_CTYPE", "LC_COLLATE", "LC_MESSAGES", "LC_MONETARY", "LC_TIME",
+    "LC_PAPER", "LC_NAME", "LC_ADDRESS", "LC_TELEPHONE", "LC_MEASUREMENT",
+    "LC_IDENTIFICATION",
+)  # fmt: skip
+
+#: A document root's `LC_NUMERIC` attribute, which `mlt.py` and Kdenlive write.
+_ROOT_LC_NUMERIC = re.compile(rb'\s+LC_NUMERIC="[^"]*"')
+
+
+def numeric_c_env(env: dict[str, str]) -> dict[str, str]:
+    """`env` with numbers read and written the C way, whatever the user's locale.
+
+    melt itself never calls `setlocale`, but Qt's application object does
+    (`setlocale(LC_ALL, "")`, from the environment) the first time a Qt service
+    loads, so a comma-decimal locale would reach every number MLT parses once a
+    render's document stops naming its own (`render_document`). `LC_ALL` beats
+    `LC_NUMERIC`, so it is spread over the other categories and dropped.
+    """
+    env = dict(env)
+    everything = env.pop("LC_ALL", None)
+    if everything:
+        for category in _LOCALE_CATEGORIES:
+            env[category] = everything
+    env["LC_NUMERIC"] = "C"
+    return env
+
+
+def render_document(path: Path) -> Path:
+    """A copy of `path`, beside it, whose root names no `LC_NUMERIC`; or `path`.
+
+    With a numeric locale on the root, every service gets one, and MLT's
+    `mlt_property_get_string_l_tf` then swaps the whole process's locale with
+    `setlocale` around each number it prints. A render thread printing at the
+    same moment reads a locale macOS has just freed: the Mac melt crash, 9 in
+    60 renders (HISTORY.md § The Mac melt crash, found). With none, MLT prints
+    in the process's locale, which `numeric_c_env` pins to C. The copy sits
+    beside the original because relative `resource` paths resolve from the
+    document's directory; the original keeps the attribute for Kdenlive.
+    """
+    data = path.read_bytes()
+    root = re.search(rb"<mlt\b[^>]*>", data)
+    if root is None or not _ROOT_LC_NUMERIC.search(root.group()):
+        return path
+    handle, name = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=path.suffix, dir=path.parent)
+    with os.fdopen(handle, "wb") as out:
+        out.write(data[: root.start()])
+        out.write(_ROOT_LC_NUMERIC.sub(b"", root.group(), count=1))
+        out.write(data[root.end() :])
+    return Path(name)
 
 
 def melt_crashed(completed: subprocess.CompletedProcess[str]) -> bool:
@@ -937,8 +994,10 @@ def render(
             "(`apt install xvfb`, `dnf install xorg-x11-server-Xvfb`)."
         )
 
+    env = numeric_c_env(env)
     work = scratch("render-")
     staged = work / (destination.name or "render.mp4")
+    document = render_document(path)
     melt = melt_command()
     # `-progress` is a melt option, not a consumer property, so the measured-safe
     # consumer key set above is untouched; asked only when someone listens.
@@ -946,7 +1005,7 @@ def render(
     command = [
         *melt,
         *(["-progress"] if reporting else []),
-        str(path),
+        str(document),
         "-consumer",
         f"avformat:{staged}",
         *consumer_args,
@@ -1011,6 +1070,9 @@ def render(
             f"melt did not finish rendering {path} within {timeout}s. The partial "
             f"render is at {staged}."
         ) from exc
+    finally:
+        if document != path:
+            document.unlink(missing_ok=True)
 
     if not staged.exists() or staged.stat().st_size == 0:
         detail = (completed.stderr or completed.stdout or "").strip()[-2000:]

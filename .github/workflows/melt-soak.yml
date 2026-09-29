@@ -11,7 +11,9 @@
 #
 # Its first run (2026-09-25) found a SIGSEGV in MLT's `cache_object_close`,
 # 3 of 60 renders, and picture.render now runs a crashed render again
-# (HISTORY.md § The Mac melt crash). A run since should read 0 failed.
+# (HISTORY.md § The Mac melt crash). The cause was another thread's
+# `setlocale`, which a render no longer triggers (§ The Mac melt crash,
+# found), so a run since should upload no crash report at all.
 #
 # By hand only: it is a measurement, not a gate.
 

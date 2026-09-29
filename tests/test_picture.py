@@ -667,7 +667,7 @@ def test_a_melt_that_keeps_crashing_fails_after_the_retries(
 ) -> None:
     fake, project = _crashing(monkeypatch, tmp_path, [11] * (picture.CRASH_RETRIES + 1))
 
-    with pytest.raises(picture.PictureError, match="after 2 crashed run"):
+    with pytest.raises(picture.PictureError, match=f"after {picture.CRASH_RETRIES} crashed run"):
         picture.render(project, tmp_path / "out.mp4")
     assert fake.calls == picture.CRASH_RETRIES + 1
 

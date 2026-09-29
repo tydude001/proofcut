@@ -18994,3 +18994,18 @@ depend on timing, which is why three came in a row. A report for MLT is
 drafted with the stacks and a `uselocale` fix (MLT's own `mlt_properties.c` already
 switches locale per thread that way). The crash reports are in
 `~/proofcut-work/scratch/soak/`.
+
+**The fix, on proofcut's side.** `picture.render` hands melt a copy of the
+document, placed beside the original so relative paths still resolve, with the
+root's `LC_NUMERIC` removed (`render_document`). With no locale on any service,
+MLT never calls `setlocale` around a number. The original keeps the attribute
+for Kdenlive. melt runs with `LC_NUMERIC=C` (`numeric_c_env`), and `LC_ALL` is
+spread over the other categories and dropped, because Qt's application object
+calls `setlocale(LC_ALL, "")` from the environment when the first Qt service
+loads. Measured on the demo on Linux: the stripped document rendered the same
+385 frames and the same audio as the original. Under `LC_ALL=de_DE.UTF-8` it
+matched as well with the pin, and without the pin the audio changed, so the pin
+is load-bearing. `CRASH_RETRIES` goes from 2 to 4 as a backstop. A soak after
+this lands should leave no crash report at all.
+
+Tests: four in `tests/test_picture_locale.py`. The suite: 2870 passed.

@@ -1419,6 +1419,14 @@ built; docs/plans/INSTALL.md):
     retry, `CRASH_RETRIES` times; never SIGKILL, which is the memory cap's.
     The result's `crash_retries` and a note say it happened. HISTORY.md §
     The Mac melt crash, and § The Mac melt crash, found.
+  - **A render's document names no `LC_NUMERIC`, and melt reads numbers as
+    C.** `picture.render_document` strips the root's attribute into a copy
+    beside the original, since a locale on any service makes MLT call
+    `setlocale` mid-render, which is the Mac crash. `numeric_c_env` pins
+    `LC_NUMERIC=C` and drops `LC_ALL`, because Qt calls `setlocale(LC_ALL, "")`
+    and a comma-decimal locale changed the demo's audio without the pin.
+    `mlt.py` still writes the attribute, for Kdenlive. HISTORY.md § The Mac
+    melt crash, found.
   - **A *failed* render's staging directory survives on purpose, and
     `sweep_scratch` drops it after `SCRATCH_RETENTION_DAYS`.** It sweeps by
     name (`_SCRATCH_NAME`), never by age alone — a hand-placed directory in

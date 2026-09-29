@@ -348,6 +348,8 @@ installed package or the upstream repo, not your memory.
   - **Concurrent flatpak launches can lose a startup race**
   - **Every melt `subprocess.run` passes `stdin=subprocess.DEVNULL`.**
   - **A melt that dies of SIGSEGV or SIGBUS is run again, never of SIGKILL.**
+  - **A render's document names no `LC_NUMERIC`, and melt reads numbers as
+    C.**
   - **A *failed* render's staging directory survives on purpose, and
     `sweep_scratch` drops it after `SCRATCH_RETENTION_DAYS`.**
   - **`WAYLAND_DISPLAY` alone is not a display.**
