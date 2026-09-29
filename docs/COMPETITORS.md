@@ -453,9 +453,19 @@ only.
   `remove_words` refuses if the timeline changed since the agent's last
   `get_transcript`. proofcut's answer to the same hazard is the echo (§ Word
   indices echo their neighbours, in TRAPS.md); the refusal is the stricter
-  form.
+  form. **Checked 2026-09-28 and not built: the hazard is palmier's, not
+  proofcut's.** Its indices are positions in the current timeline, so every
+  removal renumbers the words after it. proofcut's name a word of the source
+  transcript, which no cut renumbers: cutting words 1–2 then 6–7 and cutting
+  them in the other order gave the same edit, and the second call echoed the
+  words it took. Only a replaced transcript renumbers, and the echo shows it.
 - **Mutation diffs** (`ToolExecutor+MutationDelta.swift:3-30`): every edit
   replies with the clips it changed, shifted and removed, capped at 30.
+  **Already proofcut's as `changes`** (checked 2026-09-28): the spans each
+  mutation removed and added with their words, records changed field by
+  field, lists capped at 40, one call after the edit and named in the
+  server's instructions. Folding it into every edit reply would only grow
+  the replies docs/plans/MCP.md bounded.
 - **The frame overlay** (`InspectFrameOverlay.swift`): the frame number and a
   0 to 1 grid burned into every frame it hands the agent, for placing things
   by coordinate.
@@ -1963,7 +1973,9 @@ Daydream at all. See § Daydream.
   `expected_version`, sstani-bgv/ai-montage's `PUT /edits` and OpenChatCut's
   sessions all refuse an edit made against a timeline that has since changed.
   proofcut echoes the words it resolved instead (TRAPS.md § Word indices echo
-  their neighbours) and stamps the manifest (`_manifest_stamp`).
+  their neighbours) and stamps the manifest (`_manifest_stamp`). The signal
+  does not transfer to word cuts: proofcut's indices address the source and
+  no cut renumbers them (§ palmier-pro).
 - **Filter the render check through intent.** Rushes and video-editor-agent
   both drop black and frozen spans the plan declared, arrived at separately
   from docs/plans/RENDER-CHECKS.md's "a span nothing explains".
