@@ -19005,7 +19005,13 @@ calls `setlocale(LC_ALL, "")` from the environment when the first Qt service
 loads. Measured on the demo on Linux: the stripped document rendered the same
 385 frames and the same audio as the original. Under `LC_ALL=de_DE.UTF-8` it
 matched as well with the pin, and without the pin the audio changed, so the pin
-is load-bearing. `CRASH_RETRIES` goes from 2 to 4 as a backstop. A soak after
-this lands should leave no crash report at all.
+is load-bearing. `CRASH_RETRIES` goes from 2 to 4 as a backstop.
 
 Tests: four in `tests/test_picture_locale.py`. The suite: 2870 passed.
+
+**The soak on the fix.** Run 36519467972 on `bf3d65e`: 0 of 30 failed on
+each runner, no crash report on either, and the demo's receipt reads
+`crash_retries` 0 on both. The run before it had 9 crashes in 69 melt runs.
+At that rate, 60 clean runs happen about 2 times in 10,000, and at the first
+soak's 3 in 60, about 5 times in 100. The retries stay in place in case the
+cause has another path.

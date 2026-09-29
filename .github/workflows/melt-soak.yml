@@ -13,7 +13,7 @@
 # 3 of 60 renders, and picture.render now runs a crashed render again
 # (HISTORY.md § The Mac melt crash). The cause was another thread's
 # `setlocale`, which a render no longer triggers (§ The Mac melt crash,
-# found), so a run since should upload no crash report at all.
+# found); run 36519467972 on the fix uploaded no crash report.
 #
 # By hand only: it is a measurement, not a gate.
 
