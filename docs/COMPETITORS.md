@@ -27,7 +27,8 @@ rewrite and the classic app — § OpenCut, read in full. What is worth
 harvesting from classic's UI, and the three measured reasons its tree cannot be
 vendored into a Python wheel, are § What is worth taking, and what a copy would
 cost. OpenCut was re-checked **2026-09-24**, when `main` moved for the first
-time in seven weeks: § OpenCut's first commit in seven weeks.
+time in seven weeks: § OpenCut's first commit in seven weeks. palmier-pro and
+hyperframes were read **2026-09-28**: § palmier-pro and hyperframes, read.
 
 ## Why this survey happened
 
@@ -1042,6 +1043,70 @@ built, its tolerance is measured on proofcut's own timeline, never copied.
 **Not confirmed.** Whether snapping pulls at all under a real mouse; the easing
 picker's curves; how to add a scene; export. The screenshots were deleted once
 these notes were checked, per DAYDREAM.md § Copyright, the DMCA, and this work.
+
+## palmier-pro and hyperframes, read — 2026-09-28
+
+Two neighbours a stargazer's own starred list held, neither surveyed before:
+one account starred palmier-pro and proofcut on the same day. Each was read
+from a shallow clone (depth 50), source before README, nothing run. Heads:
+palmier-pro `eeafde2`, hyperframes `ea48936`.
+
+**No launch claim moves.** Neither transcribes its render. palmier-pro's
+check is the agent reading its own edit model back: `get_transcript` maps
+source words through the edit list ("Deleted ranges are gone by
+construction", `Agent/Tools/ToolDefinitions.swift:771`), and `capture_frame`
+draws from the preview compositor, not the exported file. hyperframes has
+half of the other claim: `ArtifactTransaction.validate` ffprobes the output
+and rejects a short frame count, but only past one frame short, and it
+passes silently when the probe returns no count
+(`packages/producer/src/services/render/artifactTransaction.ts:230-235`); GIF
+and PNG sequences are skipped. proofcut's count is exact.
+
+| Repo | Category | What matters against proofcut |
+|---|---|---|
+| [palmier-io/palmier-pro](https://github.com/palmier-io/palmier-pro) · 14.5k★ · GPL-3.0 snapshot, proprietary binaries · Swift · created 2026-04-07 | Native macOS editor with an in-app agent | **The public source is frozen.** The README and `BINARY_LICENSE.md` say source through tag `last-gpl-source` (v0.7.6) is GPLv3 and every later binary is proprietary with source unpublished; `eba39db` (2026-08-28) "Retire public source development" removed CI and CONTRIBUTING, and every commit since publishes an appcast. What was read is roughly v0.8 against a shipped v0.10.1. macOS 26 on Apple Silicon only. **An MCP server, HTTP on `127.0.0.1:19789/mcp`, alive only while the GUI is open**, 51 tools; no CLI, no headless mode. The in-app agent is Anthropic or OpenAI with hardcoded endpoints, so no local model. Project is a JSON of tracks and clips in integer frames. **It cuts by word**: `remove_words` takes indices or exact matches, on-device Apple `SpeechTranscriber` or a paid hosted model. Retakes are a prompt instruction, no detector. Export is AVFoundation, with FCPXML and Premiere XML out and nothing in; no OTIO. Cloud generation, credits and an account through Palmier's backend |
+| [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) · 53.9k★ · Apache-2.0 · TypeScript · created 2026-03-10 | HTML-to-video renderer for agents | **Generates, never cuts the user's footage**; its `talking-head-recut` skill plays the clip in full and lays graphics over it. A composition is HTML with `data-start`/`data-duration` and one paused GSAP timeline the page registers. 45 CLI commands and 18 agent skills shipped as Claude Code, Codex, Cursor and Gemini plugins; the only MCP is 12 in-browser WebMCP tools on the open Studio page. Local by default (whisper-cpp or Parakeet, Kokoro TTS); HeyGen's cloud render and a few providers are opt-in keys. **Overlaps proofcut's animated graphics**, not its editing: chrome-headless-shell driven frame by frame through `HeadlessExperimental.beginFrame`, with a page-side virtual clock, and audio mixed by ffmpeg from the page's `<audio>`/`<video>` timing rather than captured. No OTIO or any NLE interchange. Very active: 42 commits on 2026-09-28 alone |
+
+**Worth taking, as evidence and not as a decision** (PLAN.md decides):
+
+- **hyperframes' page-side clock** (`packages/producer/src/services/fileServer.ts:234-388`)
+  freezes `Date`, `performance.now` and `requestAnimationFrame` and advances
+  them with the seek, and can seed `Math.random` per virtual millisecond.
+  `browser.py`'s seek reaches CSS animations and WAAPI and leaves anything
+  else to the page's own `proofcutSeek`; a page an agent writes that animates
+  from rAF or `Date` without that hook renders its first frame every time.
+  This clock would make such a page seek without the hook.
+- **A liveness probe on the capture path** (`browserManager.ts:330-434`,
+  `730-746`): one real frame at startup, and a fallback that strips the
+  BeginFrame-only flags, because leaving them on makes screenshots blank. The
+  shape applies to `DETERMINISTIC_FLAGS` even without BeginFrame: a capture
+  that comes back empty should fail loudly at the first frame.
+- **Hold dedup** (`frameCapture.ts:1058-1080`): skip re-capturing a frame
+  predicted static, with a verification pass. A graphic's hold phase is the
+  case, and a hold is already its own piece in proofcut.
+- **`<video>` in a page is never played**: ffmpeg extracts its frames and a
+  pre-capture hook swaps them in as images (`videoFrameInjector.ts`), because
+  a browser's own decode is not frame-accurate. proofcut has no video inside a
+  graphic yet; this is the route if one is wanted.
+- **palmier-pro's stale-index refusal** (`ToolExecutor+Words.swift:29-40`):
+  `remove_words` refuses if the timeline changed since the agent's last
+  `get_transcript`. proofcut's answer to the same hazard is the echo (§ Word
+  indices echo their neighbours, in TRAPS.md); the refusal is the stricter
+  form.
+- **palmier-pro's mutation diffs** (`ToolExecutor+MutationDelta.swift:3-30`):
+  every edit replies with the clips it changed, shifted and removed, capped at
+  30.
+- **palmier-pro's frame overlay** (`InspectFrameOverlay.swift`): the frame
+  number and a 0 to 1 grid burned into every frame it hands the agent, for
+  placing things by coordinate.
+
+**Not confirmed.** What palmier-pro's v0.8.1 to v0.10.1 binaries added over
+the frozen source, output checks included; the model behind its hosted
+transcription; its full `ffmpeg` use and its SigLIP2 search ranking.
+hyperframes' commit cadence before 2026-09-28 (the clone was shallow); which
+of its optional keys gate which features; its font-embedding logic beyond
+the imports; and whether any of its docs promise output checks the code does
+not make.
 
 ## Stateless-ffmpeg MCP servers
 
