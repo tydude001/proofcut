@@ -55,16 +55,30 @@ reuses the file and runs only the checks (HISTORY.md § A render on an
 unchanged edit is not re-rendered). A line with no `request`, which is every
 agent-assembled render, is never reused, because its export may have been
 asked for things the log does not record (a loudness target, say).
+
+**A line also names the file and the tools: `output_sha256` and `tools`**,
+the rest of kinocut's receipt. `sources` says which edit a render read; the
+hash says which bytes it wrote, so a file on disk can be matched to its line
+after a rename or a copy, and a re-render of the same stamps that came out
+different is visible. `tools` is proofcut's version, melt's and ffmpeg's as
+this process found them (`tools()`), because the same edit rendered by a
+different melt is not the same film. The hash is `None` when the output is
+not on disk; a tool is `None` when it was not found. kinocut's resume cursor
+is not taken: a proofcut render is one melt run, with nothing to resume.
 """
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
+import shutil
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from proofcut import __version__, picture
 from proofcut import lexicon as lex
 from proofcut.project import Project
 
@@ -88,6 +102,64 @@ def stamp(project: Project, *, lexicon: bool = False) -> dict[str, str | None]:
     if lexicon:
         stamped["lexicon"] = digest(lex.project_path(project.root))
     return stamped
+
+
+def output_digest(output: str) -> str | None:
+    """A sha256 of the rendered file's bytes, or `None` when it is not on disk."""
+    path = Path(output)
+    if not path.is_file():
+        return None
+    with path.open("rb") as fh:
+        return hashlib.file_digest(fh, "sha256").hexdigest()
+
+
+def tools() -> dict[str, str | None]:
+    """proofcut's version and the melt and ffmpeg a render here runs.
+
+    melt is whatever `picture.melt_command` resolves, named by its banner; the
+    flatpak is named by `flatpak info`'s version of the bundle, which never
+    starts the flatpak (TRAPS.md § melt and the flatpak: concurrent launches
+    can lose a startup race). ffmpeg is PATH's, which is the one every
+    subprocess here runs.
+    """
+    return {"proofcut": __version__, "melt": _melt(), "ffmpeg": _ffmpeg()}
+
+
+@functools.cache
+def _melt() -> str | None:
+    try:
+        command = picture.melt_command()
+    except picture.PictureError:
+        return None
+    if command[0] != "flatpak":
+        found = picture.melt_version(command[0])
+        return f"melt {found}" if found else None
+    try:
+        info = subprocess.run(
+            ["flatpak", "info", picture.KDENLIVE_FLATPAK], capture_output=True, text=True, timeout=30, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    version = next(
+        (line.split(":", 1)[1].strip() for line in info.stdout.splitlines() if line.strip().startswith("Version:")),
+        None,
+    )
+    return f"{picture.KDENLIVE_FLATPAK} {version}" if version else None
+
+
+@functools.cache
+def _ffmpeg() -> str | None:
+    found = shutil.which("ffmpeg")
+    if found is None:
+        return None
+    try:
+        done = subprocess.run(
+            [found, "-version"], capture_output=True, text=True, timeout=30, check=False, stdin=subprocess.DEVNULL
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    first = (done.stdout or "").split("\n", 1)[0]
+    return first.split(" ", 3)[2] if first.startswith("ffmpeg version ") else None
 
 
 def current(project: Project, run: dict[str, Any]) -> bool | None:
@@ -133,6 +205,8 @@ def append(
         "preset": preset,
         "expected_duration": expected_duration,
         "stages": stages,
+        "output_sha256": output_digest(output),
+        "tools": tools(),
     }
     if sources:
         # Absent rather than `{}` when no stage stamped anything, so a run
