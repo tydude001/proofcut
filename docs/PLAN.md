@@ -58,7 +58,12 @@ Electron desktop app whose MCP endpoint requires the GUI process, with a custom
 JSON timeline, cuts-only FCPXML as its whole NLE handoff, and no CLI. proofcut's surviving thesis, if it
 has one, is the narrower combination **headless + CLI parity + OTIO-native NLE
 handoff + thin Python stack** — and whether that justifies the project is
-decided by the trial gate in the milestones, not by argument.
+decided by the trial gate in the milestones, not by argument. A source read on
+2026-09-28 moved both sides: its `occ` CLI now edits and renders headless,
+though it cannot transcribe or check a render without the app, and its
+transcript delete re-times audio but cuts no video (COMPETITORS.md
+§ OpenChatCut). The combination left is headless transcription, cuts by word,
+and a checked render.
 
 **The third pass, 2026-08-07, did not weaken it further.** Daydream is the
 most prominent competitor by mindshare, and neither sweep had checked it — it has no GitHub repo, so a

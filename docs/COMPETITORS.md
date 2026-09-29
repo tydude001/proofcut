@@ -80,7 +80,7 @@ a dash means no source exists.
 | § intelligent-video-editor | VLM-described library, MCP | GPL-3.0 | 1 | 2026-09-28 `0fc7a83` |
 | § OpenCut | human browser editor, rewrite pending | MIT | 90,869 | 2026-09-24 `e668010`; classic 2026-09-20 `cf5e79e`, driven 09-26 |
 | § rescript | transcript editor | PolyForm NC | 921 | 2026-09-28 `4d6f295` |
-| CutScript, OpenCut-AI, OpenScript, codeaashu/Rescript, ai-montage, yusaf-cut (§ Transcript editors) | transcript editors | mixed | 0–260 | 2026-09-28 |
+| CutScript, OpenCut-AI, OpenScript, codeaashu/Rescript, ai-montage, yusaf-cut (§ Transcript-based editors) | transcript editors | mixed | 0–260 | 2026-09-28 |
 | § hyperframes | HTML-to-video renderer | Apache-2.0 | 53,937 | 2026-09-28 `ea48936` |
 | sentrysearch, B-Roll-Finder (§ Footage retrieval) | footage search | Apache-2.0; none | 4,525; 4 | 2026-09-20 |
 | VoiceStudio, voice-pro (§ Voice) | TTS and dubbing | AGPL-3.0; GPL-3.0 | 44,377; 12,955 | 2026-09-20 |
@@ -1336,7 +1336,7 @@ easing picker's curves; how to add a scene; export. The screenshots were
 deleted once these notes were checked, per DAYDREAM.md § Copyright, the DMCA,
 and this work.
 
-### Transcript editors
+### Transcript-based editors
 
 Delete a word, and the video loses it: the Descript model, open-sourced
 several times over. **Every one was source-read 2026-09-28; none has an agent
