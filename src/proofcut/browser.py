@@ -24,10 +24,14 @@ Four rules, each measured in the spike:
   to over a minimal websocket client below, because a pipe to fds 3 and 4 is
   not something Python's `subprocess` can hand a child on Windows. No
   websocket library is a dependency.
-* **A seek is CSS animations and WAAPI, and `window.proofcutSeek` for the
-  rest.** `document.getAnimations()` reaches every CSS animation and
-  transition; a page animating from its own clock has to expose
-  `proofcutSeek(seconds)` or it renders its first frame every time.
+* **A seek is CSS animations and WAAPI, the page's clock, and
+  `window.proofcutSeek` for the rest.** `document.getAnimations()` reaches
+  every CSS animation and transition. `CLOCK` runs before the page's own
+  scripts and hands it a clock only a seek moves — `Date`,
+  `performance.now` and `requestAnimationFrame` — so a page that animates
+  from rAF draws the seeked frame with no hook (hyperframes' page-side clock,
+  COMPETITORS.md § hyperframes). Timers and `Math.random` are not frozen: a
+  page leaning on either still needs `proofcutSeek(seconds)`.
 
 `PROOFCUT_CHROME` names the binary, then `proofcut setup`'s folder, then PATH.
 """
@@ -347,6 +351,7 @@ class Browser:
             {"width": width, "height": height, "deviceScaleFactor": 1, "mobile": False},
         )
         page.send("Emulation.setDefaultBackgroundColorOverride", {"color": {"r": 0, "g": 0, "b": 0, "a": 0}})
+        page.send("Page.addScriptToEvaluateOnNewDocument", {"source": CLOCK})
         return page
 
     def close(self) -> None:
@@ -458,13 +463,48 @@ def load(page: Page, path: str = "/index.html") -> list[dict[str, Any]]:
     )
 
 
-#: Pause every animation and put it at `t` seconds, then let two frames
-#: render so the compositor has drawn what the seek set.
+#: The page's clock, installed before any of its scripts run: `Date`,
+#: `performance.now` and `requestAnimationFrame` stand still until a seek
+#: moves them. A rAF callback is queued, and a seek sets the time and runs
+#: the queue once, as one frame would — so a page's render loop draws the
+#: seeked instant. `Date` counts from a fixed epoch, so a page that prints
+#: the time prints the same thing on every capture. A callback that throws
+#: fails the seek: the capture is the only view of the page anyone gets.
+#: The real rAF is kept for `SEEK`'s own wait on the compositor.
+CLOCK = """(() => {
+  const RealDate = Date, realRAF = window.requestAnimationFrame.bind(window);
+  const EPOCH = RealDate.UTC(2026, 0, 1);
+  let now = 0, queue = [], next = 1;
+  function FrozenDate(...a) {
+    if (!new.target) return new RealDate(EPOCH + now).toString();
+    return a.length ? new RealDate(...a) : new RealDate(EPOCH + now);
+  }
+  FrozenDate.prototype = RealDate.prototype;
+  FrozenDate.now = () => EPOCH + now;
+  FrozenDate.UTC = RealDate.UTC;
+  FrozenDate.parse = RealDate.parse;
+  window.Date = FrozenDate;
+  performance.now = () => now;
+  window.requestAnimationFrame = (cb) => { queue.push([next, cb]); return next++; };
+  window.cancelAnimationFrame = (id) => { queue = queue.filter((e) => e[0] !== id); };
+  window.__proofcutClock = {
+    realRAF,
+    advance(ms) { now = ms; const due = queue; queue = []; for (const [, cb] of due) cb(now); },
+  };
+})();"""
+
+#: Move the page's clock to `t` seconds and run its frame, pause every
+#: animation there, then let two real frames render so the compositor has
+#: drawn what the seek set. The clock goes first: a frame callback can
+#: create the very animations the second step pauses.
 SEEK = (
     "(async (t) => {"
+    " const clock = window.__proofcutClock;"
+    " if (clock) clock.advance(t * 1000);"
     " for (const a of document.getAnimations()) { a.pause(); a.currentTime = t * 1000; }"
     " if (typeof window.proofcutSeek === 'function') await window.proofcutSeek(t);"
-    " await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));"
+    " const raf = clock ? clock.realRAF : requestAnimationFrame;"
+    " await new Promise(r => raf(() => raf(r)));"
     "})(%r)"
 )
 

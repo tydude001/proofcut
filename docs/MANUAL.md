@@ -751,14 +751,17 @@ that shortens the span shortens the hold. A span shorter than intro plus
 outro is refused rather than cut mid-motion.
 
 A page written by hand animates with CSS: animations and transitions are
-paused and seeked to each frame's time. A script animating from its own clock
-defines `window.proofcutSeek(seconds)`. Start the outro's animations where the
-intro ends (one loop later, if it loops). The page loads its own folder's
-files and the vendored fonts under `/_proofcut/fonts/static/`, and nothing
-else: no network, so a web font cannot lose a race with the capture. Three
-things are refused at capture: a hold still moving when it was declared
-still, a loop that does not come back to where it started, and a font that
-failed to load.
+paused and seeked to each frame's time. A script animating from
+`requestAnimationFrame`, `performance.now` or `Date` needs nothing more: the
+page's clock stands still until a seek moves it, and each seek runs one frame.
+A script on timers or `Math.random` defines `window.proofcutSeek(seconds)`.
+Start the outro's animations where the intro ends (one loop later, if it
+loops). The page loads its own folder's files and the vendored fonts under
+`/_proofcut/fonts/static/`, and nothing else: no network, so a web font cannot
+lose a race with the capture. Four things are refused at capture: a hold still
+moving when it was declared still, a loop that does not come back to where it
+started, a font that failed to load, and a page with nothing drawn in any
+frame (usually a script that threw).
 
 The capture is drawn at the project's canvas and export rate and is stamped
 with both and with the page's bytes; change any of them and `export` refuses

@@ -378,6 +378,46 @@ def test_the_page_reaches_nothing_outside_its_folder(tmp_path: Path) -> None:
         assert page.evaluate("document.title") == "blocked,blocked,blocked,ok"
 
 
+@needs_browser
+def test_a_page_that_never_draws_is_refused(tmp_path: Path) -> None:
+    folder = tmp_path / "g"
+    folder.mkdir()
+    (folder / "index.html").write_text(
+        "<!doctype html><html><body style='margin:0;background:transparent'>"
+        "<script>throw new Error('before anything drew');</script></body></html>"
+    )
+    motion.write_spec(folder, motion.normalise_spec({"intro": 0.5}))
+    with pytest.raises(motion.GraphicError, match="drew nothing"):
+        motion.capture(folder, tmp_path / "f", width=160, height=90, fps=10.0)
+    assert not (tmp_path / "f").exists()
+
+
+@needs_browser
+def test_a_first_frame_empty_on_purpose_is_captured(tmp_path: Path) -> None:
+    fade = ".box { animation: fade .5s linear forwards; } @keyframes fade { from { opacity: 0; } to { opacity: 1; } }"
+    record = motion.capture(_page(tmp_path / "g", extra=fade), tmp_path / "f", width=160, height=90, fps=10.0)
+    assert record["intro"] == 5
+
+
+@needs_browser
+def test_a_page_animating_from_its_own_clock_draws_the_seeked_instant(tmp_path: Path) -> None:
+    """No `proofcutSeek`: the page's rAF loop reads `performance.now`, its
+    frame timestamp and `Date`, and the seek moves all three."""
+    loop = (
+        "<script>const t0 = Date.now(); (function tick(ts) {"
+        " document.title = [performance.now(), ts ?? '-', Date.now() - t0, typeof Date(), new Date() instanceof Date].join(',');"
+        " requestAnimationFrame(tick); })();</script>"
+    )
+    folder = _page(tmp_path / "g", body=loop)
+    with browser.launch(folder) as chrome:
+        page = chrome.new_page(160, 90)
+        browser.load(page)
+        browser.seek(page, 0.3)
+        assert page.evaluate("document.title") == "300,300,300,string,true"
+        browser.seek(page, 0.1)
+        assert page.evaluate("document.title") == "100,100,100,string,true"
+
+
 def test_mlt_draws_a_sequence_and_a_still_through_the_same_overlay_node() -> None:
     """The writer is unchanged: a graphic's pieces are ordinary overlays."""
     pieces = [

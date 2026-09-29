@@ -25,6 +25,11 @@ the loop's first frame against the frame one period on, byte for byte. That
 comparison at capture is the authoring-time refusal the PLAN.md note asked for:
 `mlt.plan_picture`'s refusal at export would be far too late.
 
+**A capture with nothing in any frame is refused too**, compared byte for
+byte against the empty tab's own screenshot. Only all of them: an intro's
+first frame is often empty on purpose (hyperframes' liveness probe, adapted,
+COMPETITORS.md § hyperframes).
+
 Frames are cached under `cache/graphics/<name>/`, one folder per phase, and
 stamped (`capture.json`) with the page's bytes, the canvas and the rate, so a
 change to any of them makes the capture stale and an export refuses it rather
@@ -53,7 +58,7 @@ CAPTURE_NAME = "capture.json"
 PHASES = ("intro", "hold", "outro")
 #: Bumped when a capture of the same page would draw differently — the flags,
 #: the seek — so every cached capture goes stale with it.
-CAPTURE_VERSION = 1
+CAPTURE_VERSION = 2
 #: Pages captured side by side. The spike measured 8 pages at 1.4 s for 91
 #: frames against 10 s for one; two leaves the machine usable meanwhile.
 DEFAULT_PAGES = 2
@@ -207,6 +212,9 @@ def capture(
     try:
         with browser.launch(folder) as chrome:
             tabs = [chrome.new_page(width, height) for _ in range(min(pages, len(jobs)))]
+            # The canvas with nothing on it, for the refusal after the loop.
+            blank = browser.screenshot(tabs[0])
+            drawn = False
             fonts: list[dict[str, Any]] = []
             for tab in tabs:
                 fonts = browser.load(tab)
@@ -246,6 +254,7 @@ def capture(
                 ]
                 for (_, (phase, index, _)), ident in zip(batch, ids, strict=True):
                     png = base64.b64decode(chrome.wait(ident)["data"])
+                    drawn = drawn or png != blank
                     if phase == "loop-check":
                         shots[(phase, index)] = png
                     else:
@@ -255,6 +264,15 @@ def capture(
                 progress.report(min(batch_start + len(batch), len(jobs)), len(jobs), f"capturing {folder.name}")
             served_fonts = sorted(set(chrome.fonts))
             sandboxed = chrome.sandboxed
+        if not drawn:
+            # A first frame may be empty on purpose, before a fade-in; a
+            # capture with nothing in any frame is a page that never drew,
+            # and it would otherwise go over the film as nothing at all.
+            raise GraphicError(
+                f"{folder.name}'s page drew nothing: all {len(jobs)} frames are as blank as an "
+                "empty page — a script that threw before it drew, or content that never arrives "
+                "on screen"
+            )
         if layout["loop"] and shots[("loop-check", 0)] != shots[("hold", 0)]:
             raise GraphicError(
                 f"{folder.name}'s loop does not come back to where it started: the page at "
