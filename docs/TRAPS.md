@@ -362,6 +362,18 @@ built; docs/plans/INSTALL.md):
     authored film content, and the manifest's undo/snapshot machinery has no
     business gaining an entry every time someone picks a different model.
     HISTORY.md § The agent panel got a model selector.
+  - **A model id with a `/` spawns `proofcut.director`, not `claude`
+    (`webui.uses_director`), and that is the whole switch.** No model and
+    every Claude id stay on `claude`, the default. The director takes
+    `claude -p`'s argv and speaks its stream-json, so `agent.js` and
+    `agent_trial.py` need no second path; its only capabilities are the one
+    MCP server and its own `ToolSearch`, and it **refuses** an
+    `--allowedTools` other than `mcp__proofcut__*` rather than ignore a
+    widening. **`OPENROUTER_API_KEY` goes to openrouter.ai and nowhere
+    else**: another `PROOFCUT_DIRECTOR_URL` gets `PROOFCUT_DIRECTOR_KEY`.
+    A picture goes to the model as a `user` message after the tool results,
+    because a `tool` message holds a string. docs/plans/OPENROUTER.md;
+    HISTORY.md § The OpenRouter director, built.
 
 ### OTIO's edit algorithms
 

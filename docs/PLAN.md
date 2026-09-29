@@ -903,6 +903,14 @@ different model than the live subprocess's own kills and respawns it, the
 same suppressed-exit mechanics as "New Task". HISTORY.md § The agent panel
 got a model selector.
 
+A model id with a `/` in it (`openai/gpt-5.5`) swaps the first word of that
+argv for `python -m proofcut.director` and keeps every flag
+(`webui._agent_command`). The director has no built-in tools to disable: it
+drives the one server `--mcp-config` names plus its own `ToolSearch`, and it
+refuses to start on an `--allowedTools` other than `mcp__proofcut__*`, so a
+future widening here cannot mean one thing to `claude` and another to it.
+docs/plans/OPENROUTER.md § Confinement.
+
 `--verbose` is not optional either, and not for logging: 2.1.226 refuses
 `--print --output-format=stream-json` without it — errors and **exits 0**
 with nothing on stdout, which the SSE-consuming page has no way to see as

@@ -320,7 +320,9 @@ what every later trial measures, so it is proposed here rather than made.
 **Pictures stay unjudged.** All 5 images were dropped for a model with no
 vision projector, and nobody has looked at the 6 shots it hung.
 
-**The shim stays a spike.** One run on the brief that separates the two
+**The shim stays a spike.** (2026-09-29: it became `proofcut.director`
+for OpenRouter models, docs/plans/OPENROUTER.md, which says why that reason
+was about the local model rather than the shim.) One run on the brief that separates the two
 directors, and it failed where Claude passed. Moving the shim into
 `scripts/` would make a local director look like a supported route. The
 next run worth making is the same brief after the map names `hear`, which

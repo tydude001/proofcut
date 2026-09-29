@@ -131,7 +131,8 @@ steps 1 to 3, and § steps 4 to 6).
 How the agent panel runs on any OpenRouter model, the local-director spike made a
 feature (stdin turns, interrupt, pictures, cost, a `/` in the model id picks it,
 supported means scored), is [docs/plans/OPENROUTER.md](docs/plans/OPENROUTER.md),
-written 2026-09-29 and unbuilt.
+written and built 2026-09-29 (HISTORY.md § The OpenRouter director, built);
+no OpenRouter model has been scored by a trial yet.
 **Competitor research and anything copied from another product follows
 docs/plans/DAYDREAM.md § Copyright, the DMCA, and this work**: a research
 download stays private and is deleted once its notes are checked, never commit
@@ -212,6 +213,8 @@ installed package or the upstream repo, not your memory.
     proofcut.cli`, never the string `proofcut`.**
   - **`--model` bakes into `claude -p`'s argv at spawn, so there is no way to
     hot-swap a running turn's model.**
+  - **A model id with a `/` spawns `proofcut.director`, not `claude`
+    (`webui.uses_director`), and that is the whole switch.**
 - **OTIO's edit algorithms are C++ only.** → TRAPS.md § OTIO's edit algorithms
 - **The OTIO metadata key is written `"proofcut"` and read as either, through
   `timeline.proofcut_metadata` and nothing else.** → TRAPS.md § The OTIO

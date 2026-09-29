@@ -19015,3 +19015,33 @@ each runner, no crash report on either, and the demo's receipt reads
 At that rate, 60 clean runs happen about 2 times in 10,000, and at the first
 soak's 3 in 60, about 5 times in 100. The retries stay in place in case the
 cause has another path.
+
+## The OpenRouter director, built — 2026-09-29
+
+The agent panel and `scripts/agent_trial.py` can now run on any OpenRouter
+model: a model id with a `/` in it spawns `proofcut.director` instead of
+`claude`, which stays the default. The director is the local-director spike
+(docs/plans/LOCAL.md § The run, 2026-09-19) made into a feature, and
+docs/plans/OPENROUTER.md is the design and the list of what it added.
+
+**What was checked.** `tests/test_director.py`, 14 tests. The director runs as
+a real subprocess against the real `proofcut mcp`, with the model faked by an
+OpenAI-compatible server in the test process. They cover deferred loading,
+three turns over stdin with a Stop in the middle, a refused wider allowlist,
+a missing key, a 402, an unlisted model and one without tools, the budget
+cap, a picture reaching a model that sees and not one that does not, the
+OpenRouter-only request fields, the reasoning round trip, and `AgentSession`
+spawning the director for a `/` id, bound to its project. As a control, the
+interrupt handler was disabled and the Stop test failed. Two doctor tests
+cover the key line. The suite: 2886 passed before the lint fixes, then the
+two changed files again, 75 passed.
+
+In a real browser (`verify-live`), against a fake model on a port, the picker
+took a typed `openai/gpt-5.5`, a send at 120 ms and at 0 ms dwell each ran
+ToolSearch, `ping` and an answer through the pane, the no-pictures note
+showed, a reload restored the id, and a typed `gpt-5.5` was refused with the
+pick reverted. No console errors.
+
+**What it does not show.** No real OpenRouter model has run it. Whether any
+model directs a film well is step 5, the scored trials, which need a key and
+credit.

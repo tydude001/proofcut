@@ -846,6 +846,29 @@ def _agent_bin() -> str:
     return shutil.which(name) or name
 
 
+def uses_director(model: str | None) -> bool:
+    """Whether `model` runs through `proofcut.director` rather than `claude`.
+
+    An OpenRouter id is always `vendor/model`, and no Claude Code model id has
+    held a `/`, so the id alone picks the route and there is no second setting
+    to keep in step. No model, and every Claude id, stays on `claude`, the
+    default. docs/plans/OPENROUTER.md § How the panel chooses it.
+    """
+    return bool(model) and "/" in model
+
+
+def _agent_command(model: str | None) -> list[str]:
+    """The argv head the agent pane and `agent_trial.py` spawn for `model`.
+
+    The director is this interpreter's own module, never a name on PATH, for
+    the reason `_mcp_config` gives for its `command`. Both routes take the same
+    flags after it.
+    """
+    if uses_director(model):
+        return [sys.executable, "-m", "proofcut.director"]
+    return [_agent_bin()]
+
+
 class AgentSession:
     """One `claude -p` subprocess per server, spawned lazily on first prompt.
 
@@ -918,7 +941,7 @@ class AgentSession:
 
     def _spawn(self) -> subprocess.Popen[str]:
         argv = [
-            _agent_bin(),
+            *_agent_command(self._model),
             "-p",
             "--verbose",
             "--input-format",

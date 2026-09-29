@@ -4,7 +4,8 @@ The ask: make the local-director spike a real feature, pointed at OpenRouter,
 so the web UI's agent panel and `scripts/agent_trial.py` can run on GPT,
 Gemini, DeepSeek, Qwen or Claude through one key.
 
-This note is the design. Nothing below is built.
+This note is the design. It was built the same day; § What was built is
+the record, and HISTORY.md § The OpenRouter director, built has the tests.
 
 ## Why this reverses LOCAL.md's "the shim stays a spike"
 
@@ -164,3 +165,26 @@ scored, with their scores. "Works with any OpenRouter model" is not claimed.
    passed. Recommend yes.
 5. **Trial budget about $20 to $30, on your key.** Recommend the three-model
    demo pass first ($5 or less), then decide on the real-footage runs.
+
+## What was built, 2026-09-29
+
+Steps 1 to 4, as designed, with the five recommendations taken.
+
+- `src/proofcut/director.py`: the spike's loop plus stdin turns, interrupt,
+  pictures, `usage.cost` into `total_cost_usd`, `--max-budget-usd`,
+  `cache_control` for `anthropic/` ids, `provider.require_parameters`, the
+  `reasoning_details` round trip, the allowlist check, and errors that say
+  what to do. The model's `/models` listing is read once at start: a model
+  missing from it, or without `tools`, is refused before any tokens.
+- Qwen models get no `cache_control`. OpenRouter wants their breakpoints on
+  content blocks rather than at the top level, and nothing here measured
+  whether it matters. A trial on a Qwen id should read `cache_read_input_tokens`
+  in its result first.
+- `webui.uses_director` and `_agent_command`, used by `AgentSession._spawn`
+  and `agent_trial.py`.
+- `doctor`'s OpenRouter line, one `GET /key`.
+- The picker's OpenRouter group holds only "Other model…" (a typed id stays
+  listed for the page's life and is restored from `cache/session.json`),
+  because no model has been scored.
+
+Not done: step 5, the scored trials, which need Tyler's key.

@@ -341,12 +341,18 @@
                  select reading a bare value is undiscoverable. -->
             <label class="hint" for="agent-model-select">model</label>
             <span class="select-wrap">
-              <select id="agent-model-select" title="which Claude model the agent runs as">
+              <select id="agent-model-select" title="which model the agent runs as: Claude, or an OpenRouter id">
                 <option value="">Default</option>
                 <option value="claude-opus-5">Opus 5</option>
                 <option value="claude-sonnet-5">Sonnet 5</option>
                 <option value="claude-haiku-4-5-20251001">Haiku 4.5</option>
                 <option value="claude-fable-5">Fable 5</option>
+                <!-- An id with a `/` runs on OpenRouter through proofcut.director
+                     (docs/plans/OPENROUTER.md). Only models a scored trial
+                     passed are listed; "Other model…" takes any id. -->
+                <optgroup id="agent-model-openrouter" label="OpenRouter">
+                  <option value="__openrouter">Other model…</option>
+                </optgroup>
               </select>
             </span>
             <span class="spacer"></span>

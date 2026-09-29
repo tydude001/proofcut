@@ -777,6 +777,50 @@ def test_a_claude_is_run_for_its_version_rather_than_found(
     assert "exited 3" in agent["why"]
 
 
+def test_no_openrouter_key_is_a_dash_and_never_moves_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Claude stays the pane's default, so a missing OpenRouter key is a note."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    payload = doctor.report()
+    assert payload["openrouter"]["ok"] is False
+    assert "openrouter.ai/keys" in payload["openrouter"]["fix"]
+    assert payload["ok"] == all(r["ok"] for r in payload["required"])
+    text = doctor.render(payload)
+    assert "– OpenRouter" in text and "✗ OpenRouter" not in text
+
+
+def test_an_openrouter_key_is_checked_rather_than_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set-but-refused is not a pass, and the key never reaches the report."""
+    import io
+    import urllib.error
+    import urllib.request
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-secret-value")
+    seen: list[str] = []
+
+    def refused(request: urllib.request.Request, timeout: float) -> None:
+        seen.append(request.full_url)
+        raise urllib.error.HTTPError(request.full_url, 401, "no", {}, io.BytesIO(b"{}"))  # type: ignore[arg-type]
+
+    monkeypatch.setattr(urllib.request, "urlopen", refused)
+    entry = doctor._openrouter()
+    assert entry["ok"] is False and "401" in entry["why"]
+    assert seen == ["https://openrouter.ai/api/v1/key"]
+
+    class Reply(io.BytesIO):
+        def __exit__(self, *args: object) -> None:
+            pass
+
+    monkeypatch.setattr(
+        urllib.request, "urlopen",
+        lambda request, timeout: Reply(b'{"data": {"limit_remaining": 12.5}}'),
+    )
+    entry = doctor._openrouter()
+    assert entry == {"ok": True, "why": None, "fix": None, "remaining_usd": 12.5}
+    text = doctor.render({**doctor.report(), "openrouter": entry})
+    assert "✓ OpenRouter key accepted, $12.50 of credit left" in text
+    assert "sk-or-secret-value" not in text
+
+
 # -- the old name's variables ----------------------------------------------
 
 
@@ -800,6 +844,7 @@ def _healthy_box(monkeypatch: pytest.MonkeyPatch) -> None:
         doctor, "_caption_font", lambda: {"ok": True, "font": "Outfit", "resolves_to": "Outfit"}
     )
     monkeypatch.setattr(doctor, "_agent", lambda: {"ok": True, "found": "/bin/claude", "version": "9.9.9"})
+    monkeypatch.setattr(doctor, "_openrouter", lambda: {"ok": False, "why": "unset", "fix": "set it", "remaining_usd": None})
 
 
 def test_no_old_name_variable_set_reads_as_the_all_clear(

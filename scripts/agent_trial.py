@@ -372,7 +372,7 @@ def run_agent(
     wrote cues into a project the next run had already re-initialised.
     """
     argv = [
-        webui._agent_bin(),
+        *webui._agent_command(model),
         "-p",
         brief,
         "--verbose",
@@ -1399,7 +1399,9 @@ def main(argv: list[str] | None = None) -> int:
                         "length band; anything unset is unsettled")
     parser.add_argument("--output", help="where the agent is told to render (default <work>/cut.mp4)")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
-    parser.add_argument("--model", default=None, help="pin the model (default: whatever claude picks)")
+    parser.add_argument("--model", default=None,
+                        help="pin the model (default: whatever claude picks); an id with a / in it "
+                        "runs on OpenRouter through proofcut.director (docs/plans/OPENROUTER.md)")
     parser.add_argument("--budget-usd", type=float, default=None)
     parser.add_argument("--keep-project", action="store_true",
                         help="score the project as it stands instead of starting from `init`")

@@ -835,6 +835,52 @@ def _agent() -> dict[str, Any]:
     return {"ok": True, "found": found, "version": version, "why": None, "fix": None}
 
 
+def _openrouter() -> dict[str, Any]:
+    """The agent pane's other route: a model id with a `/` runs on OpenRouter.
+
+    docs/plans/OPENROUTER.md § doctor. Its own section, like `_agent`: absent
+    is `–`, never a failure. With the key set it makes one `GET /key`, which
+    spends nothing and answers 401 for a key that does not work, so a ✓ here
+    means the key was accepted rather than merely present. The key itself is
+    never printed.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    from proofcut import director
+
+    key = os.environ.get(director.KEY_ENV)
+    if not key:
+        return {
+            "ok": False,
+            "why": f"{director.KEY_ENV} is not set, so only Claude models run in the agent pane",
+            "fix": f"make a key at https://openrouter.ai/keys and export {director.KEY_ENV}",
+            "remaining_usd": None,
+        }
+    request = urllib.request.Request(
+        f"{director.OPENROUTER_URL}/key", headers={"Authorization": f"Bearer {key}"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            data = json.loads(response.read()).get("data") or {}
+    except urllib.error.HTTPError as err:
+        return {
+            "ok": False,
+            "why": f"openrouter.ai refused the key ({err.code})",
+            "fix": f"check {director.KEY_ENV} against https://openrouter.ai/keys",
+            "remaining_usd": None,
+        }
+    except (urllib.error.URLError, OSError, ValueError) as err:
+        return {
+            "ok": False,
+            "why": f"could not reach openrouter.ai to check the key ({err})",
+            "fix": "check the network, then run doctor again",
+            "remaining_usd": None,
+        }
+    return {"ok": True, "why": None, "fix": None, "remaining_usd": data.get("limit_remaining")}
+
+
 # -- the old name's variables --------------------------------------------
 
 #: The prefix every variable carried before the rename, and the one it carries
@@ -948,6 +994,7 @@ def report() -> dict[str, Any]:
         "display": _display(),
         "caption_font": _caption_font(),
         "agent": _agent(),
+        "openrouter": _openrouter(),
         "legacy_env": _legacy_env(),
         "long_paths": _long_paths(),
         # What the models have said about sources, kept outside every project.
@@ -1066,6 +1113,17 @@ def render(payload: dict[str, Any]) -> str:
             lines.append(f"  {_DASH} claude" + (f" — {agent['found']}" if agent["found"] else ""))
             lines += _wrap(agent["why"], indent="      ")
             lines += _wrap(f"fix: {agent['fix']}", indent="      ")
+    # `.get`, the agent section's reason.
+    openrouter = payload.get("openrouter")
+    if openrouter is not None:
+        if openrouter["ok"]:
+            left = openrouter.get("remaining_usd")
+            credit = "no credit limit" if left is None else f"${left:.2f} of credit left"
+            lines.append(f"  {_TICK} OpenRouter key accepted, {credit} (models with a / in the id)")
+        else:
+            lines.append(f"  {_DASH} OpenRouter")
+            lines += _wrap(openrouter["why"], indent="      ")
+            lines += _wrap(f"fix: {openrouter['fix']}", indent="      ")
 
     # `.get`, the agent section's reason: hand-built payloads predate it.
     legacy = payload.get("legacy_env")

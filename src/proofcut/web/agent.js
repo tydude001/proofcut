@@ -99,8 +99,23 @@ export function getSelectedModel() {
  */
 export function setSelectedModel(model) {
   selectedModel = typeof model === "string" ? model : "";
+  if (selectedModel.includes("/")) ensureModelOption(selectedModel);
   const select = $("agent-model-select");
   if (select) select.value = selectedModel;
+}
+
+// The "Other model…" entry's value, never sent: choosing it asks for an id.
+const OTHER_MODEL = "__openrouter";
+
+/** An OpenRouter id typed once stays in the list for the rest of the page,
+ * above "Other model…", so switching back to it is one pick. */
+function ensureModelOption(id) {
+  const group = $("agent-model-openrouter");
+  if (!group || [...group.children].some((o) => o.value === id)) return;
+  const option = document.createElement("option");
+  option.value = id;
+  option.textContent = id;
+  group.insertBefore(option, group.lastElementChild);
 }
 
 /** Shared by "New Task" and a mid-conversation model switch — both start a
@@ -468,6 +483,11 @@ function handleAgentEvent(data) {
       if (data.subtype === "init") {
         setModel(data.model);
         reportMcpServers(data.mcp_servers);
+        // Only proofcut.director sends `director`; a model with no image input
+        // gets the sheets' text alone, and the person watching should know.
+        if (data.director && data.director.vision === false) {
+          append(entry("agent-entry--system", `${data.model} cannot see pictures: sheets are drawn here, but it reads only their text.`));
+        }
       }
       return;
     case "rate_limit_event":
@@ -893,6 +913,17 @@ export function init(passedCtx) {
   const modelSelect = $("agent-model-select");
 
   modelSelect.addEventListener("change", () => {
+    if (modelSelect.value === OTHER_MODEL) {
+      const typed = (window.prompt("OpenRouter model id, such as openai/gpt-5.5", "") || "").trim();
+      if (!typed.includes("/")) {
+        // An id without a `/` would run on `claude` instead (webui.uses_director).
+        modelSelect.value = selectedModel;
+        if (typed) append(entry("agent-entry--system bad", `"${typed}" is not an OpenRouter id; ids look like openai/gpt-5.5.`));
+        return;
+      }
+      ensureModelOption(typed);
+      modelSelect.value = typed;
+    }
     selectedModel = modelSelect.value;
   });
 

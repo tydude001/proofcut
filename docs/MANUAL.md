@@ -170,6 +170,26 @@ required. Riding all three is the truth strip —
 `proofcut finish-report` made ambient, so a film that would ship wrong says so
 while you edit. docs/plans/STUDIO.md is the design.
 
+### The agent pane on an OpenRouter model
+
+The agent pane runs Claude Code by default. To run it on another model, set
+an OpenRouter key where the window starts, then pick **OpenRouter → Other
+model…** in the pane's model list and type the model's id:
+
+```sh
+export OPENROUTER_API_KEY=sk-or-...           # https://openrouter.ai/keys
+uv run proofcut doctor                        # checks the key, and shows the credit left
+uv run proofcut -C myproject open
+```
+
+Any id with a `/` in it (`openai/gpt-5.5`, `google/gemini-3.5-flash`)
+runs through `proofcut.director`. It gets the same proofcut tools and nothing
+else. A model that cannot see pictures says so when it starts. `scripts/agent_trial.py --model <id>` scores one the
+same way. **No OpenRouter model has passed a scored trial yet**, so which
+ones can cut a film well is unmeasured. docs/plans/OPENROUTER.md has the
+design, and docs/plans/LOCAL.md has the only runs of a non-Claude model so
+far.
+
 ## Multi-mic recordings
 
 A recording with more than one audio stream is **refused** rather than
