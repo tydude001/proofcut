@@ -60,6 +60,22 @@ def test_the_timeline_stutter_rule_is_unchanged() -> None:
     assert agent_trial.find_restart(["make", "names", "a", "make", "names", "a", "word"], min_run=5) is None
 
 
+def test_a_retake_with_its_opening_cut_away_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The 2026-09-30 film: the first take's tail, the good take's eight-word
+    # opening, then the tail again. Eight is past `STUTTER_GAP`, which passed it.
+    tail = "The best 12 minutes of horror in the 90s."
+    _heard(monkeypatch, f"{tail} {LINE} {REST}")
+    got = agent_trial._repeat_heard_check(Path("cut.mp4"), {})
+    assert got["ok"] is False and "best 12 minutes of horror in the 90s" in got["detail"]
+    assert agent_trial.find_restart(f"{tail} {LINE}".split(), min_run=5) is None
+
+
+def test_a_refrain_a_long_way_apart_passes(monkeypatch: pytest.MonkeyPatch) -> None:
+    far = " ".join(f"w{n}" for n in range(agent_trial.RETAKE_GAP + 1))
+    _heard(monkeypatch, f"{LINE} {far} {LINE}")
+    assert agent_trial._repeat_heard_check(Path("cut.mp4"), {})["ok"] is True
+
+
 @pytest.mark.parametrize(
     ("want", "seconds", "ok"),
     [

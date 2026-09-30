@@ -44,6 +44,10 @@ Where proofcut already shows up is covered:
 A site would be a fourth front door to keep in sync with the other three
 while there is nothing on it that they lack.
 
+**Tyler's call, 2026-09-30: hold off.** The launch clip exists now, which
+was one stated unblocker, and traffic still does not. Nothing tracks this as
+open work; the section below is what reopens it.
+
 ## What would make it worth building
 
 Either of these, and the first is the likelier:

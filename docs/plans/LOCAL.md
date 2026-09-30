@@ -429,7 +429,8 @@ words by hand, `find_restart` returns nothing for this shape and the
 seventeen-word run for the older one. The scorer's own `verify` did name it
 (`repeated`, 220 heard against 203 expected) and still passed at
 similarity 0.96. Widening the gap changes what every earlier run scores, so
-it is proposed here and not made.
+it was Tyler's call, and it was made the same day (§ The heard-repeat gap,
+widened, below).
 
 **It ignored the length again.** It noted the cut was 87.6 s against "about
 45 seconds", listened to two more spans, found them clean and kept all of
@@ -443,3 +444,44 @@ what to do instead.
 the 109 of 2026-09-19, and the model store was warm for 3 of 13 answers, so
 the wall time is not a cold run. Pictures stay unjudged: the four images
 returned were dropped for a model with no vision projector.
+
+## The heard-repeat gap, widened, 2026-09-30
+
+Tyler's call: fix the scorer and re-score what came before. `no_repeat_heard`
+now has its own bound, `RETAKE_GAP` = 20 words, where it borrowed
+`STUTTER_GAP` (6). The timeline-side `no_stutter` keeps 6: it counts two-word
+runs, and two words repeat eight apart in ordinary speech.
+
+Every trial render still on disk was heard once with the windowed pass and
+the rule applied at both bounds (words and script in
+`spikes/local-director/rescore-gap/`). A work directory keeps only its last
+run's render, so a run that is not below cannot be re-heard.
+
+| render | words | nearest 5+ word repeat | at 6 | at 20 |
+|---|---|---|---|---|
+| Claude demo, `20260916-144351` | 34 | none | pass | pass |
+| demo control | 34 | none | pass | pass |
+| Claude film, `20260916-143238` | 34 | none | pass | pass |
+| Claude real footage, `20260916-143523` | 207 | none | pass | pass |
+| Qwen demo, `20260919-153534` | 40 | 5 words, 1 apart | fail | fail |
+| Qwen demo 2, `20260919-155342` | 34 | none | pass | pass |
+| Qwen demo 3, `20260919-161200` | 34 | none | pass | pass |
+| Qwen film, `20260919-154710` | 34 | none | pass | pass |
+| Qwen real, `20260922-004828` | 221 | 9 words, 8 apart | pass | **fail** |
+| Qwen real, `20260922-143625` | 230 | 17 words, 0 apart | fail | fail |
+| Qwen real, `20260930-145729` | 222 | 9 words, 8 apart | pass | **fail** |
+
+**Two verdicts move, both Qwen's real-footage films.** The 2026-09-30 run is
+10 of 12 (its `report.json` is re-scored; the 11/12 report is beside it as
+`report.before-gap-20.json`). The first 2026-09-22 run kept the same
+nine-word repeat, which nothing had recorded; it was 7 of 10 on the checks
+of its day, and its report is left as scored.
+
+**No film without a retake repeats five words at any distance**, the
+207-word Claude cut included. So 20 is not tuned against a near miss: the
+bound is there for a refrain a longer film says on purpose, which no trial
+film has yet had.
+
+**The film control's render cannot be heard.** `_render_seconds` reads
+16.100 s off the container and `transcribe_windowed` refuses a span past the
+16.043 s of audio, so `no_repeat_heard` is unsettled there at either bound.

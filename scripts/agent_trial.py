@@ -172,6 +172,16 @@ STUTTER_STOPWORDS = frozenset(
 #: seventeen (LOCAL.md § The rerun with `hear` on the map).
 RETAKE_MIN_WORDS = 5
 
+#: …and only when the second copy starts within this many words of the first
+#: ending. `STUTTER_GAP` was the bound until 2026-09-30, and it passed a film
+#: that says nine words, eight others, then the nine again: a retake whose
+#: first take lost its opening to a cut, so the good take's opening sits
+#: between the copies. Twenty is a full sentence of other words (the line in
+#: question is seventeen). No render on record that kept no retake repeats
+#: five words at any distance (LOCAL.md § The heard-repeat gap, widened), so
+#: the bound is there for a refrain a longer film says on purpose.
+RETAKE_GAP = 20
+
 #: How many registered clips the demo brief's three files should produce. It
 #: is a parameter because a real folder is not three files and an agent is not
 #: obliged to import all of it: over real material the floor is what the
@@ -994,7 +1004,7 @@ def _render_seconds(final: Path) -> tuple[float | None, str]:
 
 
 def _repeat_heard_check(final: Path, facts: dict[str, Any]) -> dict[str, Any]:
-    """Does the delivered film say any stretch of five words or more twice running?
+    """Does the delivered film say any stretch of five words or more twice, close together?
 
     Heard off the render itself, never the timeline: the retake this exists for
     was inside one word's duration, so the transcript held one take, `no_stutter`
@@ -1017,9 +1027,9 @@ def _repeat_heard_check(final: Path, facts: dict[str, Any]) -> dict[str, Any]:
     facts["heard_render_words"] = len(words)
     if not words:
         return _check(name, None, "no words heard in the render")
-    found = find_restart(words, min_run=RETAKE_MIN_WORDS)
+    found = find_restart(words, min_run=RETAKE_MIN_WORDS, gap=RETAKE_GAP)
     if found:
-        return _check(name, False, f"{' '.join(found)!r} is heard twice running in the render")
+        return _check(name, False, f"{' '.join(found)!r} is heard twice within {RETAKE_GAP} words in the render")
     return _check(name, True, f"no run of {RETAKE_MIN_WORDS}+ words heard twice in {len(words)} words")
 
 
@@ -1096,12 +1106,12 @@ def _phrase_check(
     return _check(name, ok, detail)
 
 
-def find_restart(words: list[str], *, min_run: int = 2) -> list[str] | None:
-    """The longest run of words that repeats within `STUTTER_GAP` words of itself.
+def find_restart(words: list[str], *, min_run: int = 2, gap: int = STUTTER_GAP) -> list[str] | None:
+    """The longest run of words that repeats within `gap` words of itself.
 
     Order-only, like every reader of a transcript here: it takes the words as
     spoken and knows nothing of their durations. A run repeats when a second
-    copy starts at most `STUTTER_GAP` words after the first one ends, and a run
+    copy starts at most `gap` words after the first one ends, and a run
     of `min_run` or more words with at least one word that is not a stopword
     counts.
     """
@@ -1113,7 +1123,7 @@ def find_restart(words: list[str], *, min_run: int = 2) -> list[str] | None:
             run = 0
             while j + run < len(tokens) and tokens[i + run] == tokens[j + run] and i + run < j:
                 run += 1
-            if run < min_run or j - (i + run) > STUTTER_GAP:
+            if run < min_run or j - (i + run) > gap:
                 continue
             found = tokens[i : i + run]
             if all(t in STUTTER_STOPWORDS for t in found):
