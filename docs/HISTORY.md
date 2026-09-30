@@ -19045,3 +19045,22 @@ pick reverted. No console errors.
 **What it does not show.** No real OpenRouter model has run it. Whether any
 model directs a film well is step 5, the scored trials, which need a key and
 credit.
+
+## The widened retake rule, run — 2026-09-30
+
+The local director's real-footage brief again, the first trial under the
+retake line of 2026-09-26 (§ The map's retake rule, widened). Record and
+numbers: docs/plans/LOCAL.md § The rerun under the widened retake rule.
+
+- **It moved the agent, and not far enough.** The 2026-09-22 run heard the
+  fluffed take and cut nothing; this one cut its first eight words by word
+  index. The render still opens "The best 12 minutes of horror in the 90s"
+  and then says the whole line, because the second take is inside one word's
+  duration and the rule's "cut by time" was not followed.
+- **`verify` twice and `finish_check` once named the repeat**, and the agent
+  called each a whisper artifact.
+- **The score passed it, 11 of 12.** `no_repeat_heard` only sees a repeat
+  whose second copy starts within six words of the first ending; this one
+  is eight apart. Only `length_on_brief` failed (87.6 s against 80).
+- Nothing in the repo changed but these two documents. The scorer gap and
+  `verify`'s raw error on an empty `transcript_path` are recorded, not fixed.

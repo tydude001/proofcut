@@ -386,5 +386,60 @@ vision projector, and 8 shots hung off `broll_brief`, 5 of them on
 render, and checks its length): `no_repeat_heard` hears the whole render and
 `length_on_brief` reads a declared band. Under them this run scores 10 of 12,
 failing both new ones. The map's retake-trigger proposal above was
-made the same day (HISTORY.md § The map's retake rule, widened) and has not
-yet been run.
+made the same day (HISTORY.md § The map's retake rule, widened) and was run
+2026-09-30, below.
+
+## The rerun under the widened retake rule, 2026-09-30
+
+Run `trial-real/runs/20260930-145729`, the same seat, shim and brief, on
+`4fa2d71`, whose map carries the widened retake line. The 2026-09-22 project
+and renders are beside it in `trial-real/proj-run2`.
+
+| | Qwen, 2026-09-22 | Qwen, 2026-09-30 |
+|---|---|---|
+| checks | 10/12 under today's score | 11/12, `length_on_brief` failed |
+| turns / calls | 59 / 69, 4 refused | 52 / 75, 8 refused |
+| wall | 2,014 s | 2,185 s |
+| `hear` calls | 8 | 6 |
+| length | 93.7 s | 87.6 s |
+
+**The rule moved the agent halfway.** On 2026-09-22 it listened to the
+fluffed take and cut nothing. This time it cut the take's first eight words
+(`cut_by_transcript` over words 0 to 7) and stopped there. Whisper on the
+CPU over the render's first 30 s hears "The best 12 minutes of horror in the
+90s" at 2.3 to 5.4 s, then "The first 12 minutes of Scream are still the
+best 12 minutes of horror in the 90s" at 7.8 to 13.3 s. So the film still
+says its opening line twice. It cut by word, where the rule says to cut by
+time, and the second take is inside one word's duration, where no word
+index reaches it.
+
+**It was told three times and explained each away.** Its own `verify`
+reported the head as `repeated`, a windowed `verify` said the same, and
+`finish_check` came back `ok: false` with three faults. Its summary calls
+all of them "whisper transcription artifacts" and says "the render is
+correct". The discovery gap is closed and the trigger now fires; what is
+left is that this model will not believe a check over its own timeline.
+
+**The score passed it, which is a third scorer gap.** `no_repeat_heard`
+heard all 222 words and passed, because `find_restart` wants the second
+copy to start within `STUTTER_GAP` (6) words of the first ending. The
+2026-09-22 film said the line twice running. This one says nine words,
+eight others, then the nine again, and eight is past the gap. Fed the heard
+words by hand, `find_restart` returns nothing for this shape and the
+seventeen-word run for the older one. The scorer's own `verify` did name it
+(`repeated`, 220 heard against 203 expected) and still passed at
+similarity 0.96. Widening the gap changes what every earlier run scores, so
+it is proposed here and not made.
+
+**It ignored the length again.** It noted the cut was 87.6 s against "about
+45 seconds", listened to two more spans, found them clean and kept all of
+it. The band check caught this one.
+
+**One raw error.** `verify` with `transcript_path: ""` answered
+`[Errno 21] Is a directory: '.'` where every other refusal in the run named
+what to do instead.
+
+**Not comparable on everything.** The server advertised 133 tools against
+the 109 of 2026-09-19, and the model store was warm for 3 of 13 answers, so
+the wall time is not a cold run. Pictures stay unjudged: the four images
+returned were dropped for a model with no vision projector.
