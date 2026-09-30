@@ -485,3 +485,19 @@ film has yet had.
 **The film control's render cannot be heard.** `_render_seconds` reads
 16.100 s off the container and `transcribe_windowed` refuses a span past the
 16.043 s of audio, so `no_repeat_heard` is unsettled there at either bound.
+
+## The two loose ends, closed 2026-09-30
+
+Both were Tyler's calls, made the same day.
+
+**The film control is heard now.** `_repeat_heard_check` passes no `end`, so
+the windowed pass hears to the end of the audio and the container's length
+is not asked about; `transcribe_windowed` still refuses a span past the
+audio for every caller that names one. On the control's `cut.mp4` the old
+call is refused as before and the check hears 34 words with no repeat: a
+pass at 6 and at 20, which completes the table above.
+
+**A blank `transcript_path` is one not given.** `verify`, `unspoken_detect`
+and `finish_check` read `""` as left out (`ops._given_transcript`) and hear
+the render themselves. `verify` with `""` on the control project ran
+single-pass, 34 words against 34, similarity 0.971.

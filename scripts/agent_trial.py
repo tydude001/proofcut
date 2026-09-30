@@ -1014,13 +1014,15 @@ def _repeat_heard_check(final: Path, facts: dict[str, Any]) -> dict[str, Any]:
     on the map). The windowed pass is the one `hear` and `verify --windowed`
     use, because short windows are what does not tidy a retake away; over that
     film it heard all seventeen words twice.
+
+    No `end` is passed: the pass hears to the end of the audio. The container's
+    length is not that — the film control's reads 16.100 s over 16.043 s of
+    audio, and `transcribe_windowed` rightly refuses a span past the audio
+    (LOCAL.md § The heard-repeat gap, widened).
     """
     name = "no_repeat_heard"
-    length, why = _render_seconds(final)
-    if length is None:
-        return _check(name, None, f"could not read the render's length: {why}")
     try:
-        heard = asr.transcribe_windowed(final, start=0.0, end=length, allow_silence=True)
+        heard = asr.transcribe_windowed(final, allow_silence=True)
     except Exception as exc:  # noqa: BLE001
         return _check(name, None, f"the render could not be heard: {exc}")
     words = [str(w.get("word") or "").strip() for w in heard.get("words") or []]

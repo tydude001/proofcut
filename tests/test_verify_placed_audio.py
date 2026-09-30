@@ -175,6 +175,32 @@ def test_finish_check_does_not_call_a_line_the_edit_says_twice_a_repeat(
     assert result["missing"] == []
 
 
+class _Transcribed(Exception):
+    """Raised by the stand-in whisper: the op went to transcribe the render itself."""
+
+
+@pytest.mark.parametrize("blank", ["", "  "])
+@pytest.mark.parametrize("op", ["verify", "unspoken_detect", "finish_check"])
+def test_a_blank_transcript_path_is_one_not_given(
+    project: Project, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, op: str, blank: str
+) -> None:
+    """The local director's `verify` sent `transcript_path: ""` and was answered
+    `[Errno 21] Is a directory: '.'` (docs/plans/LOCAL.md § The rerun under the
+    widened retake rule). An agent fills an optional string with `""`."""
+    ops.sound_add(project.root, "vo", "rec", event="words", src_out=2.0, ducks=True)
+    final = tmp_path / "final.wav"
+    _ffmpeg("-f", "lavfi", "-i", "sine=frequency=300:duration=10:sample_rate=48000", str(final))
+
+    def transcribe(*_a: object, **_k: object) -> dict:
+        raise _Transcribed
+
+    monkeypatch.setattr(ops.asr, "transcribe", transcribe)
+    monkeypatch.setattr(ops.asr, "transcribe_windowed", transcribe)
+
+    with pytest.raises(_Transcribed):
+        getattr(ops, op)(project.root, final, transcript_path=blank)
+
+
 def test_a_voice_sound_is_captioned_where_it_plays(project: Project, tmp_path: Path) -> None:
     """Tyler's call, 2026-09-22: a narrator placed as a sound gets subtitles,
     from the same expectation `verify` checks the render against."""

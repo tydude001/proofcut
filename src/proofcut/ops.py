@@ -19626,6 +19626,7 @@ def unspoken_detect(
     already = _stored_unspoken(project)
 
     render_path = Path(render).expanduser()
+    transcript_path = _given_transcript(transcript_path)
     if transcript_path is not None:
         heard_transcript = tx.load(transcript_path, clip_id="render")
         origin = str(transcript_path)
@@ -20671,6 +20672,19 @@ def _shared_language(transcripts: dict[str, tx.Transcript]) -> str | None:
     return languages.pop() if len(languages) == 1 else None
 
 
+def _given_transcript(transcript_path: Path | str | None) -> Path | str | None:
+    """A blank `transcript_path` is one that was not given.
+
+    An agent fills an optional string argument with `""`, and `Path("")` is
+    `.`: the local director's `verify` was answered `[Errno 21] Is a
+    directory: '.'` (docs/plans/LOCAL.md § The rerun under the widened retake
+    rule). Blank means what leaving it out means — hear the render.
+    """
+    if isinstance(transcript_path, str) and not transcript_path.strip():
+        return None
+    return transcript_path
+
+
 #: How far past a configured head's own length `verify` still counts a heard
 #: word as the head's own, not the render's first body word. Whisper's word
 #: timestamps are not frame-exact (CLAUDE.md: "trust a transcript's word
@@ -20754,6 +20768,7 @@ def verify(
     # a windowed pass wants the one least inclined to tidy a stutter away.
     model = model or (asr.WINDOWED_MODEL if windowed else asr.DEFAULT_MODEL)
 
+    transcript_path = _given_transcript(transcript_path)
     if transcript_path is not None:
         # Named for what produced the words, not for what was asked for: a
         # supplied transcript is whatever pass made it, and reporting it as
@@ -21156,6 +21171,7 @@ def finish_check(
     expected = vfy.tokens(text for _, text in timed_said)
 
     asr_result: dict[str, Any] = {}
+    transcript_path = _given_transcript(transcript_path)
     if transcript_path is not None:
         asr_result["mode"] = "supplied"
         heard_transcript = tx.load(transcript_path, clip_id="render")

@@ -54,6 +54,21 @@ def test_nothing_heard_is_unsettled_not_failed(monkeypatch: pytest.MonkeyPatch, 
     assert agent_trial._repeat_heard_check(Path("cut.mp4"), {})["ok"] is None
 
 
+def test_the_render_is_heard_to_the_end_of_its_audio(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The film control: 16.100 s by the container, 16.043 s of audio. A span
+    # ending at the container's length is refused, so none is asked for.
+    asked: dict = {}
+
+    def transcribe(_media: object, **kwargs: object) -> dict:
+        asked.update(kwargs)
+        return {"words": [{"word": w} for w in CLAUDE_FILM.split()]}
+
+    monkeypatch.setattr(agent_trial.asr, "transcribe_windowed", transcribe)
+    monkeypatch.setattr(agent_trial, "_render_seconds", lambda _f: (16.100, ""))
+    assert agent_trial._repeat_heard_check(Path("cut.mp4"), {})["ok"] is True
+    assert asked.get("end") is None and asked.get("allow_silence") is True
+
+
 def test_the_timeline_stutter_rule_is_unchanged() -> None:
     # `min_run` defaults to the two words `no_stutter` has always counted.
     assert agent_trial.find_restart(["make", "names", "a", "make", "names", "a", "word"]) is not None
