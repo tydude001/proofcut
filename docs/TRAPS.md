@@ -1437,8 +1437,10 @@ built; docs/plans/INSTALL.md):
     `setlocale` mid-render, which is the Mac crash. `numeric_c_env` pins
     `LC_NUMERIC=C` and drops `LC_ALL`, because Qt calls `setlocale(LC_ALL, "")`
     and a comma-decimal locale changed the demo's audio without the pin.
-    `mlt.py` still writes the attribute, for Kdenlive. HISTORY.md § The Mac
-    melt crash, found.
+    `mlt.py` still writes the attribute, for Kdenlive. Upstream calls locale
+    numerics legacy and plans `uselocale` (mltframework/mlt#1326, 2026-09-30),
+    so keep the strip until a fixed melt passes the Mac soak. HISTORY.md § The
+    Mac melt crash, found.
   - **A *failed* render's staging directory survives on purpose, and
     `sweep_scratch` drops it after `SCRATCH_RETENTION_DAYS`.** It sweeps by
     name (`_SCRATCH_NAME`), never by age alone — a hand-placed directory in
