@@ -25,8 +25,11 @@ not tell a fix from no fix.
     melt_soak.py PROJECT OUT --renders 50 --melt fix=/path/melt --melt master=/path/melt
 
 A `--melt` value is split like a shell word list, so a flatpak melt works
-too. The summary goes to stdout and `OUT/summary.txt`. A crashed render's
-output is kept as `OUT/<arm>-<n>.log`. The exit is 0 whatever the count,
+too. The summary goes to stdout and `OUT/summary.txt`. A failed render's
+output is kept as `OUT/<arm>-<n>.log`. A render still running after
+`--timeout` counts as hung: its stacks go to `OUT/<arm>-<n>.sample.txt`
+(macOS's `sample`) before it is killed, because the first A/B lost a master
+render that hung for 80 minutes with nothing to show why. The exit is 0 whatever the count,
 because this is a measurement, not a gate.
 """
 
@@ -34,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -55,6 +59,14 @@ def write_document(project_dir: Path, out: Path) -> Path:
     return document
 
 
+def sample(pid: int, out: Path) -> None:
+    """Every thread's stack in a hung melt, where macOS's `sample` exists."""
+    if shutil.which("sample") is None:
+        out.write_text("no `sample` on this OS\n")
+        return
+    subprocess.run(["sample", str(pid), "5", "-file", str(out)], capture_output=True, check=False)
+
+
 def how(returncode: int) -> str:
     if returncode == 0:
         return "ok"
@@ -71,6 +83,9 @@ def main() -> None:
     parser.add_argument("project", type=Path)
     parser.add_argument("out", type=Path)
     parser.add_argument("--renders", type=int, default=50, help="renders per melt")
+    parser.add_argument(
+        "--timeout", type=float, default=60, help="seconds before a render counts as hung (default 60)"
+    )
     parser.add_argument("--melt", action="append", required=True, metavar="ARM=COMMAND")
     args = parser.parse_args()
 
@@ -98,19 +113,26 @@ def main() -> None:
     for i in range(1, args.renders + 1):
         for name, command in arms.items():
             rendered = args.out / f"{name}.mp4"
+            log = args.out / f"{name}-{i}.log"
             start = time.monotonic()
-            completed = subprocess.run(
-                [*command, str(document), "-consumer", f"avformat:{rendered}", *picture.RENDER_ARGS],
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                env=env,
-                check=False,
-            )
-            outcome = how(completed.returncode)
+            with log.open("w") as output:
+                melt = subprocess.Popen(
+                    [*command, str(document), "-consumer", f"avformat:{rendered}", *picture.RENDER_ARGS],
+                    stdin=subprocess.DEVNULL,
+                    stdout=output,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                )
+                try:
+                    outcome = how(melt.wait(timeout=args.timeout))
+                except subprocess.TimeoutExpired:
+                    outcome = "hung"
+                    sample(melt.pid, args.out / f"{name}-{i}.sample.txt")
+                    melt.kill()
+                    melt.wait()
             tally[name][outcome] = tally[name].get(outcome, 0) + 1
-            if outcome != "ok":
-                (args.out / f"{name}-{i}.log").write_text(completed.stdout + completed.stderr)
+            if outcome == "ok":
+                log.unlink()
             line(f"{i} {name} {outcome} {time.monotonic() - start:.1f}s")
 
     for name, counts in tally.items():

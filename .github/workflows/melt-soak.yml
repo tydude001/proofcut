@@ -34,6 +34,9 @@ on:
       renders:
         description: "renders per runner"
         default: "30"
+      runners:
+        description: "a JSON list of Mac runners"
+        default: '["macos-latest", "macos-15-intel"]'
       mlt_branch:
         description: "an MLT branch to test against its master base (empty: soak proofcut's own render path)"
         default: ""
@@ -46,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, macos-15-intel]
+        os: ${{ fromJSON(inputs.runners) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 180
     steps:
