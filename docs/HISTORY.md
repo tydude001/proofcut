@@ -19108,6 +19108,15 @@ renders. If it isn't the locale, proofcut's renders can hit it too. There,
 melt-soak's `hang` input renders stock melt with no `LC_NUMERIC` on the root
 to find out (e6f0883).
 
+**The hang test.** Run 36865461235, Apple silicon, Shotcut's stock melt, no
+`LC_NUMERIC` on the root: 0 of 300 failed under the runner's locale, and 0
+of 300 pinned to C as proofcut renders. Nothing hung, nothing crashed, and
+the slowest render took 6.7 s. At the A/B's rate of 2 hangs in about 500,
+600 clean renders would happen about 1 time in 10. That leans toward the
+hang needing the `setlocale` path, but it doesn't settle it. It also shows
+that the stripped document renders cleanly on stock melt with or without
+the pin.
+
 **What stays.** The strip and the pin stay until a Shotcut release ships
 libmlt with the fix and the plain soak passes on it. The crash retries stay
 too, since the hang may have its own cause.
