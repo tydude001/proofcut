@@ -44,7 +44,7 @@ on:
         description: "a JSON list of Mac runners"
         default: '["macos-latest", "macos-15-intel"]'
       mlt_branch:
-        description: "an MLT branch to test against its master base (empty: soak proofcut's own render path)"
+        description: "an MLT branch to test against its master base, or a commit already on master to test against its parent (empty: soak proofcut's own render path)"
         default: ""
       hang:
         description: "render stock melt with no LC_NUMERIC, to see whether a render hangs without setlocale"
@@ -112,9 +112,17 @@ jobs:
           set -euo pipefail
           git clone --filter=blob:none --no-checkout https://github.com/mltframework/mlt ~/mlt
           cd ~/mlt
-          git fetch origin "$BRANCH" master
-          fix=$(git rev-parse "origin/$BRANCH")
-          base=$(git merge-base "origin/$BRANCH" origin/master)
+          git fetch origin master
+          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
+            git fetch origin "$BRANCH"
+            fix=$(git rev-parse "origin/$BRANCH")
+          elif ! fix=$(git rev-parse --verify --quiet "$BRANCH^{commit}"); then
+            git fetch origin "$BRANCH"
+            fix=$(git rev-parse FETCH_HEAD)
+          fi
+          base=$(git merge-base "$fix" origin/master)
+          # A merged fix is its own merge-base, so its control is its parent.
+          if [ "$base" = "$fix" ]; then base=$(git rev-parse "$fix^1"); fi
           echo "fix $fix, master $base" | tee ~/mlt-revisions.txt
           for arm in "fix:$fix" "master:$base"; do
             name=${arm%%:*}
@@ -166,7 +174,7 @@ jobs:
             --melt master="$HOME/arms/master/Shotcut.app/Contents/MacOS/melt"
           cp ~/mlt-revisions.txt ~/melt-soak/
           {
-            echo "### ${{ matrix.os }}: ${{ inputs.mlt_branch }} against its master base"
+            echo "### ${{ matrix.os }}: ${{ inputs.mlt_branch }} against its base"
             cat ~/mlt-revisions.txt
             echo
             grep -E '^(fix|master): ' ~/melt-soak/summary.txt
