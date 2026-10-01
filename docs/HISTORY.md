@@ -19128,6 +19128,19 @@ master after 84da207. It is not the soaked branch: review rewrote
 check, so the A/B above measured an earlier draft of the fix, not the
 merged one.
 
+**The merged fix, soaked.** melt-soak's `mlt_branch` now also takes a commit
+already on master and builds its parent as the control (3337740), since the
+branch was deleted on merge and master is its own merge-base. Run
+36934456506, 200 renders per arm, interleaved, `LC_NUMERIC` kept:
+
+| runner | master (84da207) | fix (97854f3) |
+|---|---|---|
+| Intel | 5 of 200 SIGSEGV | 0 of 200 |
+| Apple silicon | 17 of 200 SIGSEGV | 0 of 200 |
+
+All 22 crash reports are the same fault, `localeconv_l` under
+`cache_object_close` (21) or `mlt_events_fire` (1). Nothing hung.
+
 **What stays.** The strip and the pin stay until a Shotcut release ships
 libmlt with the fix and the plain soak passes on it. The crash retries stay
 too, since the hang may have its own cause.
