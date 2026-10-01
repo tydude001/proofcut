@@ -24,6 +24,12 @@
 # differ only by the branch's commits: Shotcut's own libmlt is a master
 # snapshot of its own, so it is no control for a branch cut later.
 #
+# Given `hang`, it renders stock Shotcut melt through two arms with no
+# `LC_NUMERIC` on the document's root, so no `setlocale` runs: one under the
+# runner's locale, one pinned to C as `picture.render` runs it. The A/B left a
+# hang once on each build in about 500 Apple silicon renders, with no
+# `setlocale` in the stacks; a hang here would be melt's, not the locale's.
+#
 # By hand only: it is a measurement, not a gate.
 
 name: melt-soak
@@ -40,6 +46,10 @@ on:
       mlt_branch:
         description: "an MLT branch to test against its master base (empty: soak proofcut's own render path)"
         default: ""
+      hang:
+        description: "render stock melt with no LC_NUMERIC, to see whether a render hangs without setlocale"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -59,7 +69,7 @@ jobs:
       - name: the Mac test kit, for the demo project
         run: bash scripts/mac_trial.sh < /dev/null || true
       - name: render the demo again and again
-        if: inputs.mlt_branch == ''
+        if: inputs.mlt_branch == '' && !inputs.hang
         env:
           RENDERS: ${{ inputs.renders }}
         run: |
@@ -160,6 +170,23 @@ jobs:
             cat ~/mlt-revisions.txt
             echo
             grep -E '^(fix|master): ' ~/melt-soak/summary.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: render stock melt with no setlocale, unpinned and pinned
+        if: inputs.hang
+        env:
+          RENDERS: ${{ inputs.renders }}
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          melt="$HOME/.local/share/proofcut/deps/melt/Shotcut.app/Contents/MacOS/melt"
+          test -x "$melt" || { echo "the kit installed no Shotcut melt at $melt"; exit 1; }
+          .venv/bin/python3 scripts/melt_soak.py ~/proofcut-mac-trial/demo/proj ~/melt-soak \
+            --renders "$RENDERS" \
+            --melt unpinned="$melt" --strip unpinned \
+            --melt proofcut="$melt" --strip proofcut --pin proofcut
+          {
+            echo "### ${{ matrix.os }}: stock melt, no LC_NUMERIC on the root"
+            grep -E '^(unpinned|proofcut): ' ~/melt-soak/summary.txt
           } >> "$GITHUB_STEP_SUMMARY"
       - name: collect melt's crash reports
         if: always()

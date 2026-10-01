@@ -24,6 +24,14 @@ not tell a fix from no fix.
 
     melt_soak.py PROJECT OUT --renders 50 --melt fix=/path/melt --melt master=/path/melt
 
+`--strip ARM` gives that arm the document `picture.render_document` makes,
+with no `LC_NUMERIC` on its root, and `--pin ARM` gives it
+`picture.numeric_c_env`'s environment; both together are proofcut's own render
+path. They are how the hang is measured apart from the crash: a melt that
+stopped mid-render with no `setlocale` anywhere in its stacks, once on each
+build in about 500 Apple silicon renders, could be the locale path or could be
+melt (mltframework/mlt#1326).
+
 A `--melt` value is split like a shell word list, so a flatpak melt works
 too. The summary goes to stdout and `OUT/summary.txt`. A failed render's
 output is kept as `OUT/<arm>-<n>.log`. A render still running after
@@ -87,6 +95,8 @@ def main() -> None:
         "--timeout", type=float, default=60, help="seconds before a render counts as hung (default 60)"
     )
     parser.add_argument("--melt", action="append", required=True, metavar="ARM=COMMAND")
+    parser.add_argument("--strip", action="append", default=[], metavar="ARM", help="no LC_NUMERIC on the root")
+    parser.add_argument("--pin", action="append", default=[], metavar="ARM", help="LC_NUMERIC=C in melt's environment")
     args = parser.parse_args()
 
     arms = {}
@@ -95,10 +105,15 @@ def main() -> None:
         if not command:
             parser.error(f"--melt {given!r} is not ARM=COMMAND")
         arms[name] = shlex.split(command)
+    for given in [*args.strip, *args.pin]:
+        if given not in arms:
+            parser.error(f"{given!r} names no --melt arm")
 
     args.out.mkdir(parents=True, exist_ok=True)
     document = write_document(args.project, args.out)
+    stripped = picture.render_document(document)
     env = picture.display_env()
+    pinned = picture.numeric_c_env(env)
     summary = args.out / "summary.txt"
     tally: dict[str, dict[str, int]] = {name: {} for name in arms}
 
@@ -110,6 +125,9 @@ def main() -> None:
     line(f"document {document}, {args.renders} renders per arm, interleaved")
     locale = {k: v for k, v in sorted(env.items()) if k == "LANG" or k.startswith("LC_")}
     line(f"locale {locale or 'none set'}")
+    for name in arms:
+        given = [*(["stripped"] if name in args.strip else []), *(["pinned to C"] if name in args.pin else [])]
+        line(f"{name}: {', '.join(given) or 'LC_NUMERIC kept, locale as above'}")
     for i in range(1, args.renders + 1):
         for name, command in arms.items():
             rendered = args.out / f"{name}.mp4"
@@ -117,11 +135,11 @@ def main() -> None:
             start = time.monotonic()
             with log.open("w") as output:
                 melt = subprocess.Popen(
-                    [*command, str(document), "-consumer", f"avformat:{rendered}", *picture.RENDER_ARGS],
+                    [*command, str(stripped if name in args.strip else document), "-consumer", f"avformat:{rendered}", *picture.RENDER_ARGS],
                     stdin=subprocess.DEVNULL,
                     stdout=output,
                     stderr=subprocess.STDOUT,
-                    env=env,
+                    env=pinned if name in args.pin else env,
                 )
                 try:
                     outcome = how(melt.wait(timeout=args.timeout))
