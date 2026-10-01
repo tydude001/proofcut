@@ -15,6 +15,15 @@
 # `setlocale`, which a render no longer triggers (§ The Mac melt crash,
 # found); run 36519467972 on the fix uploaded no crash report.
 #
+# Given `mlt_branch`, it tests an MLT fix for that crash instead: it builds
+# libmlt from the branch and from the master commit the branch forks from,
+# swaps each into its own copy of Shotcut.app, and renders the demo's
+# document through both, interleaved (scripts/melt_soak.py). That document
+# keeps its `LC_NUMERIC`, so it reaches the `setlocale` path, and melt runs
+# directly, so `picture.render` re-runs no crash out of the count. The arms
+# differ only by the branch's commits: Shotcut's own libmlt is a master
+# snapshot of its own, so it is no control for a branch cut later.
+#
 # By hand only: it is a measurement, not a gate.
 
 name: melt-soak
@@ -25,6 +34,9 @@ on:
       renders:
         description: "renders per runner"
         default: "30"
+      mlt_branch:
+        description: "an MLT branch to test against its master base (empty: soak proofcut's own render path)"
+        default: ""
 
 permissions:
   contents: read
@@ -36,7 +48,7 @@ jobs:
       matrix:
         os: [macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
       # The kit is only here to install and build the demo project; its own
@@ -44,6 +56,7 @@ jobs:
       - name: the Mac test kit, for the demo project
         run: bash scripts/mac_trial.sh < /dev/null || true
       - name: render the demo again and again
+        if: inputs.mlt_branch == ''
         env:
           RENDERS: ${{ inputs.renders }}
         run: |
@@ -74,6 +87,77 @@ jobs:
             done
           } >> "$GITHUB_STEP_SUMMARY"
           [ "$failed" -eq 0 ]
+      # The framework alone: the fix is in src/framework, and every module
+      # Shotcut ships links libmlt by name, so a swapped dylib is the whole
+      # change. Every MOD_/USE_ option is turned off, read from the checkout so
+      # a new module cannot pull a dependency the runner lacks into the build.
+      - name: build libmlt from the branch and from its base
+        if: inputs.mlt_branch != ''
+        env:
+          BRANCH: ${{ inputs.mlt_branch }}
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --no-checkout https://github.com/mltframework/mlt ~/mlt
+          cd ~/mlt
+          git fetch origin "$BRANCH" master
+          fix=$(git rev-parse "origin/$BRANCH")
+          base=$(git merge-base "origin/$BRANCH" origin/master)
+          echo "fix $fix, master $base" | tee ~/mlt-revisions.txt
+          for arm in "fix:$fix" "master:$base"; do
+            name=${arm%%:*}
+            git worktree add --detach ~/mlt-"$name" "${arm#*:}"
+            off=$(grep -oE '^option\((MOD|USE)_[A-Z0-9_]+' ~/mlt-"$name"/CMakeLists.txt | sed -E 's/^option\(/-D/; s/$/=OFF/')
+            # shellcheck disable=SC2086
+            cmake -S ~/mlt-"$name" -B ~/mlt-"$name"/build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DBUILD_TESTING=OFF -DBUILD_DOCS=OFF -DCLANG_FORMAT=OFF $off
+            cmake --build ~/mlt-"$name"/build --target mlt -j "$(sysctl -n hw.ncpu)"
+          done
+      # Re-signed ad hoc, melt and the dylib both, in both arms alike: melt
+      # ships under the hardened runtime, whose library validation refuses a
+      # dylib another team signed.
+      - name: two copies of Shotcut.app, one libmlt each
+        if: inputs.mlt_branch != ''
+        run: |
+          set -euo pipefail
+          app="$HOME/.local/share/proofcut/deps/melt/Shotcut.app"
+          test -x "$app/Contents/MacOS/melt" || { echo "the kit installed no Shotcut melt at $app"; exit 1; }
+          otool -L "$app/Contents/MacOS/melt" | grep -i mlt
+          for name in fix master; do
+            mkdir -p ~/arms/"$name"
+            ditto "$app" ~/arms/"$name"/Shotcut.app
+            built=$(find ~/mlt-"$name"/build -name 'libmlt-7*.dylib' -type f | head -1)
+            test -n "$built" || { echo "no libmlt built for $name"; exit 1; }
+            found=0
+            while IFS= read -r stock; do
+              id=$(otool -D "$stock" | tail -1)
+              cp -f "$built" "$stock"
+              install_name_tool -id "$id" "$stock"
+              codesign --force --sign - "$stock"
+              echo "$name: $built -> $stock (id $id)"
+              found=1
+            done < <(find ~/arms/"$name"/Shotcut.app/Contents -name 'libmlt-7*.dylib' -type f)
+            test "$found" = 1 || { echo "no libmlt in Shotcut.app"; exit 1; }
+            codesign --force --sign - ~/arms/"$name"/Shotcut.app/Contents/MacOS/melt
+            ~/arms/"$name"/Shotcut.app/Contents/MacOS/melt --version < /dev/null || true
+          done
+      - name: render the branch against its base, interleaved
+        if: inputs.mlt_branch != ''
+        env:
+          RENDERS: ${{ inputs.renders }}
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          .venv/bin/python3 scripts/melt_soak.py ~/proofcut-mac-trial/demo/proj ~/melt-soak \
+            --renders "$RENDERS" \
+            --melt fix="$HOME/arms/fix/Shotcut.app/Contents/MacOS/melt" \
+            --melt master="$HOME/arms/master/Shotcut.app/Contents/MacOS/melt"
+          cp ~/mlt-revisions.txt ~/melt-soak/
+          {
+            echo "### ${{ matrix.os }}: ${{ inputs.mlt_branch }} against its master base"
+            cat ~/mlt-revisions.txt
+            echo
+            grep -E '^(fix|master): ' ~/melt-soak/summary.txt
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: collect melt's crash reports
         if: always()
         run: |
