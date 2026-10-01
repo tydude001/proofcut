@@ -12,7 +12,10 @@ so the order means the same thing on every machine.
 
 Failures are frequently opaque: when another job holds the GPU, whisper exits
 non-zero with the real reason buried several frames up a CUDA traceback. So the
-tail of stderr is carried into the exception rather than dropped.
+tail of stderr is carried into the exception rather than dropped. The one such
+failure with a known cure — CUDA out of memory — is retried once on the CPU
+(`_run_with_cpu_fallback`) instead of failing: on 2026-09-30 a `llama-server`
+holding 9.3 GB made every render's audio verify skip, and the CPU run passed.
 
 This module has no proofcut dependencies on purpose — `verify` and the
 `transcribe` tool both call it.
@@ -26,9 +29,11 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import wave
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -95,6 +100,36 @@ def whisper_binary() -> Path:
 #: whisper's verbose segment line: `[00:12.340 --> 00:15.000]  text`, with an
 #: hours field once the media passes an hour.
 _SEGMENT_LINE = re.compile(r"^\[(?:\d+:)?\d+:\d+\.\d+ --> (?:(\d+):)?(\d+):(\d+\.\d+)\]")
+
+
+#: What whisper's stderr carries when the card is full — torch's exception
+#: name and its message, either of which is enough.
+_CUDA_OOM = ("torch.OutOfMemoryError", "CUDA out of memory")
+
+
+def _run_with_cpu_fallback(
+    cmd: list[str], run: Callable[[list[str]], object], name: str
+) -> None:
+    """Run whisper; on a CUDA out-of-memory failure, run it again on the CPU.
+
+    Slower, but a transcript, where the alternative is a skipped verify that
+    reads like a broken pipeline. Any other failure, or a command that already
+    names a device, raises as before. Said on stderr, never stdout, which is
+    the MCP server's protocol channel.
+    """
+    try:
+        run(cmd)
+    except subprocess.CalledProcessError as exc:
+        text = f"{exc.stderr or ''}\n{exc.stdout or ''}"
+        if "--device" in cmd or not any(marker in text for marker in _CUDA_OOM):
+            raise
+        print(
+            f"proofcut: whisper ran out of GPU memory on {name} (another job holds "
+            "the card — `nvidia-smi`); retrying on the CPU, which is slower.",
+            file=sys.stderr,
+            flush=True,
+        )
+        run([*cmd, "--device", "cpu"])
 
 
 def _run_reporting(cmd: list[str], name: str, duration: float | None) -> None:
@@ -195,9 +230,15 @@ def transcribe(
 
         try:
             if progress.active():
-                _run_reporting(cmd, source.name, duration)
+                _run_with_cpu_fallback(
+                    cmd, lambda c: _run_reporting(c, source.name, duration), source.name
+                )
             else:
-                subprocess.run(cmd, capture_output=True, text=True, check=True)
+                _run_with_cpu_fallback(
+                    cmd,
+                    lambda c: subprocess.run(c, capture_output=True, text=True, check=True),
+                    source.name,
+                )
         except FileNotFoundError as exc:
             raise ASRError(f"{binary} is not executable") from exc
         except subprocess.CalledProcessError as exc:
@@ -562,7 +603,11 @@ def _run_windows(
         cmd += ["--language", language]
 
     try:
-        subprocess.run(cmd, capture_output=True, text=True, check=True)
+        _run_with_cpu_fallback(
+            cmd,
+            lambda c: subprocess.run(c, capture_output=True, text=True, check=True),
+            source.name,
+        )
     except FileNotFoundError as exc:
         raise ASRError(f"{binary} is not executable") from exc
     except subprocess.CalledProcessError as exc:
