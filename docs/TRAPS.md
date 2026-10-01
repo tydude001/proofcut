@@ -1440,7 +1440,8 @@ built; docs/plans/INSTALL.md):
     `mlt.py` still writes the attribute, for Kdenlive. Upstream calls locale
     numerics legacy and plans `uselocale` (mltframework/mlt#1326, 2026-09-30).
     Its branch stopped the crash in the A/B soak (0 crashes in 451 renders,
-    master 20 in 451), so keep the strip until a Shotcut release ships that
+    master 20 in 451), and a reworked version merged as 97854f3
+    (2026-10-01), unsoaked, so keep the strip until a Shotcut release ships that
     libmlt and the plain soak passes on it. HISTORY.md § The Mac melt crash,
     found, and § The upstream fix for the Mac melt crash, soaked.
   - **A *failed* render's staging directory survives on purpose, and

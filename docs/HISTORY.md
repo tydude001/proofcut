@@ -19122,6 +19122,12 @@ apart from #1326, whose fix ships alone in the next release. It is
 mltframework/mlt#1333, with the branch hang's `sample` added to the #1326
 crash-report gist.
 
+**Merged.** #1326 closed the same day as MLT's 97854f3 (PR #1327), on
+master after 84da207. It is not the soaked branch: review rewrote
+`mlt_property.c` again (+127 -236 against 99383f4) and added a UCRT build
+check, so the A/B above measured an earlier draft of the fix, not the
+merged one.
+
 **What stays.** The strip and the pin stay until a Shotcut release ships
 libmlt with the fix and the plain soak passes on it. The crash retries stay
 too, since the hang may have its own cause.
