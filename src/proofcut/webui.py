@@ -391,6 +391,17 @@ class PortInUseError(WebUIError):
 _ADDR_IN_USE = frozenset(
     code for code in (errno.EADDRINUSE, getattr(errno, "WSAEADDRINUSE", None)) if code is not None
 )
+#: Windows refuses `ThreadingHTTPServer`'s SO_REUSEADDR bind over a listening
+#: socket with WSAEACCES (10013), not 10048 — the held-port tests failed that
+#: way on windows-latest, 2026-10-01. The same code also means the port sits in
+#: a range Windows has reserved (`netsh int ipv4 show excludedportrange`), so
+#: it is matched by `winerror` only: POSIX's EACCES is a privileged port.
+_WSAEACCES = 10013
+
+
+def _port_held(exc: OSError) -> bool:
+    winerror = getattr(exc, "winerror", None)
+    return exc.errno in _ADDR_IN_USE or winerror in _ADDR_IN_USE or winerror == _WSAEACCES
 
 
 def _bind(host: str, port: int, handler: type[BaseHTTPRequestHandler]) -> ThreadingHTTPServer:
@@ -398,8 +409,15 @@ def _bind(host: str, port: int, handler: type[BaseHTTPRequestHandler]) -> Thread
     try:
         return ThreadingHTTPServer((host, port), handler)
     except OSError as exc:
-        if exc.errno not in _ADDR_IN_USE and getattr(exc, "winerror", None) not in _ADDR_IN_USE:
+        if not _port_held(exc):
             raise
+        if getattr(exc, "winerror", None) is not None:
+            raise PortInUseError(
+                f"port {port} on {host} is already in use or reserved by Windows — "
+                f"probably an older `proofcut web` still answering there. Find its pid "
+                f"with `netstat -ano | findstr :{port}`, or pass a different --port "
+                "(0 picks a free one)."
+            ) from exc
         raise PortInUseError(
             f"port {port} on {host} is already in use — probably an older `proofcut web` "
             f"still answering there. Find its pid with `ss -ltnp | grep :{port}`, or pass "
