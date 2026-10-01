@@ -14,6 +14,14 @@ strips it, because a locale on any service sends MLT through the per-property
 attribute, and has to see every crash, so melt is run directly here: no strip,
 and none of `picture.render`'s re-runs after a SIGSEGV.
 
+**Nor does it pin `LC_NUMERIC=C`, as `picture.numeric_c_env` does.** Every
+crash was measured before that pin existed, with the runner's own locale. The
+first A/B ran pinned, and the unpatched base rendered 50 of 50 clean on Apple
+silicon, where the unpinned rate had been 8 in about 38. A process already in
+"C" may make MLT's `setlocale(LC_NUMERIC, "C")` change nothing, so the race
+never opens. Whatever the reason, a pinned control did not crash, so it could
+not tell a fix from no fix.
+
     melt_soak.py PROJECT OUT --renders 50 --melt fix=/path/melt --melt master=/path/melt
 
 A `--melt` value is split like a shell word list, so a flatpak melt works
@@ -75,7 +83,7 @@ def main() -> None:
 
     args.out.mkdir(parents=True, exist_ok=True)
     document = write_document(args.project, args.out)
-    env = picture.numeric_c_env(picture.display_env())
+    env = picture.display_env()
     summary = args.out / "summary.txt"
     tally: dict[str, dict[str, int]] = {name: {} for name in arms}
 
@@ -85,6 +93,8 @@ def main() -> None:
             handle.write(text + "\n")
 
     line(f"document {document}, {args.renders} renders per arm, interleaved")
+    locale = {k: v for k, v in sorted(env.items()) if k == "LANG" or k.startswith("LC_")}
+    line(f"locale {locale or 'none set'}")
     for i in range(1, args.renders + 1):
         for name, command in arms.items():
             rendered = args.out / f"{name}.mp4"
