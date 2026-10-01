@@ -19117,6 +19117,11 @@ hang needing the `setlocale` path, but it doesn't settle it. It also shows
 that the stripped document renders cleanly on stock melt with or without
 the pin.
 
+**The hang went upstream as its own issue.** MLT's maintainer asked for it
+apart from #1326, whose fix ships alone in the next release. It is
+mltframework/mlt#1333, with the branch hang's `sample` added to the #1326
+crash-report gist.
+
 **What stays.** The strip and the pin stay until a Shotcut release ships
 libmlt with the fix and the plain soak passes on it. The crash retries stay
 too, since the hang may have its own cause.
