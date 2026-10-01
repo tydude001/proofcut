@@ -4167,6 +4167,9 @@ _EXPECTED = (
     # `finish.loudness`/`hold_seams` cannot decode or measure `final` — a
     # message naming the file, not a traceback.
     FinishError,
+    # `proofcut web --port N` with N already held: one line naming the port,
+    # exit 1, rather than a traceback a backgrounded launch would hide.
+    webui.PortInUseError,
 )
 
 

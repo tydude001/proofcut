@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import errno
 import hmac
 import json
 import mimetypes
@@ -372,6 +373,38 @@ _AGENT_DISALLOWED_TOOLS = ("Bash", "Write", "Edit", "WebFetch", "WebSearch")
 
 class WebUIError(Exception):
     """Raised when a request cannot be served for a reason worth reporting."""
+
+
+class PortInUseError(WebUIError):
+    """The port `proofcut web` was asked for is already held.
+
+    Usually by an older `proofcut web` that is still answering, which is what
+    makes the raw `OSError` dangerous: it went only to the new server's own
+    log, a backgrounded launch still looked like a success, and every request
+    reached the old process — a new route 404ing as `no such endpoint` while
+    the code plainly had it (wiki troubleshooting.md, 2026-09-20).
+    """
+
+
+#: `errno.EADDRINUSE` is the POSIX number; Windows reports a socket's as
+#: WSAEADDRINUSE (10048), which the errno module names separately there.
+_ADDR_IN_USE = frozenset(
+    code for code in (errno.EADDRINUSE, getattr(errno, "WSAEADDRINUSE", None)) if code is not None
+)
+
+
+def _bind(host: str, port: int, handler: type[BaseHTTPRequestHandler]) -> ThreadingHTTPServer:
+    """Bind the HTTP server, turning a held port into a message to read."""
+    try:
+        return ThreadingHTTPServer((host, port), handler)
+    except OSError as exc:
+        if exc.errno not in _ADDR_IN_USE and getattr(exc, "winerror", None) not in _ADDR_IN_USE:
+            raise
+        raise PortInUseError(
+            f"port {port} on {host} is already in use — probably an older `proofcut web` "
+            f"still answering there. Find its pid with `ss -ltnp | grep :{port}`, or pass "
+            "a different --port (0 picks a free one)."
+        ) from exc
 
 
 class RenderBusyError(WebUIError):
@@ -3849,7 +3882,7 @@ def make_server(
             "allowed_hosts": frozenset(allowed_hosts),
         },
     )
-    server = ThreadingHTTPServer((host, port), handler)
+    server = _bind(host, port, handler)
     server.daemon_threads = True
     _bind_singletons(server, project.root)
     return server
@@ -3888,7 +3921,7 @@ def make_picker_server(
             "allowed_hosts": frozenset(allowed_hosts),
         },
     )
-    server = ThreadingHTTPServer((host, port), handler)
+    server = _bind(host, port, handler)
     server.daemon_threads = True
     server.bound_root = None  # type: ignore[attr-defined]
     #: Guards the check-then-bind in `Handler._handle_open` — two requests
