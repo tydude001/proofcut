@@ -19064,3 +19064,50 @@ numbers: docs/plans/LOCAL.md § The rerun under the widened retake rule.
   is eight apart. Only `length_on_brief` failed (87.6 s against 80).
 - Nothing in the repo changed but these two documents. The scorer gap and
   `verify`'s raw error on an empty `transcript_path` are recorded, not fixed.
+
+## The upstream fix for the Mac melt crash, soaked — 2026-10-01
+
+The report from § The Mac melt crash, found went to MLT as
+mltframework/mlt#1326, and its maintainer pushed a branch,
+`fix-property-locale` (99383f4). The soak learned to test it
+(`scripts/melt_soak.py`, melt-soak's `mlt_branch` input). It builds libmlt,
+the framework alone, twice: from the branch and from the master commit it
+forks from (89fbe37). Each goes into its own copy of Shotcut 26.8.1's app,
+re-signed ad hoc the same way, and the two copies render the demo's document
+in turn. The document keeps its `LC_NUMERIC`, and melt runs directly under
+the runner's own locale, so nothing proofcut does hides a crash.
+
+| run | runner | master (89fbe37) | branch (99383f4) |
+|---|---|---|---|
+| 36805676431 | Intel | 6 of 200 SIGSEGV | 0 of 200 |
+| 36805676431 | Apple silicon | 1 SIGSEGV in 50, then a hang | 0 of 51 |
+| 36859799314 | Apple silicon | 13 of 200 SIGSEGV | 0 crashes in 200, 1 hang |
+
+Every crash report is the fault from § The Mac melt crash, `localeconv_l`
+at `0x48` under `sprintf`. Most callers are `cache_object_close`; two are
+`mlt_events_fire` on the avformat consumer thread, which is the stack in
+mltframework/mlt#1049, so the branch looks like it fixes that one too. Both
+results are posted on #1326.
+
+**The first A/B measured nothing.** Run 36804592316 ran melt with
+`numeric_c_env`'s pin, as `picture.render` does, and master rendered 50 of
+50 clean on Apple silicon. When a process is already in "C", MLT's
+`setlocale(LC_NUMERIC, "C")` may change nothing, so the race never opens.
+This is a guess, not a measurement. It does mean the pin alone may protect
+proofcut's renders, and the strip is the measured fix. The driver dropped
+the pin (a784a20).
+
+**The hang.** In run 36805676431, master's 51st render on Apple silicon ran
+for 80 minutes until the job was cancelled, and nothing recorded why. The
+driver now gives each render 60 s, then saves `sample`'s stacks and kills it
+(1cf26f0). The rerun caught one on the branch. melt's main thread polls
+`consumer_is_stopped`. No avformat consumer thread is left, and nothing is
+in `setlocale`. That is one hang per build in about 500 Apple silicon
+renders. If it isn't the locale, proofcut's renders can hit it too. There,
+`RENDER_TIMEOUT` turns a hang into an error rather than a wait forever.
+melt-soak's `hang` input renders stock melt with no `LC_NUMERIC` on the root
+to find out (e6f0883).
+
+**What stays.** The strip and the pin stay until a Shotcut release ships
+libmlt with the fix and the plain soak passes on it. The crash retries stay
+too, since the hang may have its own cause.

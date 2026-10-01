@@ -1438,9 +1438,11 @@ built; docs/plans/INSTALL.md):
     `LC_NUMERIC=C` and drops `LC_ALL`, because Qt calls `setlocale(LC_ALL, "")`
     and a comma-decimal locale changed the demo's audio without the pin.
     `mlt.py` still writes the attribute, for Kdenlive. Upstream calls locale
-    numerics legacy and plans `uselocale` (mltframework/mlt#1326, 2026-09-30),
-    so keep the strip until a fixed melt passes the Mac soak. HISTORY.md § The
-    Mac melt crash, found.
+    numerics legacy and plans `uselocale` (mltframework/mlt#1326, 2026-09-30).
+    Its branch stopped the crash in the A/B soak (0 crashes in 451 renders,
+    master 20 in 451), so keep the strip until a Shotcut release ships that
+    libmlt and the plain soak passes on it. HISTORY.md § The Mac melt crash,
+    found, and § The upstream fix for the Mac melt crash, soaked.
   - **A *failed* render's staging directory survives on purpose, and
     `sweep_scratch` drops it after `SCRATCH_RETENTION_DAYS`.** It sweeps by
     name (`_SCRATCH_NAME`), never by age alone — a hand-placed directory in
