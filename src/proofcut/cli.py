@@ -548,6 +548,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p_graphic_new.add_argument(
         "--set", action="append", default=[], metavar="SLOT=VALUE", dest="slots", help="fill one slot; repeat for each"
     )
+    p_graphic_new.add_argument(
+        "--clip", action="append", default=[], metavar="ID[:START-END][=NAME]", dest="clips",
+        help="cut a span of a project clip into the graphic as NAME.mp4 (default ID.mp4); repeat for each",
+    )
     for flag, text in phases:
         p_graphic_new.add_argument(flag, type=float, help=text)
     p_graphic_new.add_argument("--replace", action="store_true", help="replace a graphic of this name")
@@ -2688,6 +2692,25 @@ def _cmd_image(args: argparse.Namespace) -> int:
     return _emit(ops.image_rm(args.project, args.name))
 
 
+def _graphic_clip_args(values: list[str]) -> list[dict[str, Any]] | None:
+    """`ID[:START-END][=NAME]`, as `ops.graphic_new`'s clips."""
+    entries: list[dict[str, Any]] = []
+    for value in values:
+        head, _, name = value.partition("=")
+        clip, _, span = head.partition(":")
+        entry: dict[str, Any] = {"clip": clip}
+        if span:
+            start, sep, end = span.partition("-")
+            try:
+                entry["start"], entry["end"] = float(start), float(end) if sep else None
+            except ValueError:
+                raise SystemExit(f"proofcut: --clip {value!r}: a span is START-END in the clip's seconds") from None
+        if name:
+            entry["name"] = name
+        entries.append(entry)
+    return entries or None
+
+
 def _cmd_graphic(args: argparse.Namespace) -> int:
     command = args.graphic_command
     if command == "templates":
@@ -2698,8 +2721,9 @@ def _cmd_graphic(args: argparse.Namespace) -> int:
         return _emit(
             ops.graphic_new(
                 args.project, args.name, template=args.template, slots=_slot_assignments(args.slots) or None,
-                html=args.html.read_text() if args.html else None, intro=args.intro, loop=args.loop,
-                outro=args.outro, replace=args.replace, capture=not args.no_capture, pages=args.pages,
+                html=args.html.read_text() if args.html else None, clips=_graphic_clip_args(args.clips),
+                intro=args.intro, loop=args.loop, outro=args.outro, replace=args.replace,
+                capture=not args.no_capture, pages=args.pages,
             )
         )  # fmt: skip
     if command == "edit":

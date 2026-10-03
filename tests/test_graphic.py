@@ -580,6 +580,75 @@ def test_only_a_page_that_shows_a_video_is_restamped(tmp_path: Path) -> None:
         motion.VIDEO_CAPTURE_VERSION -= 1
 
 
+def _with_shot(project: Project) -> list[int]:
+    """Register the numbered clip as project clip `shot`."""
+    source = project.root.parent / "src" / "shot.mp4"
+    source.parent.mkdir()
+    table = _numbered_clip(source)
+    manifest = project.read_manifest()
+    manifest["clips"].append(
+        {"clip_id": "shot", "source": str(source), "duration": 2.0, "picture_end": 2.0, "has_video": True, "has_audio": False}
+    )
+    project.write_manifest(manifest)
+    return table
+
+
+@needs_browser
+@needs_video_tools
+def test_graphic_new_cuts_a_clip_span_the_page_shows_frame_exactly(project: Project, tmp_path: Path) -> None:
+    table = _with_shot(project)
+    made = ops.graphic_new(
+        project.root, "inset", html="<body style='margin:0'><video src='shot.mp4' style='width:64px'></video></body>",
+        clips=[{"clip": "shot", "start": 0.5, "end": 1.5}], intro=0.5, capture=False,
+    )  # fmt: skip
+    assert made["graphic"]["clips"] == [{"clip": "shot", "start": 0.5, "end": 1.5, "file": "shot.mp4"}]
+    folder = project.graphics_dir / "inset"
+    record = motion.capture(folder, tmp_path / "f", width=64, height=36, fps=30.0)
+    shown = [_frame_of(table, _grey((tmp_path / "f" / "intro" / f"f{k:04d}.png").read_bytes())) for k in range(record["intro"])]
+    assert shown == list(range(15, 15 + record["intro"]))
+
+
+@needs_video_tools
+def test_two_spans_of_one_clip_take_two_names(project: Project) -> None:
+    _with_shot(project)
+    twice = [{"clip": "shot", "end": 0.5}, {"clip": "shot", "start": 1.0}]
+    with pytest.raises(ProjectError, match="give one a name"):
+        ops.graphic_new(project.root, "g", html="<html></html>", clips=twice, capture=False)
+    made = ops.graphic_new(project.root, "g", html="<html></html>", clips=[twice[0], {**twice[1], "name": "late"}], capture=False)
+    assert [c["file"] for c in made["graphic"]["clips"]] == ["shot.mp4", "late.mp4"]
+    assert sorted(p.name for p in (project.graphics_dir / "g").glob("*.mp4")) == ["late.mp4", "shot.mp4"]
+
+
+@pytest.mark.parametrize(
+    ("clips", "template", "message"),
+    [
+        ([{"clip": "nope"}], None, "no clip 'nope'"),
+        ([{"clip": "vo"}], None, "no picture"),
+        ([{"clip": "vo", "start": 7.0}], None, "no picture"),
+        ([{"clip": "shot", "start": 1.5, "end": 2.5}], None, "not inside it"),
+        ([{"clip": "shot", "name": "../x"}], None, "cannot name"),
+        ([{"clip": "shot"}], "typing", "clips are for a page written as html"),
+    ],
+)
+def test_graphic_new_refuses_a_clip_it_cannot_cut(project: Project, clips: list, template: str | None, message: str) -> None:
+    manifest = project.read_manifest()
+    manifest["clips"].append({"clip_id": "shot", "source": "/nowhere/shot.mp4", "duration": 2.0, "picture_end": 2.0, "has_video": True})
+    project.write_manifest(manifest)
+    source = {"template": template} if template else {"html": "<html></html>"}
+    with pytest.raises(ProjectError, match=message):
+        ops.graphic_new(project.root, "g", clips=clips, capture=False, **source)
+    assert not (project.graphics_dir / "g").exists()
+
+
+def test_the_cli_reads_a_clip_span_and_a_name() -> None:
+    from proofcut.cli import _graphic_clip_args
+
+    assert _graphic_clip_args(["shot", "shot:0.5-1.5=inset", "shot:1"]) == [
+        {"clip": "shot"}, {"clip": "shot", "start": 0.5, "end": 1.5, "name": "inset"}, {"clip": "shot", "start": 1.0, "end": None},
+    ]  # fmt: skip
+    assert _graphic_clip_args([]) is None
+
+
 def test_mlt_draws_a_sequence_and_a_still_through_the_same_overlay_node() -> None:
     """The writer is unchanged: a graphic's pieces are ordinary overlays."""
     pieces = [

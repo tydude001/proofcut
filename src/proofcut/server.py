@@ -1909,6 +1909,11 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         ),
         "template": "A template to fill (graphic_templates lists them). One of template or html.",
         "slots": "The template's slots, as text. A colour is #rrggbb, a number a number.",
+        "clips": (
+            'Spans of the project\'s clips the html page shows: [{"clip": ID, "start": s, '
+            '"end": s, "name": n}], start and end in the clip\'s seconds (default the whole '
+            'clip), cut into the graphic as <name>.mp4 (default <clip id>.mp4) for <video src>.'
+        ),
         "html": (
             "A whole page, written by hand. CSS animations and transitions are seeked frame "
             "by frame, and requestAnimationFrame, performance.now and Date follow the seek; "
@@ -3062,6 +3067,7 @@ def graphic_new(
     template: str | None = None,
     slots: dict[str, Any] | None = None,
     html: str | None = None,
+    clips: list[dict[str, Any]] | None = None,
     intro: float | None = None,
     loop: float | None = None,
     outro: float | None = None,
@@ -3085,7 +3091,7 @@ def graphic_new(
     changing either makes it stale, and export refuses a stale graphic.
     """
     return ops.graphic_new(
-        path, name, template=template, slots=slots, html=html, intro=intro, loop=loop,
+        path, name, template=template, slots=slots, html=html, clips=clips, intro=intro, loop=loop,
         outro=outro, replace=replace, capture=capture, pages=pages,
     )  # fmt: skip
 

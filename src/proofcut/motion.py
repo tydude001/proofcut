@@ -121,6 +121,8 @@ def normalise_spec(raw: dict[str, Any], *, where: str = "a graphic") -> dict[str
         spec["template"] = str(raw["template"])
     if isinstance(raw.get("slots"), dict):
         spec["slots"] = {str(k): str(v) for k, v in raw["slots"].items()}
+    if isinstance(raw.get("clips"), list):
+        spec["clips"] = [dict(c) for c in raw["clips"] if isinstance(c, dict)]
     return spec
 
 

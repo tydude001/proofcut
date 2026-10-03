@@ -19206,6 +19206,15 @@ frame N is flat grey 16 + 3N, matched against ffmpeg's own decode:
 
 The inset, captured through the CLI with a slide-in and `object-fit:
 cover`, showed the frame ffmpeg shows at its media time, in 8.3 s for 61
-frames. Only a page that shows a video is restamped. No tool puts a clip
-in a graphic's folder, so an agent on MCP alone cannot use this yet.
+frames. Only a page that shows a video is restamped.
+
+**`graphic_new` takes `clips`** (`--clip ID:START-END=NAME`), so an agent on
+MCP alone can use it: each span of a project clip is cut into the folder
+as `<name>.mp4`, x264 `-qp 0` with no sound, and recorded in
+`graphic.json`. A span, because the folder is hashed into the stamp and
+`timeline_view` checks every placed graphic's: a whole 694 MB source cost
+0.5 s a check warm and 11 s off the NAS, where 3 s of 1080p cut
+losslessly is 29 MB in 0.3 s. Over the stdio server, a 12 to 15 s span of
+the phone clip captured in 7.6 s and its held frame matched ffmpeg's at
+13.0 s.
 

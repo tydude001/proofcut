@@ -1703,7 +1703,10 @@ built; docs/plans/INSTALL.md):
     Its size comes back through `contain-intrinsic-size`, never the
     `width`/`height` attributes, which set a `<video>`'s CSS size. Only a
     page that shows a video is restamped (`VIDEO_CAPTURE_VERSION`).
-    HISTORY.md § Video inside a graphic, built.
+    `graphic_new`'s `clips` cut a *span* into the folder, never the whole
+    file: the folder is hashed into the stamp, and `timeline_view` checks
+    every placed graphic's (a whole 694 MB source: 0.5 s a check warm, 11 s
+    off the NAS). HISTORY.md § Video inside a graphic, built.
   - **A capture is stamped with the page's bytes, the canvas and the rate**,
     and export refuses a stale one (`graphic_capture`). The hold is checked at
     capture: still means nothing animating through it, a loop means its

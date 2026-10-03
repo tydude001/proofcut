@@ -15026,6 +15026,58 @@ def _set_phases(spec: dict[str, Any], intro: float | None, loop: float | None, o
         return anim.normalise_spec(updated)
 
 
+#: A clip copied into a graphic is named for the page's `<video src>`.
+_GRAPHIC_CLIP_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
+
+def _graphic_clips(project: Project, entries: list[dict[str, Any]], folder: Path) -> list[dict[str, Any]]:
+    """Cut each asked-for span of a project clip into `folder` as `<name>.mp4`.
+
+    A span, never the whole file: a graphic's folder is hashed into its
+    stamp, which `timeline_view` checks for every placed graphic, and a
+    whole 694 MB source cost 0.5 s a check warm and 11 s off the NAS. The
+    span is re-encoded losslessly (x264 `-qp 0`, 29 MB for 3 s of 1080p,
+    measured 2026-10-03) and has no sound, which a page's video never plays.
+    """
+    by_id = _clips_by_id(project)
+    written: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("clip"), str):
+            raise ProjectError('each of clips is {"clip": ID, "start": s, "end": s, "name": n}, start, end and name optional')
+        clip_id = entry["clip"]
+        clip = by_id.get(clip_id)
+        if clip is None:
+            raise ProjectError(f"no clip {clip_id!r} in this project — list_media lists them")
+        if not clip.get("has_video"):
+            raise ProjectError(f"clip {clip_id!r} has no picture to show in a graphic")
+        file_name = str(entry.get("name") or clip_id)
+        if not _GRAPHIC_CLIP_NAME.match(file_name):
+            raise ProjectError(
+                f"{file_name!r} cannot name a graphic's clip — letters, digits, - and _; pass name"
+            )
+        if any(w["file"] == f"{file_name}.mp4" for w in written):
+            raise ProjectError(f"two clips would both be {file_name}.mp4 — give one a name")
+        bound = _timeline_bound(project, clip)
+        start = float(entry.get("start") or 0.0)
+        end = float(entry["end"]) if entry.get("end") is not None else bound
+        if not 0 <= start < end <= bound + 1e-6:
+            raise ProjectError(
+                f"clip {clip_id!r} runs 0 to {bound:.3f}s; a span {start:.3f}s to {end:.3f}s is not inside it"
+            )
+        target = folder / f"{file_name}.mp4"
+        done = subprocess.run(
+            ["ffmpeg", "-v", "error", "-nostdin", "-y", "-ss", f"{start:.6f}", "-i", str(media.media_path(project, clip)),
+             "-t", f"{end - start:.6f}", "-map", "0:v:0", "-an", "-c:v", "libx264", "-qp", "0", "-preset", "ultrafast",
+             str(target)],
+            capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
+        )  # fmt: skip
+        if done.returncode or not target.is_file():
+            tail = " ".join(done.stderr.strip().splitlines()[-2:])
+            raise ProjectError(f"ffmpeg could not cut {clip_id} {start:.3f}-{end:.3f}s: {tail}")
+        written.append({"clip": clip_id, "start": round(start, 6), "end": round(end, 6), "file": target.name})
+    return written
+
+
 def graphic_new(
     path: Path | str,
     name: str,
@@ -15033,6 +15085,7 @@ def graphic_new(
     template: str | None = None,
     slots: dict[str, str] | None = None,
     html: str | None = None,
+    clips: list[dict[str, Any]] | None = None,
     intro: float | None = None,
     loop: float | None = None,
     outro: float | None = None,
@@ -15047,13 +15100,17 @@ def graphic_new(
     when its hold moves (a blinking caret does) — and a template brings its
     own, which these override. The page is served with the project's vendored
     fonts under `/_proofcut/fonts/` and nothing else: no network, no other
-    file. `capture=False` writes the page and draws nothing.
+    file. `clips` cuts spans of the project's clips into the folder as
+    `<clip id>.mp4` (or `<name>.mp4`), for the page's `<video src>`.
+    `capture=False` writes the page and draws nothing.
     """
     project = Project.open(path)
     if (template is None) == (html is None):
         raise ProjectError("a graphic is made from exactly one of template or html")
     if html is not None and slots:
         raise ProjectError("slots fill a template; a page written as html has none")
+    if clips and template is not None:
+        raise ProjectError("clips are for a page written as html; a template's page shows none")
     folder = _graphic_folder(project, name, exists=False)
     if (folder / anim.SPEC_NAME).is_file() and not replace:
         raise ProjectError(f"graphic {name!r} already exists — graphic_edit it, or pass replace")
@@ -15067,6 +15124,8 @@ def graphic_new(
                 staging.mkdir(parents=True)
                 (staging / anim.PAGE_NAME).write_text(str(html))
                 spec = {"intro": 0.0, "loop": None, "outro": 0.0}
+                if clips:
+                    spec["clips"] = _graphic_clips(project, list(clips), staging)
             spec = {**spec, **_set_phases(spec, intro, loop, outro, clear_loop=False)}
             anim.write_spec(staging, spec)
         shutil.rmtree(folder, ignore_errors=True)

@@ -787,10 +787,22 @@ exactly the frame of the clip at that moment. Its time is the page's time
 from `data-start` (seconds, default 0); past its end it holds the last
 frame, or with `loop` starts again. proofcut decodes the frames itself with
 ffmpeg, so the browser never plays it and its sound is not used. Size and
-style it with CSS like any element, `object-fit` included. `graphic new
---html` writes only the page: copy the clip into
-`assets/graphics/<name>/` beside it, then `graphic capture <name>`. A video
-the folder does not hold refuses the capture by name.
+style it with CSS like any element, `object-fit` included. A video the
+folder does not hold refuses the capture by name.
+
+`--clip` puts a span of one of the project's clips in the folder for the
+page to show:
+
+```sh
+proofcut -C myproject graphic new hook --html hook.html --clip teaser:12-15=hook --intro 1
+```
+
+`ID:START-END=NAME` cuts seconds 12 to 15 of clip `teaser` into the graphic
+as `hook.mp4`, for `<video src="hook.mp4">`; the span defaults to the whole
+clip and the name to the clip's id. Repeat `--clip` for more. The span is
+cut losslessly and without sound, and recorded in the graphic's
+`graphic.json`. Cut only what the page shows: the folder is hashed every
+time the graphic's capture is checked, and a whole source makes that slow.
 Start the outro's animations where the intro ends (one loop later, if it
 loops). The page loads its own folder's files and the vendored fonts under
 `/_proofcut/fonts/static/`, and nothing else: no network, so a web font cannot
