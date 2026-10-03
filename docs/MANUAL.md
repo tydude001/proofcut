@@ -775,13 +775,21 @@ paused and seeked to each frame's time. A script animating from
 `requestAnimationFrame`, `performance.now` or `Date` needs nothing more: the
 page's clock stands still until a seek moves it, and each seek runs one frame.
 A script on timers or `Math.random` defines `window.proofcutSeek(seconds)`.
+A script whose setup takes time (a fetch, a decode, a layout it computes)
+hands the promise to `window.proofcutWaitFor(promise, "label")`: every frame
+waits for it, and for the page's fonts, before it is shot, and a promise
+that rejects or is still open after 30 seconds refuses the capture by its
+label. Without it, the frames before the setup finishes are shot as they
+stand, empty.
 Start the outro's animations where the intro ends (one loop later, if it
 loops). The page loads its own folder's files and the vendored fonts under
 `/_proofcut/fonts/static/`, and nothing else: no network, so a web font cannot
-lose a race with the capture. Four things are refused at capture: a hold still
+lose a race with the capture. Five things are refused at capture: a hold still
 moving when it was declared still, a loop that does not come back to where it
-started, a font that failed to load, and a page with nothing drawn in any
-frame (usually a script that threw).
+started, a font that failed to load (checked again after the last frame, for
+a face only a later frame uses), a `proofcutWaitFor` promise that failed or
+never settled, and a page with nothing drawn in any frame (usually a script
+that threw).
 
 The capture is drawn at the project's canvas and export rate and is stamped
 with both and with the page's bytes; change any of them and `export` refuses

@@ -418,6 +418,55 @@ def test_a_page_animating_from_its_own_clock_draws_the_seeked_instant(tmp_path: 
         assert page.evaluate("document.title") == "100,100,100,string,true"
 
 
+#: A page that draws only once slow setup finishes: a fetch, then 150 ms of
+#: real time. `{wrap}` is the promise as written, or handed to the capture.
+SLOW_SETUP = (
+    "<script>const ready = fetch('data.json').then(r => r.json())"
+    " .then(j => new Promise(r => setTimeout(() => r(j), 150)))"
+    " .then(j => { document.title = j.word; });{wrap}</script>"
+)
+
+
+@needs_browser
+def test_a_seek_waits_for_what_the_page_asked_it_to(tmp_path: Path) -> None:
+    """The control is the same page not asking: its first frame is shot
+    before it drew (measured 2026-10-03, ~/proofcut-work/spikes/readiness)."""
+    for wrap, expected in (("", ""), (" window.proofcutWaitFor(ready, 'data');", "drawn")):
+        folder = _page(tmp_path / f"g{len(wrap)}", body=SLOW_SETUP.replace("{wrap}", wrap))
+        (folder / "data.json").write_text('{"word": "drawn"}')
+        with browser.launch(folder) as chrome:
+            page = chrome.new_page(160, 90)
+            browser.load(page)
+            browser.seek(page, 0.0)
+            assert page.evaluate("document.title") == expected
+
+
+@needs_browser
+def test_a_wait_that_fails_or_never_ends_refuses_the_capture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    failing = _page(tmp_path / "f", body="<script>window.proofcutWaitFor(Promise.reject(new Error('no data')), 'chart data');</script>")
+    with pytest.raises(motion.GraphicError, match=r"chart data.*no data"):
+        motion.capture(failing, tmp_path / "out", width=160, height=90, fps=10.0)
+    monkeypatch.setattr(browser, "WAIT_TIMEOUT", 0.5)
+    stuck = _page(tmp_path / "s", body="<script>window.proofcutWaitFor(new Promise(() => {}), 'logo');</script>")
+    with pytest.raises(motion.GraphicError, match=r"still waiting.*logo"):
+        motion.capture(stuck, tmp_path / "out", width=160, height=90, fps=10.0)
+    assert not (tmp_path / "out").exists()
+
+
+@needs_browser
+def test_a_font_that_fails_after_the_page_loaded_is_refused(tmp_path: Path) -> None:
+    """The face is unused at load, so `unloaded` then, and fails only once a
+    later frame shows the text that names it."""
+    late = (
+        '<style>@font-face { font-family: "Late"; src: url("/nope.ttf"); }'
+        ' #late { font: 20px "Late"; display: none; }</style><div id="late">B</div>'
+        "<script>(function tick(ts) { document.getElementById('late').style.display ="
+        " (ts || 0) >= 300 ? 'block' : 'none'; requestAnimationFrame(tick); })();</script>"
+    )
+    with pytest.raises(motion.GraphicError, match="could not load the font"):
+        motion.capture(_page(tmp_path / "g", body=late), tmp_path / "f", width=160, height=90, fps=10.0)
+
+
 def test_mlt_draws_a_sequence_and_a_still_through_the_same_overlay_node() -> None:
     """The writer is unchanged: a graphic's pieces are ordinary overlays."""
     pieces = [

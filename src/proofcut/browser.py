@@ -32,6 +32,14 @@ Four rules, each measured in the spike:
   from rAF draws the seeked frame with no hook (hyperframes' page-side clock,
   COMPETITORS.md § hyperframes). Timers and `Math.random` are not frozen: a
   page leaning on either still needs `proofcutSeek(seconds)`.
+* **A frame is shot only once the page says it is ready.** A page with slow
+  setup (a fetch, then real work) hands the promise to
+  `window.proofcutWaitFor(promise, label)`, installed beside `CLOCK`; every
+  seek waits for each open one, then for `document.fonts.ready`. A wait that
+  rejects, or is open past `WAIT_TIMEOUT`, fails the seek by its label rather
+  than shooting what the page drew so far (Remotion's `delayRender`, the
+  idea and not the code, COMPETITORS.md § Remotion). Measured 2026-10-03: a
+  page drawing after a fetch and 150 ms of work was shot empty without it.
 
 `PROOFCUT_CHROME` names the binary, then `proofcut setup`'s folder, then PATH.
 """
@@ -108,6 +116,10 @@ START_TIMEOUT = 30.0
 LOAD_TIMEOUT = 30.0
 #: One DevTools command; a 4K screenshot is the slowest one there is.
 COMMAND_TIMEOUT = 60.0
+#: How long one seek waits on the page's `proofcutWaitFor` promises. Under
+#: `COMMAND_TIMEOUT`, so the page's own refusal, naming what it waited on,
+#: arrives before the connection's.
+WAIT_TIMEOUT = 30.0
 
 
 class BrowserError(RuntimeError):
@@ -249,10 +261,13 @@ class Page:
             "Runtime.evaluate", {"expression": expression, "returnByValue": True, "awaitPromise": True}
         )
         if "exceptionDetails" in reply:
-            details = reply["exceptionDetails"]
-            text = (details.get("exception") or {}).get("description") or details.get("text")
-            raise BrowserError(f"the page raised: {text}")
+            raise BrowserError(f"the page raised: {raised(reply['exceptionDetails'])}")
         return reply.get("result", {}).get("value")
+
+
+def raised(details: dict[str, Any]) -> str:
+    """What a page's exception said: its message, not DevTools' "Uncaught"."""
+    return (details.get("exception") or {}).get("description") or details.get("text") or "an exception"
 
 
 class Browser:
@@ -352,6 +367,7 @@ class Browser:
         )
         page.send("Emulation.setDefaultBackgroundColorOverride", {"color": {"r": 0, "g": 0, "b": 0, "a": 0}})
         page.send("Page.addScriptToEvaluateOnNewDocument", {"source": CLOCK})
+        page.send("Page.addScriptToEvaluateOnNewDocument", {"source": WAITS})
         return page
 
     def close(self) -> None:
@@ -457,6 +473,15 @@ def load(page: Page, path: str = "/index.html") -> list[dict[str, Any]]:
         if time.monotonic() > deadline:
             raise BrowserError(f"the page did not finish loading in {LOAD_TIMEOUT:g}s")
         time.sleep(0.02)
+    return fonts(page)
+
+
+def fonts(page: Page) -> list[dict[str, Any]]:
+    """Every font face the page declares, once loading settles, with its status.
+
+    A face no element has used yet is `unloaded`, and may fail only when a
+    later frame shows text in it, so a capture asks again after its last frame.
+    """
     return page.evaluate(
         "document.fonts.ready.then(() => [...document.fonts].map(f => "
         "({family: f.family, weight: f.weight, style: f.style, status: f.status})))"
@@ -493,20 +518,73 @@ CLOCK = """(() => {
   };
 })();"""
 
+#: `window.proofcutWaitFor(promise, label)`: the page's way to say a frame
+#: is not ready. Installed before the page's scripts, so setup that starts
+#: at load can hand its promise over at once. `drain` waits for every open
+#: one, including any a settling one opened, and throws by label on a
+#: rejection or once `limit` real milliseconds pass; the timer is the real
+#: `setTimeout`, which `CLOCK` leaves running.
+WAITS = """(() => {
+  const realSetTimeout = window.setTimeout.bind(window);
+  let open = [];
+  window.proofcutWaitFor = (promise, label) => {
+    const w = { label: String(label || 'a proofcutWaitFor promise'), done: false, error: null };
+    w.promise = Promise.resolve(promise).then(
+      () => { w.done = true; },
+      (e) => { w.done = true; w.error = e; });
+    open.push(w);
+    return promise;
+  };
+  window.__proofcutWaits = {
+    async drain(limit) {
+      // One timer for the whole drain: `Date` and `performance.now` are
+      // `CLOCK`'s and stand still, so elapsed time cannot be read off them.
+      const expired = new Promise((r) => realSetTimeout(() => r(true), limit));
+      while (open.some((w) => !w.done || w.error)) {
+        const failed = open.find((w) => w.done && w.error);
+        if (failed) {
+          open = open.filter((w) => w !== failed);
+          const why = failed.error && failed.error.message ? failed.error.message : String(failed.error);
+          throw new Error(`the page's wait on ${failed.label} failed: ${why}`);
+        }
+        const pending = open.filter((w) => !w.done);
+        const timedOut = await Promise.race([
+          Promise.all(pending.map((w) => w.promise)).then(() => false),
+          expired,
+        ]);
+        if (timedOut) {
+          const names = open.filter((w) => !w.done).map((w) => w.label).join(', ');
+          throw new Error(`the page is still waiting on ${names} after ${limit / 1000}s`);
+        }
+      }
+      open = open.filter((w) => !w.done);
+    },
+  };
+})();"""
+
 #: Move the page's clock to `t` seconds and run its frame, pause every
-#: animation there, then let two real frames render so the compositor has
-#: drawn what the seek set. The clock goes first: a frame callback can
-#: create the very animations the second step pauses.
+#: animation there, wait for what the page asked to be waited on and for
+#: its fonts, then let two real frames render so the compositor has drawn
+#: what the seek set. The clock goes first: a frame callback can create the
+#: very animations the second step pauses, and the waits last, because the
+#: frame callback or `proofcutSeek` can start the work being waited on.
 SEEK = (
-    "(async (t) => {"
+    "(async (t, limit) => {"
     " const clock = window.__proofcutClock;"
     " if (clock) clock.advance(t * 1000);"
     " for (const a of document.getAnimations()) { a.pause(); a.currentTime = t * 1000; }"
     " if (typeof window.proofcutSeek === 'function') await window.proofcutSeek(t);"
+    " if (window.__proofcutWaits) await window.__proofcutWaits.drain(limit);"
+    " await document.fonts.ready;"
     " const raf = clock ? clock.realRAF : requestAnimationFrame;"
     " await new Promise(r => raf(() => raf(r)));"
-    "})(%r)"
+    "})(%r, %r)"
 )
+
+
+def seek_expression(seconds: float) -> str:
+    """The `Runtime.evaluate` expression that seeks a page to `seconds`."""
+    return SEEK % (float(seconds), WAIT_TIMEOUT * 1000)
 
 #: What is moving *through* `t`: an animation that started before it and has
 #: not ended. One that starts exactly at `t` is the outro beginning, not the
@@ -524,7 +602,7 @@ MOVING = (
 
 
 def seek(page: Page, seconds: float) -> None:
-    page.evaluate(SEEK % float(seconds))
+    page.evaluate(seek_expression(seconds))
 
 
 def moving_at(page: Page, seconds: float) -> list[str]:

@@ -19144,3 +19144,34 @@ All 22 crash reports are the same fault, `localeconv_l` under
 **What stays.** The strip and the pin stay until a Shotcut release ships
 libmlt with the fix and the plain soak passes on it. The crash retries stay
 too, since the hang may have its own cause.
+
+## The readiness handshake, built — 2026-10-03
+
+COMPETITORS.md § Remotion's first "worth taking" line, measured before it
+was built (`~/proofcut-work/spikes/readiness/`). Three cases the old seek
+was suspected of missing passed already, because the page's requests are
+served inline while the seek waits: a fetch, a per-frame image swap of
+3000x2000 PNGs, and a font first used at 1 s. Two did not:
+
+- **Setup that takes real time.** A page that fetched its data and then
+  worked for 150 ms was shot empty at its first seek. Through the CLI, a
+  page whose setup took 200 ms had nothing at frame 1 and caught up only by
+  frame 10, and the capture was accepted. With
+  `window.proofcutWaitFor(promise, label)` its fade is there from frame 1.
+  Every seek now drains those promises, then `document.fonts.ready`; one
+  that rejects, or is open past `browser.WAIT_TIMEOUT` (30 s), refuses the
+  capture by its label.
+- **A font that fails after load.** A face no text used at load reads
+  `unloaded`, which the load-time check passed, so a face that failed only
+  when a later frame showed its text was drawn in a fallback. The capture
+  now reads the faces again after its last frame.
+
+A promise, not Remotion's handle that the page must release: a promise
+cannot be left open by a forgotten call, and a rejection carries its
+reason. `CAPTURE_VERSION` stays 2. A page that never calls the new
+function draws differently only if a font was still loading when a frame
+was shot, and that frame was already wrong, so no existing capture is
+made stale. Three tests, each red on the old seek first. The suite: 2904
+passed and one blur-fill export failed with melt rendering nothing (a D-Bus
+line in its stderr); alone it passed in 3.5 s.
+

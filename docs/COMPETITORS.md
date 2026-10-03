@@ -1602,7 +1602,10 @@ it is "not possible to deterministically export a Remotion project"
 
 - **A readiness handshake** for `motion.py`: the page says when a frame is
   drawn (`remotion_renderReady`, `delayRender`) and the capture also waits on
-  `document.fonts.ready`. proofcut's page today has only `proofcutSeek`.
+  `document.fonts.ready`. **Built 2026-10-03** as
+  `window.proofcutWaitFor(promise, label)`, a promise rather than a handle
+  to release, plus a second font check after the last frame (HISTORY.md
+  § The readiness handshake, built).
 - **Compositor-served exact frames** for video inside a graphic, with
   hyperframes' injector the other route; proofcut has no such graphic yet.
 - Its whisper-to-`Caption` shape is no improvement on proofcut's word

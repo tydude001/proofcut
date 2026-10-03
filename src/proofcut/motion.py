@@ -218,12 +218,7 @@ def capture(
             fonts: list[dict[str, Any]] = []
             for tab in tabs:
                 fonts = browser.load(tab)
-            failed = [f"{f['family']} {f['weight']}" for f in fonts if f.get("status") == "error"]
-            if failed:
-                raise GraphicError(
-                    f"{folder.name}'s page could not load the font(s) {', '.join(failed)} — a page "
-                    f"loads only its own folder and the vendored fonts under {browser.FONTS_PATH}"
-                )
+            _refuse_failed_fonts(folder, fonts)
             if not layout["loop"]:
                 moving = browser.moving_at(tabs[0], layout["hold_at"])
                 if moving:
@@ -239,7 +234,7 @@ def capture(
                 seeks = [
                     chrome.post(
                         "Runtime.evaluate",
-                        {"expression": browser.SEEK % float(t), "awaitPromise": True, "returnByValue": True},
+                        {"expression": browser.seek_expression(t), "awaitPromise": True, "returnByValue": True},
                         session=tab.session,
                     )
                     for tab, (_, _, t) in batch
@@ -247,7 +242,7 @@ def capture(
                 for ident in seeks:
                     reply = chrome.wait(ident)
                     if "exceptionDetails" in reply:
-                        raise GraphicError(f"{folder.name}'s page raised while seeking: {reply['exceptionDetails'].get('text')}")
+                        raise GraphicError(f"{folder.name}'s page raised while seeking: {browser.raised(reply['exceptionDetails'])}")
                 ids = [
                     chrome.post("Page.captureScreenshot", {"format": "png", "optimizeForSpeed": True}, session=tab.session)
                     for tab, _ in batch
@@ -262,6 +257,16 @@ def capture(
                         if phase == "hold" and index == 0:
                             shots[(phase, index)] = png
                 progress.report(min(batch_start + len(batch), len(jobs)), len(jobs), f"capturing {folder.name}")
+            # Again after the last frame: a face no text used at load was
+            # `unloaded` then, and fails only once a frame shows its text.
+            seen: dict[tuple[str, str, str], dict[str, Any]] = {}
+            for tab in tabs:
+                for face in browser.fonts(tab):
+                    key = (face["family"], face["weight"], face["style"])
+                    if seen.get(key, {}).get("status") != "error":
+                        seen[key] = face
+            fonts = list(seen.values())
+            _refuse_failed_fonts(folder, fonts)
             served_fonts = sorted(set(chrome.fonts))
             sandboxed = chrome.sandboxed
         if not drawn:
@@ -298,6 +303,15 @@ def capture(
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return record
+
+
+def _refuse_failed_fonts(folder: Path, fonts: list[dict[str, Any]]) -> None:
+    failed = [f"{f['family']} {f['weight']}" for f in fonts if f.get("status") == "error"]
+    if failed:
+        raise GraphicError(
+            f"{folder.name}'s page could not load the font(s) {', '.join(failed)} — a page "
+            f"loads only its own folder and the vendored fonts under {browser.FONTS_PATH}"
+        )
 
 
 def phase_pattern(frames: Path, phase: str) -> str:

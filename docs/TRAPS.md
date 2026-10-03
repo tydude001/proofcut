@@ -1686,6 +1686,14 @@ built; docs/plans/INSTALL.md):
     frame pattern** (0 to 9 six times under a 60-frame entry): that is what
     makes a looping hold one entry, and an intro one frame long jumps back to
     its first frame at exit 0.
+  - **A seek shoots only once the page is ready**: it drains every
+    `window.proofcutWaitFor` promise (`browser.WAITS`) and then
+    `document.fonts.ready`. The drain's deadline is one real `setTimeout`,
+    because `CLOCK` froze `Date` and `performance.now`, and
+    `browser.WAIT_TIMEOUT` stays under `COMMAND_TIMEOUT` so the page's
+    refusal, naming the label, arrives before the connection's. Fonts are
+    read again after the last frame: a face no text used at load is
+    `unloaded`, not `error`. HISTORY.md § The readiness handshake, built.
   - **A capture is stamped with the page's bytes, the canvas and the rate**,
     and export refuses a stale one (`graphic_capture`). The hold is checked at
     capture: still means nothing animating through it, a loop means its

@@ -1913,7 +1913,8 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "A whole page, written by hand. CSS animations and transitions are seeked frame "
             "by frame, and requestAnimationFrame, performance.now and Date follow the seek; "
             "a script on timers must define "
-            "window.proofcutSeek(seconds). Fonts load from /_proofcut/fonts/static/"
+            "window.proofcutSeek(seconds). Setup that takes time hands its promise to "
+            "window.proofcutWaitFor(promise, label), and every frame waits for it. Fonts load from /_proofcut/fonts/static/"
             "Outfit-Regular.ttf and Outfit-Bold.ttf; nothing loads from the network."
         ),
         "intro": "Seconds of the page that play once from the start of the span.",
