@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -465,6 +467,117 @@ def test_a_font_that_fails_after_the_page_loaded_is_refused(tmp_path: Path) -> N
     )
     with pytest.raises(motion.GraphicError, match="could not load the font"):
         motion.capture(_page(tmp_path / "g", body=late), tmp_path / "f", width=160, height=90, fps=10.0)
+
+
+needs_video_tools = pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("magick") is None, reason="needs ffmpeg and ImageMagick"
+)
+
+
+def _numbered_clip(path: Path) -> list[int]:
+    """A 2 s, 30 fps clip whose frame N is flat grey 16 + 3N, and the grey
+    ffmpeg itself decodes for each frame, which is what a frame is matched to."""
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=black:s=64x36:r=30:d=2",
+         "-vf", "geq=lum='16+N*3':cb=128:cr=128", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30", str(path)],
+        check=True,
+    )
+    frames = path.parent / "truth"
+    frames.mkdir()
+    subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), str(frames / "f%03d.png")], check=True)
+    return [_grey(p.read_bytes()) for p in sorted(frames.glob("f*.png"))]
+
+
+def _grey(png: bytes, x: int = 32, y: int = 18) -> int:
+    out = subprocess.run(
+        ["magick", "png:-", "-colorspace", "gray", "-format", f"%[fx:round(255*p{{{x},{y}}}.r)]", "info:"],
+        input=png, capture_output=True, check=True,
+    )
+    return int(out.stdout)
+
+
+def _frame_of(table: list[int], grey: int) -> int:
+    return min(range(len(table)), key=lambda i: abs(table[i] - grey))
+
+
+@needs_browser
+@needs_video_tools
+def test_a_page_video_draws_the_exact_frame_at_every_capture_frame(tmp_path: Path) -> None:
+    """24 fps over a 30 fps clip puts some capture frames exactly on a source
+    boundary, where the browser's own decoder showed the frame before
+    (4 of 45, ~/proofcut-work/spikes/video-in-graphic)."""
+    folder = tmp_path / "g"
+    folder.mkdir()
+    table = _numbered_clip(folder / "clip.mp4")
+    (folder / "index.html").write_text(
+        "<!doctype html><body style='margin:0'><video src='clip.mp4' autoplay muted"
+        " style='display:block;width:64px'></video></body>"
+    )
+    motion.write_spec(folder, motion.normalise_spec({"intro": 1.9}))
+    record = motion.capture(folder, tmp_path / "f", width=64, height=36, fps=24.0)
+    shown = [_frame_of(table, _grey((tmp_path / "f" / "intro" / f"f{k:04d}.png").read_bytes())) for k in range(record["intro"])]
+    assert shown == [int(k / 24 * 30 + 1e-9) for k in range(record["intro"])]
+
+
+@needs_browser
+@needs_video_tools
+def test_a_page_video_starts_at_data_start_and_loops(tmp_path: Path) -> None:
+    folder = tmp_path / "g"
+    folder.mkdir()
+    table = _numbered_clip(folder / "clip.mp4")
+    (folder / "index.html").write_text(
+        "<!doctype html><body style='margin:0'><video src='clip.mp4' data-start='0.5' loop"
+        " style='display:block;width:64px'></video></body>"
+    )
+    with browser.launch(folder) as chrome:
+        page = chrome.new_page(64, 36)
+        browser.load(page)
+        for seconds, frame in ((0.2, 0), (0.5, 0), (1.5, 30), (2.6, 3)):
+            browser.seek(page, seconds)
+            assert _frame_of(table, _grey(browser.screenshot(page))) == frame, seconds
+
+
+@needs_browser
+@needs_video_tools
+def test_a_detached_video_keeps_the_size_its_own_frames_gave_it(tmp_path: Path) -> None:
+    """Sized by height alone, a 64x36 video is 32x18 at 18 px tall. The
+    width and height attributes would have made it 64 wide (2026-10-03)."""
+    folder = tmp_path / "g"
+    folder.mkdir()
+    _numbered_clip(folder / "clip.mp4")
+    (folder / "index.html").write_text(
+        "<!doctype html><body style='margin:0'><video src='clip.mp4' style='height:18px'></video>"
+        "<video src='clip.mp4' style='width:50%'></video></body>"
+    )
+    with browser.launch(folder) as chrome:
+        page = chrome.new_page(64, 36)
+        browser.load(page)
+        browser.seek(page, 0.0)
+        sizes = page.evaluate("[...document.querySelectorAll('video')].map(v => [v.offsetWidth, v.offsetHeight])")
+        assert sizes == [[32, 18], [32, 18]]
+
+
+@needs_browser
+@needs_video_tools
+def test_a_video_outside_the_folder_refuses_the_capture(tmp_path: Path) -> None:
+    _numbered_clip(tmp_path / "outside.mp4")
+    folder = _page(tmp_path / "g", body="<video src='../outside.mp4'></video>")
+    with pytest.raises(motion.GraphicError, match="the video"):
+        motion.capture(folder, tmp_path / "f", width=160, height=90, fps=10.0)
+
+
+def test_only_a_page_that_shows_a_video_is_restamped(tmp_path: Path) -> None:
+    folder = _page(tmp_path / "g")
+    plain = motion.stamp(folder, 160, 90, 10.0)
+    (folder / "index.html").write_text((folder / "index.html").read_text() + "<video src='a.mp4'></video>")
+    salted = motion.stamp(folder, 160, 90, 10.0)
+    motion.VIDEO_CAPTURE_VERSION += 1
+    try:
+        assert motion.stamp(folder, 160, 90, 10.0) != salted
+        (folder / "index.html").write_text((folder / "index.html").read_text().replace("<video src='a.mp4'></video>", ""))
+        assert motion.stamp(folder, 160, 90, 10.0) == plain
+    finally:
+        motion.VIDEO_CAPTURE_VERSION -= 1
 
 
 def test_mlt_draws_a_sequence_and_a_still_through_the_same_overlay_node() -> None:

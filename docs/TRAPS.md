@@ -1694,6 +1694,16 @@ built; docs/plans/INSTALL.md):
     refusal, naming the label, arrives before the connection's. Fonts are
     read again after the last frame: a face no text used at load is
     `unloaded`, not `error`. HISTORY.md § The readiness handshake, built.
+  - **A page's `<video>` is never decoded by the browser**: served whole it
+    never leaves frame 0, and with byte ranges it shows the frame before a
+    boundary. `browser.VIDEOS` detaches its source and paints the frame
+    `_Video` serves at `VIDEO_PATH`, matched by ffprobe's timestamps within
+    one tick of the timebase (WebM's is a millisecond) and decoded a window
+    at a time (a whole 46 s phone clip was 859 MB on a RAM-backed `/tmp`).
+    Its size comes back through `contain-intrinsic-size`, never the
+    `width`/`height` attributes, which set a `<video>`'s CSS size. Only a
+    page that shows a video is restamped (`VIDEO_CAPTURE_VERSION`).
+    HISTORY.md § Video inside a graphic, built.
   - **A capture is stamped with the page's bytes, the canvas and the rate**,
     and export refuses a stale one (`graphic_capture`). The hold is checked at
     capture: still means nothing animating through it, a loop means its

@@ -40,6 +40,15 @@ Four rules, each measured in the spike:
   than shooting what the page drew so far (Remotion's `delayRender`, the
   idea and not the code, COMPETITORS.md § Remotion). Measured 2026-10-03: a
   page drawing after a fetch and 150 ms of work was shot empty without it.
+* **A `<video>` is never decoded by the browser.** Measured 2026-10-03
+  (`~/proofcut-work/spikes/video-in-graphic`): paused, it never moved off
+  its first frame (served whole, it is not seekable), and with byte ranges
+  served a seek to a time on a frame boundary still showed the frame
+  before, 4 of 45 wrong at 24 fps over a 30 fps clip. So the first seek detaches each video's
+  source and `VIDEOS` paints the frame showing at its media time as the
+  element's own background, served at `VIDEO_PATH` from one ffmpeg decode of
+  the file (hyperframes' injector and Remotion's frame server, the idea and
+  not the code, COMPETITORS.md § Remotion). A video's sound is not used.
 
 `PROOFCUT_CHROME` names the binary, then `proofcut setup`'s folder, then PATH.
 """
@@ -47,6 +56,7 @@ Four rules, each measured in the spike:
 from __future__ import annotations
 
 import base64
+import bisect
 import contextlib
 import json
 import mimetypes
@@ -61,7 +71,7 @@ import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from proofcut import deps
 
@@ -110,6 +120,11 @@ ORIGIN = "https://graphic.proofcut.invalid"
 
 #: The vendored fonts, served to every page under this path.
 FONTS_PATH = "/_proofcut/fonts/"
+#: A page's videos, frame by frame: `VIDEO_PATH + <its path>?t=<seconds>` is
+#: the frame showing at that media time, `?info` its size and length.
+VIDEO_PATH = "/_proofcut/video/"
+#: Frames a page's video decodes per ffmpeg run: two seconds at 24 fps.
+VIDEO_WINDOW = 48
 
 #: How long a browser gets to start, and a page to load, before we give up.
 START_TIMEOUT = 30.0
@@ -281,6 +296,8 @@ class Browser:
         self.pending: dict[int, dict[str, Any]] = {}
         self.fonts: list[str] = []  # every font path a page asked for
         self.sandboxed = True  # False when Linux refused the sandbox (`launch`)
+        self.scratch: Path | None = None  # where videos are decoded (`launch`)
+        self.videos: dict[Path, _Video] = {}
 
     # A command is answered in order with whatever events arrive between; the
     # one event this module acts on is a paused request, answered inline.
@@ -316,7 +333,12 @@ class Browser:
         url = params["request"]["url"]
         body = None
         if url.startswith(ORIGIN + "/"):
-            body, mime = self._local(unquote(urlsplit(url).path))
+            parts = urlsplit(url)
+            path = unquote(parts.path)
+            if path.startswith(VIDEO_PATH):
+                body, mime = self._video(path.removeprefix(VIDEO_PATH), parse_qs(parts.query, keep_blank_values=True))
+            else:
+                body, mime = self._local(path)
         if body is None:
             self.post("Fetch.failRequest", {"requestId": request_id, "errorReason": "BlockedByClient"}, session=session)
             return
@@ -340,12 +362,8 @@ class Browser:
             base, name = self.root, path.lstrip("/") or "index.html"
         else:
             return None, ""
-        try:
-            target = (base / name).resolve()
-            target.relative_to(base.resolve())
-        except (ValueError, OSError):
-            return None, ""
-        if not target.is_file():
+        target = _confined(base, name)
+        if target is None:
             return None, ""
         mime = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         if target.suffix in (".ttf", ".otf"):
@@ -353,6 +371,26 @@ class Browser:
         elif target.suffix == ".woff2":
             mime = "font/woff2"
         return target.read_bytes(), mime
+
+    def _video(self, name: str, query: dict[str, list[str]]) -> tuple[bytes | None, str]:
+        """A frame of one of the page's videos, or its `info`; None refuses the request."""
+        target = _confined(self.root, name) if self.root is not None and self.scratch is not None else None
+        if target is None:
+            return None, ""
+        video = self.videos.get(target)
+        if video is None:
+            try:
+                video = _Video.decode(target, self.scratch / f"v{len(self.videos)}")
+            except BrowserError:
+                return None, ""
+            self.videos[target] = video
+        if "info" in query:
+            return json.dumps(video.info()).encode(), "application/json"
+        try:
+            seconds = float(query["t"][0])
+        except (KeyError, ValueError):
+            return None, ""
+        return video.frame_at(seconds).read_bytes(), "image/png"
 
     def new_page(self, width: int, height: int) -> Page:
         target = self.send("Target.createTarget", {"url": "about:blank"})["targetId"]
@@ -368,6 +406,7 @@ class Browser:
         page.send("Emulation.setDefaultBackgroundColorOverride", {"color": {"r": 0, "g": 0, "b": 0, "a": 0}})
         page.send("Page.addScriptToEvaluateOnNewDocument", {"source": CLOCK})
         page.send("Page.addScriptToEvaluateOnNewDocument", {"source": WAITS})
+        page.send("Page.addScriptToEvaluateOnNewDocument", {"source": VIDEOS})
         return page
 
     def close(self) -> None:
@@ -383,6 +422,99 @@ class Browser:
 
 #: The package's vendored fonts, the only fonts a page gets besides its own.
 FONTS_DIR = Path(__file__).parent / "fonts"
+
+
+def _confined(base: Path, name: str) -> Path | None:
+    """The file `name` names under `base`, or None when it is outside or absent."""
+    try:
+        target = (base / name).resolve()
+        target.relative_to(base.resolve())
+    except (ValueError, OSError):
+        return None
+    return target if target.is_file() else None
+
+
+class _Video:
+    """One of a page's videos: its frame timestamps from ffprobe, and its
+    frames decoded by ffmpeg a window at a time, only where a seek asks.
+
+    A frame shows from its own timestamp until the next one's, counted from
+    the first, so a time exactly on a boundary is the frame that starts
+    there: the case the browser's decoder got wrong. A timestamp is known
+    only to one tick of its stream's timebase (WebM's is a millisecond, so
+    a 30 fps frame 20 is stored at 0.667 s, after its true 0.6667 s), and a
+    frame starting within one tick of a time counts as started.
+
+    Windowed, because decoding a whole 46 s phone clip took 9.6 s and 859 MB
+    (measured 2026-10-03), where a graphic shows seconds of it, and the
+    browser's profile can sit on a RAM-backed /tmp.
+    """
+
+    def __init__(self, source: Path, folder: Path, times: list[float], tick: float) -> None:
+        self.source, self.folder, self.times, self.tick = source, folder, times, tick
+        self.starts = [t - times[0] for t in times]
+        self.frames: dict[int, Path] = {}
+        step = self.starts[-1] / (len(times) - 1) if len(times) > 1 else 0.0
+        self.duration = self.starts[-1] + step
+        first = self.frame(0)
+        self.width, self.height = struct.unpack("!II", first.read_bytes()[16:24])
+
+    @classmethod
+    def decode(cls, source: Path, folder: Path) -> _Video:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+             "stream=time_base:packet=pts_time", "-of", "json", str(source)],
+            capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
+        )
+        try:
+            read = json.loads(probe.stdout)
+            num, _, den = read["streams"][0]["time_base"].partition("/")
+            tick = int(num) / int(den)
+            times = sorted(float(p["pts_time"]) for p in read.get("packets", []) if "pts_time" in p)
+        except (ValueError, KeyError, IndexError, ZeroDivisionError):
+            times, tick = [], 0.0
+        if probe.returncode or not times:
+            raise BrowserError(f"{source.name} has no video frames ffprobe can read")
+        folder.mkdir(parents=True, exist_ok=True)
+        return cls(source, folder, times, tick)
+
+    def frame_at(self, seconds: float) -> Path:
+        # Plus a microsecond: the page sends `t` rounded to one.
+        return self.frame(max(0, bisect.bisect_right(self.starts, seconds + self.tick + 1e-6) - 1))
+
+    def frame(self, index: int) -> Path:
+        if index not in self.frames:
+            self._window(index)
+        return self.frames[index]
+
+    def _window(self, first: int) -> None:
+        """Decode `VIDEO_WINDOW` frames from `first`, seeking to half a tick
+        before its timestamp, so the seek's first frame is that one."""
+        count = min(VIDEO_WINDOW, len(self.times) - first)
+        out = self.folder / f"w{first:06d}"
+        shutil.rmtree(out, ignore_errors=True)
+        out.mkdir()
+        for passthrough in (["-fps_mode", "passthrough"], ["-vsync", "passthrough"]):  # ffmpeg 5.1+, then older
+            done = subprocess.run(
+                ["ffmpeg", "-v", "error", "-nostdin", "-ss", f"{self.times[first] - self.tick / 2:.6f}",
+                 "-i", str(self.source), "-map", "0:v:0", "-an", *passthrough, "-frames:v", str(count),
+                 "-c:v", "png", str(out / "f%06d.png")],
+                capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
+            )
+            if "Unrecognized option" not in done.stderr:
+                break
+        decoded = sorted(out.glob("f*.png"))
+        if done.returncode or len(decoded) != count:
+            # A frame dropped or doubled would shift every time after it,
+            # which is the error this route exists to remove.
+            raise BrowserError(
+                f"{self.source.name} decoded {len(decoded)} frames from frame {first} where it has {count}"
+            )
+        for k, path in enumerate(decoded):
+            self.frames.setdefault(first + k, path)
+
+    def info(self) -> dict[str, Any]:
+        return {"width": self.width, "height": self.height, "duration": self.duration, "frames": len(self.times)}
 
 
 @contextlib.contextmanager
@@ -408,6 +540,7 @@ def launch(root: Path | None = None) -> Iterator[Browser]:
     except BaseException:
         shutil.rmtree(profile, ignore_errors=True)
         raise
+    browser.scratch = profile / "proofcut-videos"
     try:
         yield browser
     finally:
@@ -562,6 +695,73 @@ WAITS = """(() => {
   };
 })();"""
 
+#: Each `<video>` drawn as the frame showing at its media time. The first
+#: seek that finds one detaches its source (and poster), so the browser
+#: never shows a frame of its own, and gives it the video's own size back
+#: through `contain-intrinsic-size` (measured to lay out as the loaded video
+#: did with no CSS size, a height, a width, both, a percentage and a
+#: max-height; the width and height attributes match only two); then each seek paints that frame as the
+#: element's background, `object-fit` and `object-position` carried over.
+#: Media time is the page's time less `data-start` (seconds, default 0),
+#: wrapped by `loop`, else held on the last frame. Each frame's load is a
+#: `proofcutWaitFor`, so a video the folder cannot serve refuses the capture.
+VIDEOS = """(() => {
+  const state = new WeakMap();
+  const FIT = { contain: 'contain', cover: 'cover', fill: '100% 100%', none: 'auto', 'scale-down': 'contain' };
+  const sourceOf = (v) => {
+    const own = v.getAttribute('src'), child = v.querySelector('source[src]');
+    return own || (child && child.getAttribute('src'));
+  };
+  function adopt(v) {
+    const src = sourceOf(v);
+    if (!src) return null;
+    const path = new URL(src, location.href).pathname.replace(/^\\//, '');
+    v.pause();
+    v.removeAttribute('src');
+    v.removeAttribute('poster');
+    v.querySelectorAll('source').forEach((e) => e.remove());
+    v.load();
+    const s = { path, shown: null };
+    s.info = fetch('/_proofcut/video/' + path + '?info').then((r) => {
+      if (!r.ok) throw new Error('proofcut cannot decode ' + path);
+      return r.json();
+    }).then((info) => {
+      // The size the video had, without its source. Never the width and
+      // height attributes: on a <video> those set the CSS size, and a page
+      // sizing it by height alone got a box 1080 wide.
+      v.style.aspectRatio = info.width + ' / ' + info.height;
+      v.style.containIntrinsicSize = info.width + 'px ' + info.height + 'px';
+      v.style.contain = 'size';
+      const cs = getComputedStyle(v);
+      v.style.backgroundSize = FIT[cs.objectFit] || 'contain';
+      v.style.backgroundPosition = cs.objectPosition;
+      v.style.backgroundRepeat = 'no-repeat';
+      return info;
+    });
+    state.set(v, s);
+    return s;
+  }
+  window.__proofcutVideos = {
+    seek(t) {
+      for (const v of document.querySelectorAll('video')) {
+        const s = state.get(v) || adopt(v);
+        if (!s) continue;
+        window.proofcutWaitFor(s.info.then(async (info) => {
+          let m = Math.max(0, t - Number(v.dataset.start || 0));
+          m = v.loop && info.duration > 0 ? m % info.duration : Math.min(m, info.duration);
+          const url = '/_proofcut/video/' + s.path + '?t=' + m.toFixed(6);
+          if (url === s.shown) return;
+          const img = new Image();
+          img.src = url;
+          await img.decode();
+          v.style.backgroundImage = 'url("' + url + '")';
+          s.shown = url;
+        }), 'the video ' + s.path);
+      }
+    },
+  };
+})();"""
+
 #: Move the page's clock to `t` seconds and run its frame, pause every
 #: animation there, wait for what the page asked to be waited on and for
 #: its fonts, then let two real frames render so the compositor has drawn
@@ -574,6 +774,7 @@ SEEK = (
     " if (clock) clock.advance(t * 1000);"
     " for (const a of document.getAnimations()) { a.pause(); a.currentTime = t * 1000; }"
     " if (typeof window.proofcutSeek === 'function') await window.proofcutSeek(t);"
+    " if (window.__proofcutVideos) window.__proofcutVideos.seek(t);"
     " if (window.__proofcutWaits) await window.__proofcutWaits.drain(limit);"
     " await document.fonts.ready;"
     " const raf = clock ? clock.realRAF : requestAnimationFrame;"

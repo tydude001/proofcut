@@ -19175,3 +19175,37 @@ made stale. Three tests, each red on the old seek first. The suite: 2904
 passed and one blur-fill export failed with melt rendering nothing (a D-Bus
 line in its stderr); alone it passed in 3.5 s.
 
+## Video inside a graphic, built — 2026-10-03
+
+COMPETITORS.md § Remotion's second "worth taking" line. Measured first
+(`~/proofcut-work/spikes/video-in-graphic/`), with a 30 fps clip whose
+frame N is flat grey 16 + 3N, matched against ffmpeg's own decode:
+
+- **The browser cannot be the decoder here.** Served whole, as the page's
+  files are, a paused `<video>` is not seekable and never left frame 0;
+  `autoplay` ran on the wall clock (34 of 45 frames wrong). With byte ranges
+  served, a seek to a frame boundary still showed the frame before: 4 of 45
+  at 24 fps. A first count of 7 blamed frames 1 to 3 too; the clip had
+  written them below video black, where they were indistinguishable.
+- **proofcut serves the frames.** `browser.VIDEOS` detaches each video's
+  source on the first seek and paints the frame `/_proofcut/video/<path>?t=`
+  returns as the element's background; `_Video` maps the time through
+  ffprobe's timestamps and decodes with ffmpeg. 0 wrong over H.264 and VP9,
+  24 and 60 fps, in order and shuffled; the three tests fail with it off.
+- **Real footage moved three things.** On a 46 s 1080x1920 phone clip,
+  ffmpeg's image writer doubled a frame (1,099 against 1,098 timestamps;
+  now `-fps_mode passthrough`, `-vsync` on an older ffmpeg), and a whole
+  decode took 9.6 s and 859 MB, so it decodes 48 frames at a time from a
+  seek half a tick before the first (0.7 s a window, byte-identical to the
+  whole decode). WebM's millisecond timestamps put a 30 fps frame 20 at
+  0.667 s, so a frame within one tick of a time counts as started. And the
+  first inset drawn was zoomed: a `<video>`'s `width`/`height` attributes
+  set its CSS size, so a page sizing it by height got a box 1080 wide.
+  `contain-intrinsic-size` lays out as the loaded video did in all six CSS
+  cases measured; the attributes matched two.
+
+The inset, captured through the CLI with a slide-in and `object-fit:
+cover`, showed the frame ffmpeg shows at its media time, in 8.3 s for 61
+frames. Only a page that shows a video is restamped. No tool puts a clip
+in a graphic's folder, so an agent on MCP alone cannot use this yet.
+

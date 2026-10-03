@@ -1607,7 +1607,10 @@ it is "not possible to deterministically export a Remotion project"
   to release, plus a second font check after the last frame (HISTORY.md
   § The readiness handshake, built).
 - **Compositor-served exact frames** for video inside a graphic, with
-  hyperframes' injector the other route; proofcut has no such graphic yet.
+  hyperframes' injector the other route. **Built 2026-10-03** as frames
+  ffmpeg decodes and the page's request handler serves, painted as the
+  `<video>` element's own background (HISTORY.md § Video inside a graphic,
+  built).
 - Its whisper-to-`Caption` shape is no improvement on proofcut's word
   transcript, and its OTIO skill is the opposite of proofcut's OTIO-as-state.
 

@@ -386,6 +386,8 @@ installed package or the upstream repo, not your memory.
   - **The page is served, never opened**
   - **A seek shoots only once the page is ready (`proofcutWaitFor`, then
     fonts), and fonts are read again after the last frame**
+  - **A page's `<video>` is never decoded by the browser: proofcut serves
+    its exact frames**
   - **Every piece is exactly its phase's length, because `qimage` loops a
     frame pattern**
   - **A capture is stamped with the page's bytes, the canvas and the rate**

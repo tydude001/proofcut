@@ -59,6 +59,11 @@ PHASES = ("intro", "hold", "outro")
 #: Bumped when a capture of the same page would draw differently — the flags,
 #: the seek — so every cached capture goes stale with it.
 CAPTURE_VERSION = 2
+#: Salted into the stamp of a page that shows a `<video>`, which draws
+#: differently since proofcut serves its frames (`browser.VIDEOS`): those
+#: captures go stale, and no other page's does.
+VIDEO_CAPTURE_VERSION = 1
+_SHOWS_VIDEO = re.compile(rb"<video\b|createElement\(\s*['\"]video['\"]", re.IGNORECASE)
 #: Pages captured side by side. The spike measured 8 pages at 1.4 s for 91
 #: frames against 10 s for one; two leaves the machine usable meanwhile.
 DEFAULT_PAGES = 2
@@ -154,6 +159,8 @@ def stamp(folder: Path, width: int, height: int, fps: float) -> str:
     for path in sorted(p for p in folder.rglob("*") if p.is_file()):
         digest.update(path.relative_to(folder).as_posix().encode() + b"\0")
         digest.update(hashlib.sha256(path.read_bytes()).digest())
+        if path.suffix in (".html", ".js") and _SHOWS_VIDEO.search(path.read_bytes()):
+            digest.update(f"video:{VIDEO_CAPTURE_VERSION}".encode())
     return digest.hexdigest()
 
 

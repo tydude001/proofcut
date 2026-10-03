@@ -781,6 +781,16 @@ waits for it, and for the page's fonts, before it is shot, and a promise
 that rejects or is still open after 30 seconds refuses the capture by its
 label. Without it, the frames before the setup finishes are shot as they
 stand, empty.
+
+A `<video>` whose file sits in the graphic's folder shows, in every frame,
+exactly the frame of the clip at that moment. Its time is the page's time
+from `data-start` (seconds, default 0); past its end it holds the last
+frame, or with `loop` starts again. proofcut decodes the frames itself with
+ffmpeg, so the browser never plays it and its sound is not used. Size and
+style it with CSS like any element, `object-fit` included. `graphic new
+--html` writes only the page: copy the clip into
+`assets/graphics/<name>/` beside it, then `graphic capture <name>`. A video
+the folder does not hold refuses the capture by name.
 Start the outro's animations where the intro ends (one loop later, if it
 loops). The page loads its own folder's files and the vendored fonts under
 `/_proofcut/fonts/static/`, and nothing else: no network, so a web font cannot
