@@ -337,6 +337,12 @@ class Browser:
             path = unquote(parts.path)
             if path.startswith(VIDEO_PATH):
                 body, mime = self._video(path.removeprefix(VIDEO_PATH), parse_qs(parts.query, keep_blank_values=True))
+            elif params.get("resourceType") == "Media":
+                # A <video> or <audio> loading its own file. `VIDEOS` shows
+                # the frames and the sound is never used, so the bytes are
+                # never needed, and a big clip sent whole (one base64 CDP
+                # message) resets the connection: 106 MB did, 2026-10-03.
+                pass
             else:
                 body, mime = self._local(path)
         if body is None:

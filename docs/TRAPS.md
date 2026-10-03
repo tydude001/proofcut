@@ -1702,8 +1702,10 @@ built; docs/plans/INSTALL.md):
     at a time (a whole 46 s phone clip was 859 MB on a RAM-backed `/tmp`).
     Its size comes back through `contain-intrinsic-size`, never the
     `width`/`height` attributes, which set a `<video>`'s CSS size. Only a
-    page that shows a video is restamped (`VIDEO_CAPTURE_VERSION`).
-    `graphic_new`'s `clips` cut a *span* into the folder, never the whole
+    page that shows a video is restamped (`VIDEO_CAPTURE_VERSION`). The
+    element's own load (`resourceType` `Media`) is refused, never served:
+    a 106 MB span sent whole, as one base64 CDP message, reset the
+    connection. `graphic_new`'s `clips` cut a *span* into the folder, never the whole
     file: the folder is hashed into the stamp, and `timeline_view` checks
     every placed graphic's (a whole 694 MB source: 0.5 s a check warm, 11 s
     off the NAS). HISTORY.md § Video inside a graphic, built.

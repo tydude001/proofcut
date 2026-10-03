@@ -539,6 +539,33 @@ def test_a_page_video_starts_at_data_start_and_loops(tmp_path: Path) -> None:
 
 @needs_browser
 @needs_video_tools
+def test_a_page_video_never_hands_the_browser_its_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The element's own load is refused: a 106 MB clip served whole, as one
+    base64 CDP message, reset the connection (2026-10-03, a real 7.4 s span)."""
+    folder = tmp_path / "g"
+    folder.mkdir()
+    table = _numbered_clip(folder / "clip.mp4")
+    (folder / "index.html").write_text(
+        "<!doctype html><body style='margin:0'><video src='clip.mp4' style='display:block;width:64px'></video></body>"
+    )
+    served: list[str] = []
+    local = browser.Browser._local
+
+    def spy(self: browser.Browser, path: str) -> tuple[bytes | None, str]:
+        served.append(path)
+        return local(self, path)
+
+    monkeypatch.setattr(browser.Browser, "_local", spy)
+    with browser.launch(folder) as chrome:
+        page = chrome.new_page(64, 36)
+        browser.load(page)
+        browser.seek(page, 0.5)
+        assert _frame_of(table, _grey(browser.screenshot(page))) == 15
+    assert "/clip.mp4" not in served
+
+
+@needs_browser
+@needs_video_tools
 def test_a_detached_video_keeps_the_size_its_own_frames_gave_it(tmp_path: Path) -> None:
     """Sized by height alone, a 64x36 video is 32x18 at 18 px tall. The
     width and height attributes would have made it 64 wide (2026-10-03)."""

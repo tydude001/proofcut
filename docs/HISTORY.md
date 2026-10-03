@@ -19220,3 +19220,16 @@ the phone clip captured in 7.6 s and its held frame matched ffmpeg's at
 file name, and all are cut beside the folder before any moves in, so one
 refused leaves the graphic as it was.
 
+**On real footage it crashed, and now holds frame for frame.** A
+picture-in-picture of a 7.4 s span of the 1920x816 Randy clip over the
+Scream 4 reveal (`~/proofcut-work/spikes/video-in-graphic/pip-real`) cut
+to 106 MB lossless, and the capture died with `ConnectionResetError`: the
+`<video>` element's own load reached the request handler before the first
+seek detached it, and the whole file went back as one base64 CDP message.
+The bytes are never needed, so a `Media` request is now refused; the test
+fails without that. Then: all 178 cut frames are source frames 192 to 369
+by decoded hash (192 is 8.008 s, the first at or after 8.0), and all 152
+captured frames off the slide-in match their own cut frame against its
+neighbours, mean removed. 178 frames captured in 24 s; the 23 s melt
+render took 7 s.
+
