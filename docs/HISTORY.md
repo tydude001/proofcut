@@ -19216,5 +19216,7 @@ as `<name>.mp4`, x264 `-qp 0` with no sound, and recorded in
 0.5 s a check warm and 11 s off the NAS, where 3 s of 1080p cut
 losslessly is 29 MB in 0.3 s. Over the stdio server, a 12 to 15 s span of
 the phone clip captured in 7.6 s and its held frame matched ffmpeg's at
-13.0 s.
+13.0 s. `graphic_edit` takes `clips` too: each replaces a clip of the same
+file name, and all are cut beside the folder before any moves in, so one
+refused leaves the graphic as it was.
 

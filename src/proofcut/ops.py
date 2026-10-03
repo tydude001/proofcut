@@ -15142,6 +15142,7 @@ def graphic_edit(
     *,
     slots: dict[str, str] | None = None,
     html: str | None = None,
+    clips: list[dict[str, Any]] | None = None,
     intro: float | None = None,
     loop: float | None = None,
     no_loop: bool = False,
@@ -15152,8 +15153,10 @@ def graphic_edit(
     """Change graphic `name`: refill its template's slots, replace its page, or move its phases.
 
     `slots` merge into the ones it was filled with; a template graphic whose
-    page was replaced by `html` stops being that template's. `no_loop` turns
-    a looping hold back into a still. Recaptured unless `capture=False`.
+    page was replaced by `html` stops being that template's. `clips` are cut
+    in as `graphic_new` cuts them, each replacing a clip of the same file
+    name and keeping the rest. `no_loop` turns a looping hold back into a
+    still. Recaptured unless `capture=False`.
     """
     project = Project.open(path)
     folder = _graphic_folder(project, name)
@@ -15161,6 +15164,22 @@ def graphic_edit(
         raise ProjectError("pass slots or html, not both")
     with _graphic_errors():
         spec = anim.read_spec(folder)
+        if clips and (slots or (spec.get("template") and html is None)):
+            raise ProjectError("clips are for a page written as html; a template's page shows none")
+        if clips:
+            # Cut beside the folder and moved in only once every one is cut,
+            # so a refused clip leaves the graphic as it was.
+            staging = project.graphics_dir / f".{name}.clips"
+            shutil.rmtree(staging, ignore_errors=True)
+            staging.mkdir(parents=True)
+            try:
+                added = _graphic_clips(project, list(clips), staging)
+                for entry in added:
+                    (staging / entry["file"]).replace(folder / entry["file"])
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
+            kept = [c for c in spec.get("clips", []) if c.get("file") not in {e["file"] for e in added}]
+            spec["clips"] = kept + added
         if slots:
             if not spec.get("template"):
                 raise ProjectError(f"graphic {name!r} was written as html, so it has no slots — pass html")

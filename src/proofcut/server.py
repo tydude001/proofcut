@@ -1939,6 +1939,10 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         "name": "The graphic to change.",
         "slots": "Slots to change, merged into the ones it was filled with.",
         "html": "A whole new page. The graphic stops being its template's.",
+        "clips": (
+            "Spans of project clips to cut in, as graphic_new takes them. Each replaces a clip "
+            "of the same file name; the others stay."
+        ),
         "intro": "New intro length, in seconds.",
         "loop": "New loop length, in seconds, making the hold loop.",
         "no_loop": "Make the hold still again.",
@@ -3103,6 +3107,7 @@ def graphic_edit(
     name: str,
     slots: dict[str, Any] | None = None,
     html: str | None = None,
+    clips: list[dict[str, Any]] | None = None,
     intro: float | None = None,
     loop: float | None = None,
     no_loop: bool = False,
@@ -3118,7 +3123,7 @@ def graphic_edit(
     project's manifest, like a card's PNG.
     """
     return ops.graphic_edit(
-        path, name, slots=slots, html=html, intro=intro, loop=loop, no_loop=no_loop,
+        path, name, slots=slots, html=html, clips=clips, intro=intro, loop=loop, no_loop=no_loop,
         outro=outro, capture=capture, pages=pages,
     )  # fmt: skip
 

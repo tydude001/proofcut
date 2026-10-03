@@ -640,6 +640,36 @@ def test_graphic_new_refuses_a_clip_it_cannot_cut(project: Project, clips: list,
     assert not (project.graphics_dir / "g").exists()
 
 
+@needs_video_tools
+def test_graphic_edit_cuts_a_clip_in_replacing_one_of_that_name(project: Project) -> None:
+    _with_shot(project)
+    ops.graphic_new(project.root, "g", html="<html></html>", clips=[{"clip": "shot", "end": 0.5}], capture=False)
+    folder = project.graphics_dir / "g"
+    first = (folder / "shot.mp4").read_bytes()
+    edited = ops.graphic_edit(
+        project.root, "g", clips=[{"clip": "shot", "start": 1.0}, {"clip": "shot", "end": 0.2, "name": "flash"}], capture=False
+    )  # fmt: skip
+    assert edited["graphic"]["clips"] == [
+        {"clip": "shot", "start": 1.0, "end": 2.0, "file": "shot.mp4"},
+        {"clip": "shot", "start": 0.0, "end": 0.2, "file": "flash.mp4"},
+    ]
+    assert (folder / "shot.mp4").read_bytes() != first
+    assert sorted(p.name for p in folder.iterdir() if p.suffix == ".mp4") == ["flash.mp4", "shot.mp4"]
+    # Every clip is cut before any lands: one refused leaves the folder as it was.
+    before = (folder / "shot.mp4").read_bytes()
+    with pytest.raises(ProjectError, match="not inside it"):
+        ops.graphic_edit(project.root, "g", clips=[{"clip": "shot", "end": 0.4}, {"clip": "shot", "start": 3.0, "name": "x"}], capture=False)
+    assert (folder / "shot.mp4").read_bytes() == before
+    assert ops.graphic_edit(project.root, "g", intro=0.3, capture=False)["graphic"]["clips"] == edited["graphic"]["clips"]
+    assert not list(project.graphics_dir.glob(".*"))
+
+
+def test_graphic_edit_refuses_clips_on_a_template_graphic(project: Project) -> None:
+    ops.graphic_new(project.root, "t", template="typing", slots={"text": "hi"}, capture=False)
+    with pytest.raises(ProjectError, match="clips are for a page written as html"):
+        ops.graphic_edit(project.root, "t", clips=[{"clip": "vo"}], capture=False)
+
+
 def test_the_cli_reads_a_clip_span_and_a_name() -> None:
     from proofcut.cli import _graphic_clip_args
 

@@ -563,6 +563,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--set", action="append", default=[], metavar="SLOT=VALUE", dest="slots", help="change one slot; repeat"
     )
     p_graphic_edit.add_argument("--html", type=Path, help="a whole new page, read from this file")
+    p_graphic_edit.add_argument(
+        "--clip", action="append", default=[], metavar="ID[:START-END][=NAME]", dest="clips",
+        help="cut a span of a project clip in as NAME.mp4, replacing one of that name; repeat for each",
+    )
     for flag, text in phases:
         p_graphic_edit.add_argument(flag, type=float, help=text)
     p_graphic_edit.add_argument("--no-loop", action="store_true", help="make the hold still again")
@@ -2730,8 +2734,9 @@ def _cmd_graphic(args: argparse.Namespace) -> int:
         return _emit(
             ops.graphic_edit(
                 args.project, args.name, slots=_slot_assignments(args.slots) or None,
-                html=args.html.read_text() if args.html else None, intro=args.intro, loop=args.loop,
-                no_loop=args.no_loop, outro=args.outro, capture=not args.no_capture, pages=args.pages,
+                html=args.html.read_text() if args.html else None, clips=_graphic_clip_args(args.clips),
+                intro=args.intro, loop=args.loop, no_loop=args.no_loop, outro=args.outro,
+                capture=not args.no_capture, pages=args.pages,
             )
         )  # fmt: skip
     if command == "capture":

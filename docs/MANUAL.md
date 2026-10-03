@@ -799,7 +799,9 @@ proofcut -C myproject graphic new hook --html hook.html --clip teaser:12-15=hook
 
 `ID:START-END=NAME` cuts seconds 12 to 15 of clip `teaser` into the graphic
 as `hook.mp4`, for `<video src="hook.mp4">`; the span defaults to the whole
-clip and the name to the clip's id. Repeat `--clip` for more. The span is
+clip and the name to the clip's id. Repeat `--clip` for more; `graphic
+edit --clip` cuts one in later, replacing a clip of the same name and
+keeping the rest. The span is
 cut losslessly and without sound, and recorded in the graphic's
 `graphic.json`. Cut only what the page shows: the folder is hashed every
 time the graphic's capture is checked, and a whole source makes that slow.
