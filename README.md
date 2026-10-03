@@ -184,7 +184,8 @@ Beyond those stages:
   from a template (typing, a highlighter sweep, a letter build, chips),
   captured frame by frame by a headless browser and placed over a span of
   words. It animates in, holds as long as the span lasts, and animates out,
-  so a cut never breaks one. Saved graphics carry across projects.
+  so a cut never breaks one. A page can show a span of the project's own
+  footage, exact to the frame. Saved graphics carry across projects.
 - **Stills and stickers.** Photos and cut-outs go in once, upright, and play
   full frame or ride over the film as stickers: placed, sized, turned, framed
   as a photo card, popping or sliding in. Paste one into the agent's prompt
