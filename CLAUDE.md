@@ -384,6 +384,8 @@ installed package or the upstream repo, not your memory.
   - **`browser.DETERMINISTIC_FLAGS` are the capture, not tuning**
   - **Ubuntu 23.10+ refuses Chrome for Testing its sandbox**
   - **The page is served, never opened**
+  - **A seek shoots only once the page is ready (`proofcutWaitFor`, then
+    fonts), and fonts are read again after the last frame**
   - **Every piece is exactly its phase's length, because `qimage` loops a
     frame pattern**
   - **A capture is stamped with the page's bytes, the canvas and the rate**
