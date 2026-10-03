@@ -161,8 +161,9 @@ measured). What remains of this step is the posting.
 `COMPETITORS.md`: every screen-recording editor surveyed (Screen Studio, Cap,
 Cursorful, Canvid, FocuSee, Camtasia, …) authors zoom as **segments** — start,
 end, target, easing — and speed as a **constant per segment**; only MLT and
-Remotion do a real ramp. Every auto-zoom decision found is made from clicks and
-cursor telemetry, never from speech; nothing checks a retimed render against
+Remotion do a real ramp (corrected 2026-10-03: Remotion's speed is a constant
+`playbackRate`, so MLT alone does; COMPETITORS.md § Corrections). Every
+auto-zoom decision found is made from clicks and cursor telemetry, never from speech; nothing checks a retimed render against
 its plan; no MCP server edits screen recordings. Screen Studio has not shipped
 idle-pause compression. proofcut's two strengths — word-addressed edits and
 checking the render against the edit — are exactly the gaps. Cap and Screenity

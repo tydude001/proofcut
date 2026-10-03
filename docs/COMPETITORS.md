@@ -81,7 +81,8 @@ a dash means no source exists.
 | § OpenCut | human browser editor, rewrite pending | MIT | 90,869 | 2026-09-24 `e668010`; classic 2026-09-20 `cf5e79e`, driven 09-26 |
 | § rescript | transcript editor | PolyForm NC | 921 | 2026-09-28 `4d6f295` |
 | CutScript, OpenCut-AI, OpenScript, codeaashu/Rescript, ai-montage, yusaf-cut (§ Transcript-based editors) | transcript editors | mixed | 0–260 | 2026-09-28 |
-| § hyperframes | HTML-to-video renderer | Apache-2.0 | 53,937 | 2026-09-28 `ea48936` |
+| § hyperframes | HTML-to-video renderer | Apache-2.0 | 56,154 (10-03) | 2026-10-03 `ce08f204` |
+| § Remotion | React-to-video framework | custom (company licence past 3 staff) | 61,661 (10-03) | 2026-10-03 `e385a83` |
 | sentrysearch, B-Roll-Finder (§ Footage retrieval) | footage search | Apache-2.0; none | 4,525; 4 | 2026-09-20 |
 | VoiceStudio, voice-pro (§ Voice) | TTS and dubbing | AGPL-3.0; GPL-3.0 | 44,377; 12,955 | 2026-09-20 |
 | § openshorts | shorts pipeline, MCP | MIT + commercial `cloud/` | 5,772 | 2026-09-28 `29c54fa` |
@@ -1429,16 +1430,19 @@ the graphics renderer, footage retrieval, voice, shorts, the finishing NLE.
 ### hyperframes
 
 [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) ·
-Apache-2.0 · TypeScript · created 2026-03-10 · 53,937★ on 2026-09-28
+Apache-2.0 · TypeScript · created 2026-03-10 · 53,937★ on 2026-09-28,
+56,154★ on 2026-10-03
 
 **Source read** 2026-09-28 at `ea48936`, a depth-50 clone, source before
 README, nothing run. Found beside palmier-pro on a stargazer's starred list.
+**Re-read** 2026-10-03 at `ce08f204`, 210 commits later, every claim and
+citation below checked against the new head (§ Re-read at `ce08f204`).
 
 An HTML-to-video renderer for agents. **It generates and never cuts the
 user's footage**; its `talking-head-recut` skill plays the clip in full and
 lays graphics over it. A composition is HTML with `data-start`/
 `data-duration` and one paused GSAP timeline the page registers. 45 CLI
-commands and 18 agent skills shipped as Claude Code, Codex, Cursor and Gemini
+commands (46 at `ce08f204`) and 21 agent skills shipped as Claude Code, Codex, Cursor and Gemini
 plugins; the only MCP is 12 in-browser WebMCP tools on the open Studio page.
 Local by default (whisper-cpp or Parakeet, Kokoro TTS); HeyGen's cloud render
 and a few providers are opt-in keys. **It overlaps proofcut's animated
@@ -1470,18 +1474,143 @@ and PNG sequences are skipped. proofcut's count is exact.
   that comes back empty should fail loudly at the first frame. **Built
   2026-09-28 as "every frame", not "the first"**: an intro may open empty on
   purpose, so `motion.capture` refuses only a capture where nothing drew.
-- **Hold dedup** (`frameCapture.ts:1058-1080`): skip re-capturing a frame
-  predicted static, with a verification pass. A graphic's hold phase is the
-  case, and a hold is already its own piece in proofcut.
+- **Hold dedup** (`packages/engine/src/services/frameCapture.ts:2783`,
+  `armStaticDedup` at `3411-3494`): skip re-capturing a frame predicted
+  static, verified against sampled anchor frames (24 by default), and on by
+  default since this entry was first written (opt out with
+  `HF_STATIC_DEDUP=false`). The first read cited `1058-1080`, which was
+  wrong at `ea48936` too: that span gates a fast capture path. A graphic's
+  hold phase is the case, and a hold is already its own piece in proofcut.
 - **`<video>` in a page is never played**: ffmpeg extracts its frames and a
   pre-capture hook swaps them in as images (`videoFrameInjector.ts`), because
   a browser's own decode is not frame-accurate. proofcut has no video inside a
   graphic yet; this is the route if one is wanted.
 
-**Not confirmed.** Its commit cadence before 2026-09-28 (the clone was
-shallow); which optional keys gate which features; its font embedding beyond
-the imports; whether any of its docs promise output checks the code does not
-make.
+- **`hyperframes check --json`** (`commands/check.ts`,
+  `utils/checkPipeline.ts`, `checkTypes.ts:39`): one envelope of findings
+  graded error, warning or info, with `--strict`. It gates the composition's
+  source on sampled frames (lint, runtime errors, contrast, layout, caption
+  zones) and never probes the output file, so it is a shape for proofcut's
+  check output to compare against, not a rival check.
+
+**Not confirmed.** Which optional keys gate which features (the env flags are
+`HF_*`, `HYPERFRAMES_*` and `PRODUCER_*`; provider keys are opt-in; not
+enumerated).
+
+#### Re-read at `ce08f204` (2026-10-03)
+
+Cloned with `--shallow-since=2026-09-20`, which reaches `ea48936`; nothing
+run. **Nothing new touches proofcut's ground**: still no MCP server but the
+Studio page's WebMCP (still 12 tools, `useStudioAgentTools.ts:145-264`), no
+transcript-addressed editing, no check of the rendered file, and no OTIO,
+FCPXML or EDL (a word-bounded grep over packages, skills and docs finds
+none). The frame-count floor is unchanged (`artifactTransaction.ts:225-240`:
+silent on a missing count, throws only past one frame short), as are the
+clock (`fileServer.ts:234`, the `Math.random` seed opt-in at `393`) and the
+liveness probe (`packages/engine/src/services/browserManager.ts:330`, the
+flag-stripping fallback near `730`).
+
+- **Counts corrected**: 46 CLI commands (45 at `ea48936`); 21 shipped skills
+  under `skills/` at both heads, not 18. One of them is
+  `remotion-to-hyperframes` (§ Remotion).
+- **"Never cuts the user's footage" holds for the agent path.**
+  `talking-head-recut` still plays the clip whole. Studio, the GUI, has a
+  razor split for a person's hands (`App.tsx:453,556`), and WebMCP has no
+  split tool.
+- **Studio audio landed** (#4814 to #4821): a carve that dips a music bed at
+  the voice's bands (`core/src/audioCarve.ts:1-12`), loudness normalising and
+  a duck with a limiter report. It is docs/plans/NATIVE.md's ground, but
+  Studio-side, and no loudness measurement of a render was found
+  (`loudnorm`/`LUFS` appear only in tests).
+- **Settled from the old Not confirmed list.** Cadence: 589 commits in the
+  14 days from 2026-09-20, 20 to 86 a day, weekends included (2026-09-28 was
+  86, not the 42 the shallow clone showed). Fonts are embedded:
+  `deterministicFonts.ts` inlines generated font data as data URIs, and
+  `authoredGoogleFonts.ts` fetches named Google families, so a render is
+  hermetic for the families it names. No doc was found promising an output
+  check the code does not make.
+
+### Remotion
+
+[remotion-dev/remotion](https://github.com/remotion-dev/remotion) · custom
+licence (`LICENSE.md`; the API says `NOASSERTION`) · TypeScript · created
+2020-06-23 · 61,661★ on 2026-10-03
+
+**Source read** 2026-10-03 at `e385a83`, a depth-50 clone, source before
+README, nothing run; with its agent skills mirror
+[remotion-dev/skills](https://github.com/remotion-dev/skills) (4,825★) at
+`0b5db9d`. About 220k lines of TypeScript under `packages/`; Lambda and the
+other serverless renderers, the Rust compositor's internals, Studio,
+templates and the effect packages were skipped. Asked for by name; it was
+until now cited only as OpenChatCut's and OpenMontage's renderer.
+
+A video is a React component rendered frame by frame in headless Chrome and
+stitched by ffmpeg. **It generates and never edits footage**: a clip is JSX
+with `trimBefore`, and nothing addresses a cut by transcript. The agent
+surface is skills (12 `skills/remotion-*` directories, mirrored into Claude
+Code, Codex and Kimi plugin repos) over the ordinary CLI. Its MCP server is
+one tool, `remotion-documentation`, which searches the docs at
+`mcp.remotion.dev` (`packages/mcp/src/index.ts:14`); there are no project or
+edit tools. Local render needs no display (Chrome Headless Shell by default,
+`renderer/src/options/chrome-mode.tsx:4`); Lambda, Cloud Run and Vercel are
+opt-in.
+
+**The licence is not open source** (`LICENSE.md:18-23,43`): free for an
+individual, a company of up to three employees, a non-profit, or evaluation;
+past that, a paid Company License. It forbids copying or modifying its code
+"for the purpose of selling, renting, licensing, relicensing, or
+sublicensing your own derivate of Remotion" (`:31`). For proofcut that means
+ideas only, never code, and a dependency on it would hand every larger user
+a licence bill. The skills and `agent-plugin` are MIT.
+
+**Rendering, against `browser.py`.** Capture is `Page.captureScreenshot`
+with a clip (`renderer/src/screenshot-task.ts:66-69`), not BeginFrame, and
+the flags (`open-browser.ts:197-232`) are anti-throttling and sRGB only; it
+sets none of the compositor flags `browser.DETERMINISTIC_FLAGS` pins,
+because it never captures an arbitrary page. Determinism is a protocol:
+`seekToFrame` calls the page's `remotion_setFrame`, waits for
+`remotion_renderReady`, then `document.fonts.ready`
+(`seek-to-frame.ts:180-214`), and `delayRender` holds a frame until the
+page releases it (`core/src/delay-render.ts:67-195`). There is no frozen
+clock; `useCurrentFrame` is the clock. Audio is never captured from the
+page: per-frame asset records are mixed by ffmpeg filters
+(`stringify-ffmpeg-filter.ts`, an `atempo` chain at
+`assets/calculate-atempo.ts:5-17`). `<OffthreadVideo>` asks a local server
+(`offthread-video-server.ts:142`) for the exact frame from a Rust ffmpeg
+compositor, the same idea as hyperframes' injector.
+
+**Speed is a constant, not a ramp.** `playbackRate?: number` on a video
+(`core/src/video/props.ts:51`); the only ramp the docs show is volume
+(`offthreadvideo.mdx:127-137`), and no time-remap API was found. Easing is
+real: `interpolate` with per-segment easing (`core/src/interpolate.ts:6-30`),
+`Easing` (`core/src/easing.ts:38-140`) and `spring`. This corrects
+docs/plans/NATIVE.md (§ Corrections, "Remotion does a real ramp").
+
+**No output check.** Nothing compares a render's frame count or duration
+with its composition; ffprobe appears only for audio channels and the ffmpeg
+call itself.
+
+**Speech and interchange.** `@remotion/install-whisper-cpp` runs local
+whisper.cpp with JSON output and optional DTW token timestamps
+(`transcribe.ts:172-175,188`) into `Caption {startMs, timestampMs,
+confidence}` (`captions/src/caption.ts:3-6`), for captions. OTIO export is a
+skill that has the agent *recreate* the timeline, and the docs say plainly
+it is "not possible to deterministically export a Remotion project"
+(`docs/docs/export-opentimeline.mdx:12-15`).
+
+**Worth taking:**
+
+- **A readiness handshake** for `motion.py`: the page says when a frame is
+  drawn (`remotion_renderReady`, `delayRender`) and the capture also waits on
+  `document.fonts.ready`. proofcut's page today has only `proofcutSeek`.
+- **Compositor-served exact frames** for video inside a graphic, with
+  hyperframes' injector the other route; proofcut has no such graphic yet.
+- Its whisper-to-`Caption` shape is no improvement on proofcut's word
+  transcript, and its OTIO skill is the opposite of proofcut's OTIO-as-state.
+
+**Not confirmed.** The compositor's frame accuracy beyond the code path;
+whether any test asserts a render's frame count; whether `<Html5Video>`
+accepts a varying rate.
 
 ### Footage retrieval: sentrysearch and B-Roll-Finder
 
@@ -1803,6 +1932,21 @@ check is the agent reading its own edit model back; hyperframes has half of
 the other claim, a frame-count floor one frame loose (§ palmier-pro,
 § hyperframes).
 
+### Remotion, and hyperframes re-read (2026-10-03)
+
+Asked for both by name. Remotion was read for the first time (§ Remotion) and
+hyperframes re-read 210 commits on (§ hyperframes), each by a reader on the
+2026-09-28 brief (`~/proofcut-work/spikes/competitors-source/BRIEF.md`),
+nothing run; the findings that move a claim were re-run by hand: Remotion's
+licence lines, its constant `playbackRate`, its OTIO page and its one MCP
+tool; hyperframes' dedup citation and skill count.
+
+**No launch claim moved.** Neither transcribes its render; Remotion checks no
+frame count, and hyperframes' floor is still one frame loose. **One claim
+corrected**: Remotion has no speed ramp (§ Corrections). hyperframes'
+first read misplaced its hold-dedup citation and undercounted its skills;
+both are fixed in the entry.
+
 ### Every entry from source (2026-09-28)
 
 Asked the same day: give every entry a real source review, not a README one.
@@ -1868,6 +2012,14 @@ proofcut's differentiators. Lesson for the next re-survey: search what a user
 would type, not what the implementation contains. This also falsified the
 first sweep's claim that decision-point frame composites were unique to
 proofcut's preview idea (video-use ships them).
+
+### "Remotion does a real ramp" was never read
+
+docs/plans/NATIVE.md (2026-09-14) says "only MLT and Remotion do a real
+ramp". Read from source on 2026-10-03, Remotion's video speed is one
+constant `playbackRate` per element (`core/src/video/props.ts:51`) and no
+time-remap was found; a ramp means chopping the clip or computing the source
+frame by hand. Among the tools surveyed, MLT is the only real ramp.
 
 ### "No FCPXML export" was a search failure
 
