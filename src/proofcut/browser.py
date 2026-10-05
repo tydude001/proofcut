@@ -520,7 +520,12 @@ class _Video:
             self.frames.setdefault(first + k, path)
 
     def info(self) -> dict[str, Any]:
-        return {"width": self.width, "height": self.height, "duration": self.duration, "frames": len(self.times)}
+        # `last` and `tick` say when the video stops moving: from `last` less
+        # a tick, `frame_at` shows the last frame (`VIDEOS`' `ends`).
+        return {
+            "width": self.width, "height": self.height, "duration": self.duration, "frames": len(self.times),
+            "last": self.starts[-1], "tick": self.tick,
+        }  # fmt: skip
 
 
 @contextlib.contextmanager
@@ -711,6 +716,10 @@ WAITS = """(() => {
 #: Media time is the page's time less `data-start` (seconds, default 0),
 #: wrapped by `loop`, else held on the last frame. Each frame's load is a
 #: `proofcutWaitFor`, so a video the folder cannot serve refuses the capture.
+#: The time `seek` is handed is the video's own clock, which `SEEK` keeps
+#: apart from the page's so a still hold can play the video on
+#: (`motion.play`); `ends` is the page time from which every video shows
+#: its last frame, null when one loops and so never stops.
 VIDEOS = """(() => {
   const state = new WeakMap();
   const FIT = { contain: 'contain', cover: 'cover', fill: '100% 100%', none: 'auto', 'scale-down': 'contain' };
@@ -765,33 +774,48 @@ VIDEOS = """(() => {
         }), 'the video ' + s.path);
       }
     },
+    async ends() {
+      let end = null, videos = 0;
+      for (const v of document.querySelectorAll('video')) {
+        const s = state.get(v);
+        if (!s) continue;
+        const info = await s.info;
+        videos += 1;
+        if (v.loop) return { videos, ends: null };
+        const at = Number(v.dataset.start || 0) + info.last - info.tick;
+        end = end === null ? at : Math.max(end, at);
+      }
+      return { videos, ends: end };
+    },
   };
 })();"""
 
 #: Move the page's clock to `t` seconds and run its frame, pause every
-#: animation there, wait for what the page asked to be waited on and for
+#: animation there, show each video at `vt` (its own clock, `t` unless a
+#: still hold is playing it on), wait for what the page asked to be waited on and for
 #: its fonts, then let two real frames render so the compositor has drawn
 #: what the seek set. The clock goes first: a frame callback can create the
 #: very animations the second step pauses, and the waits last, because the
 #: frame callback or `proofcutSeek` can start the work being waited on.
 SEEK = (
-    "(async (t, limit) => {"
+    "(async (t, limit, vt) => {"
     " const clock = window.__proofcutClock;"
     " if (clock) clock.advance(t * 1000);"
     " for (const a of document.getAnimations()) { a.pause(); a.currentTime = t * 1000; }"
     " if (typeof window.proofcutSeek === 'function') await window.proofcutSeek(t);"
-    " if (window.__proofcutVideos) window.__proofcutVideos.seek(t);"
+    " if (window.__proofcutVideos) window.__proofcutVideos.seek(vt);"
     " if (window.__proofcutWaits) await window.__proofcutWaits.drain(limit);"
     " await document.fonts.ready;"
     " const raf = clock ? clock.realRAF : requestAnimationFrame;"
     " await new Promise(r => raf(() => raf(r)));"
-    "})(%r, %r)"
+    "})(%r, %r, %r)"
 )
 
 
-def seek_expression(seconds: float) -> str:
-    """The `Runtime.evaluate` expression that seeks a page to `seconds`."""
-    return SEEK % (float(seconds), WAIT_TIMEOUT * 1000)
+def seek_expression(seconds: float, video: float | None = None) -> str:
+    """The `Runtime.evaluate` expression that seeks a page to `seconds`, and
+    its videos to `video` seconds of the page's clock (`seconds` if None)."""
+    return SEEK % (float(seconds), WAIT_TIMEOUT * 1000, float(seconds if video is None else video))
 
 #: What is moving *through* `t`: an animation that started before it and has
 #: not ended. One that starts exactly at `t` is the outro beginning, not the
@@ -808,8 +832,15 @@ MOVING = (
 )
 
 
-def seek(page: Page, seconds: float) -> None:
-    page.evaluate(seek_expression(seconds))
+def seek(page: Page, seconds: float, video: float | None = None) -> None:
+    page.evaluate(seek_expression(seconds, video))
+
+
+def video_ends(page: Page) -> dict[str, Any]:
+    """How many videos the page shows, and the page time from which all of
+    them hold their last frame (None when one loops). Ask after a seek: a
+    video is adopted by the first seek that finds it."""
+    return page.evaluate("window.__proofcutVideos ? window.__proofcutVideos.ends() : {videos: 0, ends: null}")
 
 
 def moving_at(page: Page, seconds: float) -> list[str]:

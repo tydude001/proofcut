@@ -388,6 +388,8 @@ installed package or the upstream repo, not your memory.
     fonts), and fonts are read again after the last frame**
   - **A page's `<video>` is never decoded by the browser: proofcut serves
     its exact frames**
+  - **A still hold plays a page's video on, so export captures per span
+    length — the one render step that launches the browser**
   - **Every piece is exactly its phase's length, because `qimage` loops a
     frame pattern**
   - **A capture is stamped with the page's bytes, the canvas and the rate**

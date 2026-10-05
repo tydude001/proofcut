@@ -790,6 +790,16 @@ ffmpeg, so the browser never plays it and its sound is not used. Size and
 style it with CSS like any element, `object-fit` included. A video the
 folder does not hold refuses the capture by name.
 
+A video runs on the placement's clock, not the page's: through a still hold
+it keeps playing while the page stands still, and the outro picks it up
+where the hold left it, so the intro is only the page's entrance and the
+clip is never sized to it. Once every video has run out the hold rests on
+the last frame. Those hold and outro frames depend on the span, so `export`
+captures them, into the graphic's cache, for each length it meets: the
+first render after a cut moves the span pays that capture (22 s for a
+6.4 s hold on a 1920x800 canvas), and until then the preview shows the
+hold still. A looping hold keeps the page's own frames.
+
 `--clip` puts a span of one of the project's clips in the folder for the
 page to show:
 

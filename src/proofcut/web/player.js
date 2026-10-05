@@ -867,14 +867,16 @@ const graphicFrames = new Map(); // url -> Image, kept so the decode is kept
 
 function graphicFrameURL(overlay, t) {
   const count = Math.max(1, overlay.frame_count || 1);
+  const first = overlay.first || 0; // a hold's rest is one frame of the playing hold's folder
   const at = Math.floor((t - overlay.timeline_start) * overlay.rate + 1e-6);
-  const k = overlay.layer === "hold" ? ((at % count) + count) % count : Math.min(count - 1, Math.max(0, at));
+  const k = first + (overlay.layer === "hold" ? ((at % count) + count) % count : Math.min(count - 1, Math.max(0, at)));
   // The capture's stamp rides the URL, so a recapture is new frames rather
-  // than the browser's memory of the old ones.
-  const base = `graphic:${overlay.graphic}/${overlay.layer}`;
+  // than the browser's memory of the old ones. The asset names the folder
+  // the piece plays from, which for a hold playing its video is not "hold".
+  const base = overlay.asset;
   const url = (i) => `${assetURL(`${base}/${i}`)}?v=${overlay.stamp || ""}`;
-  if (!graphicFrames.has(url(0))) {
-    for (let i = 0; i < count; i += 1) {
+  if (!graphicFrames.has(url(first))) {
+    for (let i = first; i < first + count; i += 1) {
       const image = new Image();
       image.src = url(i);
       graphicFrames.set(url(i), image);

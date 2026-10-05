@@ -14,6 +14,10 @@ three phases in seconds of the page's own timeline:
 * **outro** plays once, ending where the span ends. With a still hold the
   outro's page time starts where the intro ended; with a loop, one loop later.
 
+A page's `<video>` runs on the placement's clock, so a still hold plays it on
+rather than freezing it, and the outro picks it up where the hold left it
+(`play`, below): the footage needs no sizing to the intro.
+
 So the span decides the length and the graphic never does. That is PLAN.md
 § Animation is a length problem's rule kept: a word-addressed span moves with
 every cut, and a baked length would be the music bed's failure again.
@@ -42,11 +46,13 @@ import base64
 import hashlib
 import html
 import json
+import math
 import os
 import re
 import shutil
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -61,8 +67,9 @@ PHASES = ("intro", "hold", "outro")
 CAPTURE_VERSION = 2
 #: Salted into the stamp of a page that shows a `<video>`, which draws
 #: differently since proofcut serves its frames (`browser.VIDEOS`): those
-#: captures go stale, and no other page's does.
-VIDEO_CAPTURE_VERSION = 1
+#: captures go stale, and no other page's does. 2: a capture records when
+#: its videos end (`video`), which a hold that plays them on needs (`play`).
+VIDEO_CAPTURE_VERSION = 2
 _SHOWS_VIDEO = re.compile(rb"<video\b|createElement\(\s*['\"]video['\"]", re.IGNORECASE)
 #: Pages captured side by side. The spike measured 8 pages at 1.4 s for 91
 #: frames against 10 s for one; two leaves the machine usable meanwhile.
@@ -236,36 +243,16 @@ def capture(
                         f"{'; '.join(moving[:4])} — end those animations by the end of the intro, "
                         "or declare the hold a loop"
                     )
-            # Pipelined: every tab seeks, then every tab shoots, so the tabs
-            # draw side by side on one connection.
-            for batch_start in range(0, len(jobs), len(tabs)):
-                batch = list(zip(tabs, jobs[batch_start : batch_start + len(tabs)], strict=False))
-                seeks = [
-                    chrome.post(
-                        "Runtime.evaluate",
-                        {"expression": browser.seek_expression(t), "awaitPromise": True, "returnByValue": True},
-                        session=tab.session,
-                    )
-                    for tab, (_, _, t) in batch
-                ]
-                for ident in seeks:
-                    reply = chrome.wait(ident)
-                    if "exceptionDetails" in reply:
-                        raise GraphicError(f"{folder.name}'s page raised while seeking: {browser.raised(reply['exceptionDetails'])}")
-                ids = [
-                    chrome.post("Page.captureScreenshot", {"format": "png", "optimizeForSpeed": True}, session=tab.session)
-                    for tab, _ in batch
-                ]
-                for (_, (phase, index, _)), ident in zip(batch, ids, strict=True):
-                    png = base64.b64decode(chrome.wait(ident)["data"])
-                    drawn = drawn or png != blank
-                    if phase == "loop-check":
+            for (phase, index, _, _), png in _shoot(chrome, tabs, folder.name, [(*job, job[2]) for job in jobs]):
+                drawn = drawn or png != blank
+                if phase == "loop-check":
+                    shots[(phase, index)] = png
+                else:
+                    (staging / phase / f"f{index:04d}.png").write_bytes(png)
+                    if phase == "hold" and index == 0:
                         shots[(phase, index)] = png
-                    else:
-                        (staging / phase / f"f{index:04d}.png").write_bytes(png)
-                        if phase == "hold" and index == 0:
-                            shots[(phase, index)] = png
-                progress.report(min(batch_start + len(batch), len(jobs)), len(jobs), f"capturing {folder.name}")
+            # When its videos stop moving, for a hold that plays them on.
+            video = browser.video_ends(tabs[0])
             # Again after the last frame: a face no text used at load was
             # `unloaded` then, and fails only once a frame shows its text.
             seen: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -306,12 +293,45 @@ def capture(
             "seconds": round(time.monotonic() - started, 2),
             "pages": len(tabs),
         }
+        if video.get("videos"):
+            record["video"] = {"videos": video["videos"], "ends": video.get("ends")}
         (staging / CAPTURE_NAME).write_text(json.dumps(record, indent=2) + "\n")
         shutil.rmtree(frames, ignore_errors=True)
         staging.rename(frames)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return record
+
+
+def _shoot(
+    chrome: browser.Browser, tabs: list[browser.Page], name: str, jobs: list[tuple[str, int, float, float]]
+) -> Iterator[tuple[tuple[str, int, float, float], bytes]]:
+    """Each job's screenshot, in order: `(phase, index, page seconds, video seconds)`.
+
+    Pipelined: every tab seeks, then every tab shoots, so the tabs draw side
+    by side on one connection.
+    """
+    for batch_start in range(0, len(jobs), len(tabs)):
+        batch = list(zip(tabs, jobs[batch_start : batch_start + len(tabs)], strict=False))
+        seeks = [
+            chrome.post(
+                "Runtime.evaluate",
+                {"expression": browser.seek_expression(t, vt), "awaitPromise": True, "returnByValue": True},
+                session=tab.session,
+            )
+            for tab, (_, _, t, vt) in batch
+        ]
+        for ident in seeks:
+            reply = chrome.wait(ident)
+            if "exceptionDetails" in reply:
+                raise GraphicError(f"{name}'s page raised while seeking: {browser.raised(reply['exceptionDetails'])}")
+        ids = [
+            chrome.post("Page.captureScreenshot", {"format": "png", "optimizeForSpeed": True}, session=tab.session)
+            for tab, _ in batch
+        ]
+        for (_, job), ident in zip(batch, ids, strict=True):
+            yield job, base64.b64decode(chrome.wait(ident)["data"])
+        progress.report(min(batch_start + len(batch), len(jobs)), len(jobs), f"capturing {name}")
 
 
 def _refuse_failed_fonts(folder: Path, fonts: list[dict[str, Any]]) -> None:
@@ -326,6 +346,130 @@ def _refuse_failed_fonts(folder: Path, fonts: list[dict[str, Any]]) -> None:
 def phase_pattern(frames: Path, phase: str) -> str:
     """The `qimage` sequence resource for one phase's frames."""
     return str(frames / phase / "f%04d.png")
+
+
+# -- a still hold that plays the page's video on -------------------------------
+#
+# A page's video runs on the placement's clock, not the page's: through the
+# intro the two agree, and through a still hold the page stands at `hold_at`
+# while the video keeps going, for however many frames the span leaves. So
+# the hold is no longer one still but the page at `hold_at` with its video at
+# each frame of the hold, and the outro is the page's outro with its video
+# where the hold left it. Neither can be captured before the span is known,
+# and the span moves with every cut, so they are captured per length, at
+# export (`play`), into the capture's own folder — a recapture drops them with
+# everything else. A hold frame does not depend on the span, so `hold-play/`
+# is one sequence every placement shares, grown as a longer one asks; an
+# outro depends on where the hold left the video, so it is one folder per
+# offset, `outro-<frames>/`.
+
+PLAY_HOLD = "hold-play"
+
+
+def video_hold(record: dict[str, Any], held: int) -> dict[str, Any] | None:
+    """How a still hold of `held` frames plays the page's video, or None when
+    the hold is today's one still: no video, a loop, or every video already
+    on its last frame when the hold begins.
+
+    `playing` frames of `hold-play/` play, and the last of them is the still
+    the hold `rest`s on once every video has reached its last frame (the page
+    holds a video that ran out there, `browser.VIDEOS`). `outro` is the hold
+    length the outro's video starts from — capped where the videos freeze,
+    since every longer hold leaves them on the same frame.
+    """
+    video = record.get("video")
+    if not video or record.get("loop") or held <= 0:
+        return None
+    fps, hold_at = float(record["fps"]), float(record["hold_at"])
+    ends = video.get("ends")
+    # The first hold frame on which every video shows its last frame.
+    frozen = None if ends is None else max(0, math.ceil((float(ends) - hold_at) * fps - 1e-6))
+    if frozen == 0:
+        return None
+    playing = held if frozen is None else min(held, frozen + 1)
+    return {
+        "playing": playing,
+        "rest": held - playing,
+        "outro": held if frozen is None else min(held, frozen),
+        "frozen": frozen,
+    }
+
+
+def _prefix(folder: Path) -> int:
+    """How many frames `folder` holds from f0000 on without a gap."""
+    count = 0
+    while (folder / f"f{count:04d}.png").is_file():
+        count += 1
+    return count
+
+
+def play_ready(frames: Path, record: dict[str, Any], plan: dict[str, Any]) -> bool:
+    """Whether every frame `plan` draws is on disk already."""
+    outro = int(record["outro"])
+    return _prefix(frames / PLAY_HOLD) >= plan["playing"] and (
+        not outro or not plan["outro"] or _prefix(frames / f"outro-{plan['outro']}") >= outro
+    )
+
+
+def play(folder: Path, frames: Path, held: int, *, pages: int = DEFAULT_PAGES) -> dict[str, Any] | None:
+    """Capture what a still hold of `held` frames needs to play the page's
+    video on — the `hold-play/` frames it lacks and its outro — and return
+    `video_hold`'s plan, or None when the hold is one still.
+
+    The page must be the one `frames` was captured from (the caller checks
+    the stamp first). The last `hold-play` frame before a `rest` is checked
+    against the frame after it, byte for byte, as a loop is: a still that is
+    not still would be a frozen frame where the page moves.
+    """
+    record = read_capture(frames)
+    if record is None:
+        raise GraphicError(f"{folder.name} has not been captured")
+    plan = video_hold(record, held)
+    if plan is None or play_ready(frames, record, plan):
+        return plan
+    fps, hold_at, outro = float(record["fps"]), float(record["hold_at"]), int(record["outro"])
+    width, height = (int(n) for n in record["canvas"])
+    have = _prefix(frames / PLAY_HOLD)
+    jobs: list[tuple[str, int, float, float]] = [
+        ("hold", k, hold_at, hold_at + k / fps) for k in range(have, plan["playing"])
+    ]
+    if plan["rest"] and have < plan["playing"]:
+        jobs.append(("still-check", 0, hold_at, hold_at + plan["playing"] / fps))
+    outro_dir = frames / f"outro-{plan['outro']}"
+    if outro and plan["outro"] and _prefix(outro_dir) < outro:
+        jobs += [("outro", k, hold_at + k / fps, hold_at + (plan["outro"] + k) / fps) for k in range(outro)]
+    staging = frames / f".play-{os.getpid()}"
+    shutil.rmtree(staging, ignore_errors=True)
+    (staging / "hold").mkdir(parents=True)
+    (staging / "outro").mkdir()
+    last = check = None
+    try:
+        with browser.launch(folder) as chrome:
+            tabs = [chrome.new_page(width, height) for _ in range(max(1, min(MAX_PAGES, int(pages), len(jobs))))]
+            for tab in tabs:
+                _refuse_failed_fonts(folder, browser.load(tab))
+            for (phase, index, _, _), png in _shoot(chrome, tabs, folder.name, jobs):
+                if phase == "still-check":
+                    check = png
+                    continue
+                (staging / phase / f"f{index:04d}.png").write_bytes(png)
+                if phase == "hold" and index == plan["playing"] - 1:
+                    last = png
+        if check is not None and check != last:
+            raise GraphicError(
+                f"{folder.name}'s page still changes after its videos reached their last frame "
+                f"({hold_at + plan['playing'] / fps:.3f}s of video) — proofcut cannot hold it still there"
+            )
+        # In index order, so an interrupted move leaves a prefix `_prefix` reads.
+        (frames / PLAY_HOLD).mkdir(exist_ok=True)
+        for k in range(have, plan["playing"]):
+            os.replace(staging / "hold" / f"f{k:04d}.png", frames / PLAY_HOLD / f"f{k:04d}.png")
+        if any((staging / "outro").iterdir()):
+            shutil.rmtree(outro_dir, ignore_errors=True)
+            (staging / "outro").rename(outro_dir)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return plan
 
 
 # -- templates -------------------------------------------------------------------

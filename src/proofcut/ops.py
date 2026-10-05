@@ -5332,10 +5332,13 @@ def timeline_view(
                             {
                                 **base,
                                 "layer": phase["phase"],
-                                "asset": f"graphic:{plan['graphic']}/{phase['phase']}",
-                                "frame_count": phase["frames"] if phase["phase"] != "hold" else (
-                                    len(list((Path(plan["frames_dir"]) / "hold").glob("f*.png")))
-                                ),
+                                "asset": f"graphic:{plan['graphic']}/{phase['source']}",
+                                # The frames the piece's folder holds from
+                                # `first` — a loop's period, a playing hold's
+                                # length, or one still.
+                                "frame_count": phase["frame_count"],
+                                "first": phase["first"],
+                                **({"video": phase["video"]} if "video" in phase else {}),
                                 "rate": shots_rate,
                                 "stamp": plan["stamp"],
                                 "timeline_start": start,
@@ -6722,7 +6725,7 @@ def preview_source(path: Path | str, asset: str) -> dict[str, Any]:
         if (
             len(parts) != 3
             or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,47}", parts[0])
-            or parts[1] not in anim.PHASES
+            or not (parts[1] in anim.PHASES or parts[1] == anim.PLAY_HOLD or re.fullmatch(r"outro-\d{1,6}", parts[1]))
             or not re.fullmatch(r"\d{1,6}", parts[2])
         ):
             raise ProjectError(f"asset {asset!r} does not name a graphic frame (graphic:<name>/<phase>/<frame>)")
@@ -14933,7 +14936,7 @@ def _capture_graphic(project: Project, name: str, pages: int) -> dict[str, Any]:
 
 
 def _graphic_pieces(
-    project: Project, record: dict[str, Any], start_frame: int, frames: int, rate: float
+    project: Project, record: dict[str, Any], start_frame: int, frames: int, rate: float, *, play: bool = False
 ) -> dict[str, Any]:
     """A placed graphic as the overlay pieces the writer draws, in order.
 
@@ -14945,6 +14948,14 @@ def _graphic_pieces(
     back to the intro's first frame at exit 0. A span too short for intro and
     outro is refused rather than cut mid-motion — it would be a different
     graphic.
+
+    **A still hold plays the page's video on** (`anim.play`): the hold is the
+    page at its hold instant with the video at each frame of the hold, then
+    one still once every video is on its last frame, and the outro picks the
+    video up where the hold left it. Those frames depend on the span, so
+    `play` (export) captures any it lacks; the view never launches a browser,
+    and until a render has captured them it hands the preview the frozen
+    hold and the page's own outro, saying so in the hold's `video`.
     """
     name = record["graphic"]
     folder = _graphic_folder(project, name)
@@ -14965,17 +14976,34 @@ def _graphic_pieces(
             f"overlay graphic:{name} lasts {frames} frames and its intro and outro take {intro + outro} "
             f"({(intro + outro) / rate:.2f}s) — lengthen its span or shorten the graphic's phases"
         )
-    pieces: list[tuple[str, str, int]] = []
+    video = anim.video_hold(captured, held)
+    if video is not None:
+        if play:
+            with _graphic_errors():
+                anim.play(folder, frames_dir, held)
+        if anim.play_ready(frames_dir, captured, video):
+            video["state"] = "plays"
+        else:
+            video = {"state": "plays from the next render, which captures it"}
+    # (phase, folder under the capture, first frame, frames in the folder, resource, length)
+    pieces: list[tuple[str, str, int, int, str, int]] = []
     if intro:
-        pieces.append(("intro", anim.phase_pattern(frames_dir, "intro"), intro))
-    if held:
+        pieces.append(("intro", "intro", 0, intro, anim.phase_pattern(frames_dir, "intro"), intro))
+    if held and video is not None and "playing" in video:
+        playing, rest = video["playing"], video["rest"]
+        pieces.append(("hold", anim.PLAY_HOLD, 0, playing, anim.phase_pattern(frames_dir, anim.PLAY_HOLD), playing))
+        if rest:
+            last = str(frames_dir / anim.PLAY_HOLD / f"f{playing - 1:04d}.png")
+            pieces.append(("rest", anim.PLAY_HOLD, playing - 1, 1, last, rest))
+    elif held:
         still = str(frames_dir / "hold" / "f0000.png")
-        pieces.append(("hold", anim.phase_pattern(frames_dir, "hold") if loop and hold > 1 else still, held))
+        pieces.append(("hold", "hold", 0, hold, anim.phase_pattern(frames_dir, "hold") if loop and hold > 1 else still, held))
     if outro:
-        pieces.append(("outro", anim.phase_pattern(frames_dir, "outro"), outro))
+        source = f"outro-{video['outro']}" if video is not None and video.get("outro") else "outro"
+        pieces.append(("outro", source, 0, outro, anim.phase_pattern(frames_dir, source), outro))
     drawn: list[mlt.Overlay] = []
     cursor = start_frame
-    for n, (_, resource, length) in enumerate(pieces):
+    for n, (_, _, _, _, resource, length) in enumerate(pieces):
         first, last = n == 0, n == len(pieces) - 1
         drawn.append(
             mlt.Overlay(
@@ -14996,8 +15024,17 @@ def _graphic_pieces(
         "frames_dir": str(frames_dir),
         "stamp": str(captured.get("stamp", ""))[:12],
         "phases": [
-            {"phase": phase, "start_frame": piece.start, "frames": piece.frames, "loop": phase == "hold" and loop}
-            for (phase, _, _), piece in zip(pieces, drawn, strict=True)
+            {
+                "phase": phase,
+                "start_frame": piece.start,
+                "frames": piece.frames,
+                "loop": phase == "hold" and loop,
+                "source": source,
+                "first": first,
+                "frame_count": count,
+                **({"video": video["state"]} if phase == "hold" and video is not None else {}),
+            }
+            for (phase, source, first, count, _, _), piece in zip(pieces, drawn, strict=True)
         ],
     }
 
@@ -15516,6 +15553,7 @@ def _overlay_plan(
     edit_frames: int,
     stored: list[dict[str, Any]] | None = None,
     clock: _Clock | None = None,
+    play: bool = False,
 ) -> list[dict[str, Any]]:
     """Every overlay resolved to the frames the writer draws it on, in stacking order.
 
@@ -15564,7 +15602,7 @@ def _overlay_plan(
             )
         frames = end_frame - start_frame
         if png is None:
-            graphic = _graphic_pieces(project, record, start_frame, frames, rate)
+            graphic = _graphic_pieces(project, record, start_frame, frames, rate, play=play)
             drawn = graphic["drawn"]
             try:
                 for piece in drawn:
@@ -17834,7 +17872,9 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
 
     # The overlays, resolved in Edit frames and moved by the head the way the
     # bed is — a head is not part of the `Edit` an overlay addresses.
-    overlay_plans = _overlay_plan(project, edit, rate, edit_frames=edit_frames, clock=clock)
+    # `play`: a graphic whose still hold plays its video is captured at
+    # this length here, the one caller that draws it (`anim.play`).
+    overlay_plans = _overlay_plan(project, edit, rate, edit_frames=edit_frames, clock=clock, play=True)
     overlays = [
         replace(piece, start=piece.start + head_frames)
         for plan in overlay_plans

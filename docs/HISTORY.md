@@ -19233,3 +19233,82 @@ captured frames off the slide-in match their own cut frame against its
 neighbours, mean removed. 178 frames captured in 24 s; the 23 s melt
 render took 7 s.
 
+
+## A graphic's video plays through its hold, built — 2026-10-04
+
+Tyler's call the same day, off § Video inside a graphic, built: a still
+hold froze the page's video, so the footage played only through the intro
+and the 10-03 picture-in-picture had to be sized by hand to its span
+(intro 6.9 s under a 7.4 s overlay, the slide-out delayed to match).
+DAYDREAM.md § Animated graphics' length answer stands: the span decides
+the length and the graphic never does. What changed is which clock a
+video reads.
+
+**A video runs on the placement's clock, not the page's.** Through the
+intro the two agree. Through a still hold the page stands at `hold_at`
+while hold frame k shows the video at `hold_at + k/fps` (`SEEK` takes the
+video's time apart from the page's), and the outro is the page's outro
+with the video where the hold left it. Once every video is on its last
+frame the hold rests on that frame, which is what the page does with a
+video that ran out. When that happens is recorded at capture (`video.ends`,
+from ffprobe's last timestamp less a tick). That is why video pages are
+restamped (`VIDEO_CAPTURE_VERSION` 2) and need a recapture. A looping hold
+keeps its captured frames.
+
+**Those frames depend on the span, so export captures them.** A hold frame
+does not depend on the span's length, so `hold-play/` is one sequence
+every placement shares, grown when a longer hold needs more frames. An
+outro depends on where the hold left the video, so it gets one folder per
+offset (`outro-<frames>/`), capped where the videos freeze. Both sit in
+the capture's folder, so a recapture drops them. `_build_mlt` is the one
+caller that captures. The view never launches a browser: until a render
+has captured a length, it hands the preview the still hold and the page's
+own outro, and the hold's `video` says "plays from the next render". The
+last playing frame is checked byte for byte against the frame after it
+(the loop check's shape), so a page that moves after its video ends is
+refused rather than frozen.
+
+**On real footage.** The 10-03 picture-in-picture, re-authored with no
+sizing: intro 0.5 s (the slide-in alone), outro 0.5 s, slide-out at
+0.5 s, the same 7.4 s span of Randy over the Scream 4 reveal
+(`~/proofcut-work/spikes/video-in-graphic/pip-hold`). The capture took
+4.1 s against 23.7 s for the hand-sized one. The render drew intro 12,
+hold 154 playing and outro 12 from `outro-154`. Render frames were
+matched against ffmpeg's decode of the cut clip, scaled to the box, best
+of seven neighbours, mean removed. The box was fitted on the render first
+(550x234 at 1309,53; 2.95 levels against 5.6 for the next fit). The
+10-03 matcher's crop misread every render, its own included (114 of 131
+off): ffmpeg's crop rounds an odd offset to even on yuv420p, so the
+render is turned grey before it is cropped.
+
+| render | frames checked | off | note |
+|---|---|---|---|
+| this build, 7.4 s span (frames 12 to 166) | 155 | 1 | frame 141, a tie at 2.99 against 3.00 |
+| the 10-03 hand-sized render, same frames | 149 | 1 | the same tie at 141 |
+| control: same page, code before this build | 155 | 151 | hold frozen, frame-to-frame change ~0 |
+| this build, 12 s span over the 7.4 s clip | 265 | 0 | 166 playing, 99 resting on frame 177 |
+
+The tie is melt's yuv420p on the clip's smallest step (140 to 141 moves
+1.06 levels against a 2.47 median). At the capture, `hold-play` plus the
+outro's first frame match 155 of 155 with no tie. The 12 s span played
+frames 12 to 177, then rested: across its 98 resting frames the render
+changes only at one x264 keyframe (21.56 s), and the outro (`outro-165`)
+starts from frame 177. `hold-play/f0000` is byte-identical to the
+capture's still hold, and the tail captured at two pages and at eight is
+the same bytes.
+
+**What it costs.** The first render paid the tail's capture: 30.7 s
+against 7.3 s for the same render with the frames cached, which came out
+byte-identical. Measured alone, 166 frames took 22.1 s at two pages and
+13.6 s at eight; `hold-play` is 52 MB for 154 frames at 1920x800. The
+12 s span reused the 154 frames and captured 12 more plus a 12-frame
+outro: 12 s for the render. A cut that moves a span pays the delta at the
+next render, and every `outro-<n>` stays until a recapture.
+
+Four tests, each red on the old code: the hold arithmetic, the pieces and
+the view (with the fallback and the new preview asset shapes), and two
+browser captures of the numbered clip. In those, a 20-frame hold shows
+source frames 15 to 34 and its outro 35 to 43. A 90-frame hold extends a
+30-frame one without recapturing it and rests on frame 59. The suite:
+2926 passed. An earlier run had one OpenRouter director stdin test time
+out under `-n auto`; it passed alone in 1.65 s, and passed on the rerun.

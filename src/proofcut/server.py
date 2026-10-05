@@ -1921,7 +1921,7 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "window.proofcutSeek(seconds). Setup that takes time hands its promise to "
             "window.proofcutWaitFor(promise, label), and every frame waits for it. A <video> "
             "from the graphic's folder shows its exact frame (data-start offsets it, loop "
-            "repeats it; no sound). Fonts load from /_proofcut/fonts/static/"
+            "repeats it; no sound) and plays on through a still hold. Fonts load from /_proofcut/fonts/static/"
             "Outfit-Regular.ttf and Outfit-Bold.ttf; nothing loads from the network."
         ),
         "intro": "Seconds of the page that play once from the start of the span.",

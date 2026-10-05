@@ -1709,6 +1709,19 @@ built; docs/plans/INSTALL.md):
     file: the folder is hashed into the stamp, and `timeline_view` checks
     every placed graphic's (a whole 694 MB source: 0.5 s a check warm, 11 s
     off the NAS). HISTORY.md § Video inside a graphic, built.
+  - **A page's video runs on the placement's clock, so a still hold plays it
+    on** (`motion.play`): hold frame k is the page at `hold_at` with its
+    videos at `hold_at + k/fps` (`SEEK`'s `vt`, apart from the page's `t`),
+    then one still once every video is on its last frame (`ends`, recorded at
+    capture), and the outro is the page's outro with the video where the hold
+    left it. Those frames depend on the span, so **export captures them** —
+    the one place a render launches the browser — into the capture's own
+    folder (`hold-play/`, one growing sequence; `outro-<frames>/` per
+    offset), and a recapture drops them. The view never captures: until a
+    render has, it hands the preview the still hold and says so in the hold's
+    `video`. A looping hold is left as captured. On the 7.4 s Randy span the
+    first render paid 22 s of capture at two pages (13.6 s at eight).
+    HISTORY.md § A graphic's video plays through its hold, built.
   - **A capture is stamped with the page's bytes, the canvas and the rate**,
     and export refuses a stale one (`graphic_capture`). The hold is checked at
     capture: still means nothing animating through it, a loop means its

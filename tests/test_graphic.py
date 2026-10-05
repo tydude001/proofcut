@@ -715,3 +715,111 @@ def test_mlt_draws_a_sequence_and_a_still_through_the_same_overlay_node() -> Non
     assert mlt.overlay_lanes(pieces) == [0, 0]
     for piece in pieces:
         mlt._check_overlay(piece, 120)
+
+
+# -- a still hold plays the page's video on -------------------------------------
+
+
+def test_a_still_hold_plays_its_video_until_every_video_is_on_its_last_frame() -> None:
+    """Frame k of the hold shows the video at hold_at + k/fps; from the first
+    frame on its last frame, the hold rests there and every outro is the same."""
+    record = {"fps": 30.0, "hold_at": 0.5, "loop": False, "video": {"videos": 1, "ends": 1.95}}
+    assert motion.video_hold(record, 20) == {"playing": 20, "rest": 0, "outro": 20, "frozen": 44}
+    assert motion.video_hold(record, 60) == {"playing": 45, "rest": 15, "outro": 44, "frozen": 44}
+    assert motion.video_hold({**record, "video": {"videos": 1, "ends": None}}, 600)["playing"] == 600, "a looping video never stops"
+    assert motion.video_hold({**record, "video": {"videos": 1, "ends": 0.4}}, 20) is None, "it ran out in the intro"
+    assert motion.video_hold({**record, "loop": True}, 20) is None, "a loop is today's loop"
+    assert motion.video_hold({k: v for k, v in record.items() if k != "video"}, 20) is None
+
+
+def _fake_play(frames: Path, playing: int, outro: tuple[int, int] | None) -> None:
+    (frames / motion.PLAY_HOLD).mkdir(exist_ok=True)
+    for k in range(playing):
+        (frames / motion.PLAY_HOLD / f"f{k:04d}.png").write_bytes(PNG_1PX)
+    if outro is not None:
+        key, count = outro
+        (frames / f"outro-{key}").mkdir()
+        for k in range(count):
+            (frames / f"outro-{key}" / f"f{k:04d}.png").write_bytes(PNG_1PX)
+
+
+def test_a_hold_playing_its_video_is_its_frames_then_a_rest_and_the_outro_after_them(project: Project) -> None:
+    _graphic(project, intro=1.0, outro=0.4)
+    frames = _fake_capture(project, "g", intro=30, hold=1, outro=12, loop=False)
+    record = json.loads((frames / motion.CAPTURE_NAME).read_text())
+    record["video"] = {"videos": 1, "ends": 2.0}  # frozen from hold frame 30
+    (frames / motion.CAPTURE_NAME).write_text(json.dumps(record))
+    ops.overlay_add(project.root, None, "vo", 0, graphic="g", seconds=4.0)  # 120 frames: 30 + 78 + 12
+
+    # Not captured at this length yet: the view draws today's still and says so.
+    items = [o for o in ops.timeline_view(project.root)["overlays"] if o.get("graphic")]
+    assert [(o["layer"], o["asset"]) for o in items] == [("intro", "graphic:g/intro"), ("hold", "graphic:g/hold"), ("outro", "graphic:g/outro")]
+    assert items[1]["video"] == "plays from the next render, which captures it"
+
+    _fake_play(frames, 31, (30, 12))
+    plan = ops._overlay_plan(project, ops._load_edit(project), 30.0, edit_frames=180)[0]
+    assert [(p["phase"], p["frames"]) for p in plan["phases"]] == [("intro", 30), ("hold", 31), ("rest", 47), ("outro", 12)]
+    assert [piece.resource for piece in plan["drawn"]] == [
+        str(frames / "intro" / "f%04d.png"),
+        str(frames / "hold-play" / "f%04d.png"),
+        str(frames / "hold-play" / "f0030.png"),
+        str(frames / "outro-30" / "f%04d.png"),
+    ]
+    items = [o for o in ops.timeline_view(project.root)["overlays"] if o.get("graphic")]
+    assert [(o["asset"], o["first"], o["frame_count"]) for o in items] == [
+        ("graphic:g/intro", 0, 30), ("graphic:g/hold-play", 0, 31), ("graphic:g/hold-play", 30, 1), ("graphic:g/outro-30", 0, 12),
+    ]  # fmt: skip
+    assert items[1]["video"] == "plays"
+    assert ops.preview_source(project.root, "graphic:g/outro-30/11")["path"] == str(frames / "outro-30" / "f0011.png")
+    with pytest.raises(ProjectError, match="does not name a graphic frame"):
+        ops.preview_source(project.root, "graphic:g/outro-../0")
+
+
+def _video_page(tmp_path: Path, **phases: float) -> tuple[Path, list[int]]:
+    folder = tmp_path / "g"
+    folder.mkdir()
+    table = _numbered_clip(folder / "clip.mp4")
+    (folder / "index.html").write_text(
+        "<!doctype html><body style='margin:0'><video src='clip.mp4' muted style='display:block;width:64px'></video></body>"
+    )
+    motion.write_spec(folder, motion.normalise_spec(phases))
+    return folder, table
+
+
+def _shown(table: list[int], folder: Path) -> list[int]:
+    return [_frame_of(table, _grey(path.read_bytes())) for path in sorted(folder.glob("f*.png"))]
+
+
+@needs_browser
+@needs_video_tools
+def test_a_still_hold_plays_the_page_video_on_and_the_outro_picks_it_up(tmp_path: Path) -> None:
+    """The footage is never sized to the intro: frame k of a 20-frame hold is
+    source frame 15 + k, and the outro's video goes on from 35."""
+    folder, table = _video_page(tmp_path, intro=0.5, outro=0.3)
+    frames = tmp_path / "f"
+    record = motion.capture(folder, frames, width=64, height=36, fps=30.0)
+    assert record["video"]["videos"] == 1 and 1.9 < record["video"]["ends"] < 59 / 30
+    assert _shown(table, frames / "intro") == list(range(15))
+    assert _shown(table, frames / "outro") == list(range(15, 24)), "the page's own outro, for a hold of no frames"
+    plan = motion.play(folder, frames, 20)
+    assert plan is not None and plan["playing"] == 20 and plan["rest"] == 0
+    assert _shown(table, frames / "hold-play") == list(range(15, 35))
+    assert _shown(table, frames / "outro-20") == list(range(35, 44))
+
+
+@needs_browser
+@needs_video_tools
+def test_a_hold_longer_than_its_video_rests_on_the_last_frame(tmp_path: Path) -> None:
+    """The 2 s clip's last frame (59) is source time 1.967 s: hold frame 44.
+    A 30-frame hold captured first is extended, not recaptured."""
+    folder, table = _video_page(tmp_path, intro=0.5, outro=0.1)
+    frames = tmp_path / "f"
+    motion.capture(folder, frames, width=64, height=36, fps=30.0)
+    motion.play(folder, frames, 30)
+    first = (frames / "hold-play" / "f0000.png").stat().st_mtime_ns
+    plan = motion.play(folder, frames, 90)
+    assert plan == {"playing": 45, "rest": 45, "outro": 44, "frozen": 44}
+    assert (frames / "hold-play" / "f0000.png").stat().st_mtime_ns == first
+    assert _shown(table, frames / "hold-play") == list(range(15, 60))
+    assert _shown(table, frames / "outro-44") == [59, 59, 59]
+    assert motion.play(folder, frames, 200) == {"playing": 45, "rest": 155, "outro": 44, "frozen": 44}
