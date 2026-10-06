@@ -17875,6 +17875,14 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
     # `play`: a graphic whose still hold plays its video is captured at
     # this length here, the one caller that draws it (`anim.play`).
     overlay_plans = _overlay_plan(project, edit, rate, edit_frames=edit_frames, clock=clock, play=True)
+    # Every `outro-<n>/` this render does not draw is one a cut left behind.
+    drawn_from: dict[str, set[str]] = {}
+    for plan in overlay_plans:
+        if plan.get("frames_dir"):
+            drawn_from.setdefault(plan["frames_dir"], set()).update(Path(p.resource).parent.name for p in plan["drawn"])
+    if project.graphic_frames_dir.is_dir():
+        for frames_dir in project.graphic_frames_dir.iterdir():
+            anim.sweep_outros(frames_dir, drawn_from.get(str(frames_dir), set()))
     overlays = [
         replace(piece, start=piece.start + head_frames)
         for plan in overlay_plans

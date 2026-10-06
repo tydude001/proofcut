@@ -19312,3 +19312,22 @@ source frames 15 to 34 and its outro 35 to 43. A 90-frame hold extends a
 30-frame one without recapturing it and rests on frame 59. The suite:
 2926 passed. An earlier run had one OpenRouter director stdin test time
 out under `-n auto`; it passed alone in 1.65 s, and passed on the rerun.
+
+## The outro sweep — 2026-10-06
+
+The playing hold left one `outro-<frames>/` per hold length a render asked
+for, so every cut that moved a graphic's span left a folder behind until a
+recapture (the 10-04 spike piled up four, about 11 MB). Now the render
+that captures sweeps: `_build_mlt` collects the outro folders its overlay
+pieces draw and `motion.sweep_outros` drops every other `outro-<n>/` under
+each graphic's frames, including graphics no longer placed at all.
+`hold-play/` is not swept, since every length shares its prefix. A
+length asked for again is recaptured, which costs only its outro's frames.
+An `.mlt` written by an earlier export names its own outro folder, and a
+later render with a different span drops it, as a recapture already did.
+
+One test, red on the old code: a render keeps `outro-30`, drops
+`outro-12` and `outro-31`, and empties an unplaced graphic's `outro-7`.
+It runs on faked frames through the real `_build_mlt`. There was no live
+check, because the spike's capture folders were already gone from disk.
+The suite: 2927 passed.

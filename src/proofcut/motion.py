@@ -472,6 +472,29 @@ def play(folder: Path, frames: Path, held: int, *, pages: int = DEFAULT_PAGES) -
     return plan
 
 
+def sweep_outros(frames: Path, keep: set[str]) -> list[str]:
+    """Drop every `outro-<frames>/` under `frames` not named in `keep`, and
+    return the names dropped.
+
+    One is captured per hold length a render asked for, so every cut that
+    moves a span leaves one behind. The render that captures is the one that
+    knows which it draws (`_build_mlt`), and it keeps exactly those: a length
+    asked for again is recaptured, which costs its outro's frames alone.
+    `hold-play/` is not swept, since every length shares its prefix. Never
+    raises — a sweep is a side effect of rendering.
+    """
+    dropped = []
+    try:
+        folders = sorted(frames.iterdir())
+    except OSError:
+        return dropped
+    for folder in folders:
+        if re.fullmatch(r"outro-\d+", folder.name) and folder.name not in keep and folder.is_dir():
+            shutil.rmtree(folder, ignore_errors=True)
+            dropped.append(folder.name)
+    return dropped
+
+
 # -- templates -------------------------------------------------------------------
 
 

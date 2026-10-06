@@ -775,6 +775,28 @@ def test_a_hold_playing_its_video_is_its_frames_then_a_rest_and_the_outro_after_
         ops.preview_source(project.root, "graphic:g/outro-../0")
 
 
+def test_a_render_drops_every_outro_a_cut_left_behind(project: Project) -> None:
+    """One `outro-<n>/` per hold length a render asked for: the next render
+    keeps the one it draws and drops the rest, in every graphic's folder."""
+    _graphic(project, intro=1.0, outro=0.4)
+    frames = _fake_capture(project, "g", intro=30, hold=1, outro=12, loop=False)
+    record = json.loads((frames / motion.CAPTURE_NAME).read_text())
+    record["video"] = {"videos": 1, "ends": 2.0}
+    (frames / motion.CAPTURE_NAME).write_text(json.dumps(record))
+    ops.overlay_add(project.root, None, "vo", 0, graphic="g", seconds=4.0)
+    _fake_play(frames, 31, (30, 12))
+    for stale in ("outro-12", "outro-31"):
+        _fake_play(frames, 0, (int(stale.split("-")[1]), 12))
+    unplaced = project.graphic_frames_dir / "other"
+    (unplaced / "outro-7").mkdir(parents=True)
+    (unplaced / "outro").mkdir()
+
+    ops._build_mlt(project, ops._load_edit(project), fps=None)
+    assert sorted(p.name for p in frames.iterdir() if p.is_dir()) == ["hold", "hold-play", "intro", "outro", "outro-30"]
+    assert sorted(p.name for p in unplaced.iterdir()) == ["outro"], "a graphic no render draws keeps no outro-<n>"
+    assert motion.sweep_outros(project.root / "absent", set()) == []
+
+
 def _video_page(tmp_path: Path, **phases: float) -> tuple[Path, list[int]]:
     folder = tmp_path / "g"
     folder.mkdir()
