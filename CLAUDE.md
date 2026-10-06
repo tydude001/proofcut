@@ -1,6 +1,8 @@
 # proofcut
 
 Architecture, stack decisions, and open questions live in [PLAN.md](docs/PLAN.md).
+What was ruled out and what would reopen it is [DECISIONS.md](docs/DECISIONS.md) —
+read it before re-proposing a split, a check, a hook or a licence change.
 The build order and the rationale behind it is PLAN.md § Direction and
 order. The competitor/dependency survey behind those decisions is in
 [COMPETITORS.md](docs/COMPETITORS.md). The dated record of what shipped and what the
