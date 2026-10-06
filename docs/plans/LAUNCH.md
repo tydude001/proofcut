@@ -732,7 +732,7 @@ posted where, what each channel returned (strangers by the three measures in
 `lucid-publish` closes, or becomes whatever remains. This file gains its
 "Shipped" pointers. And the question open-core was waiting on — "after the
 demo run exists" — is now answerable with numbers rather than a guess, so
-the decision moves to wiki `decisions.md`, not here.
+the decision moves to `docs/DECISIONS.md`, not here.
 
 ## What this plan deliberately does not do
 

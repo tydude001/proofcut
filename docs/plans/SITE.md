@@ -57,7 +57,7 @@ Either of these, and the first is the likelier:
    the clip is the thing the README cannot show. Without the clip the page
    is the README with nicer type.
 2. **There is something to sell.** Open-core is deferred until the demo run
-   (wiki `decisions.md`, PolyForm Shield). Once a paid tier exists,
+   (`docs/DECISIONS.md` § The licence, PolyForm Shield). Once a paid tier exists,
    conversion is the problem her site solved, and a page that says what it
    costs and what to do next is where it gets solved.
 

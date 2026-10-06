@@ -325,7 +325,7 @@ design points away from them rather than toward them.
    file on a different runtime; none of `ops.py`, whisper or the melt writer
    crosses over.
 2. **The licence.** Code contributed there is MIT, which undoes the PolyForm
-   Shield choice (HISTORY.md § The licence, chosen, and wiki `decisions.md`).
+   Shield choice (HISTORY.md § The licence, chosen, and DECISIONS.md § The licence).
 3. **The designs are opposites.** "The project file is the interface" lets any
    writer place anything; proofcut routes every mutation through one `ops`
    function and verifies the render. Blending them keeps neither guarantee.
