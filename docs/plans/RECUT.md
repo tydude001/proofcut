@@ -33,7 +33,7 @@ material stays unchanged too: v6's own run, staged by `native-b7/prep.py`.
 
 ## What A is
 
-A is `~/proofcut-work/spikes/launch-v4/clip.py`: 47.02 s, 1080p60.
+A is `~/proofcut-work/archive/spikes/launch-v4/clip.py`: 47.02 s, 1080p60.
 
 | Moment | A's length | What A does there |
 |---|---|---|

@@ -3,7 +3,7 @@
 Provenance: Tyler asked on 2026-09-14 whether it is fair to say he made
 several YouTube videos, and the launch video, "almost entirely using proofcut
 + Claude Code". It is not, yet: LAUNCH.md § Step 1 already says the launch clip
-is a compositor script (`~/proofcut-work/spikes/launch-v4/clip.py`), and no
+is a compositor script (`~/proofcut-work/archive/spikes/launch-v4/clip.py`), and no
 essay cut with proofcut has been posted — Scream v8 and Lambs/Longlegs v10 are
 both cut and unposted (goodsometimes `analytics.md`), and both finish outside
 proofcut. He then asked what proofcut would need for the claims to be true,

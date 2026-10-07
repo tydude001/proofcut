@@ -73,7 +73,7 @@ pointer, and the wiki row updates.
 
 Built three times — HISTORY.md § The launch clip, § The launch clip, re-cut
 as an announcement, § The launch clip, third shape — and rejected; the fourth
-shape is the one that stands, `~/proofcut-work/spikes/launch-v4/clip-v6.mp4`
+shape is the one that stands, `~/proofcut-work/archive/spikes/launch-v4/clip-v6.mp4`
 (HISTORY.md § The launch clip, approved). How each round was judged and why
 the clip is the way it is: `~/proofcut-work/spikes/launch-v4-review/PIN.md`.
 
@@ -88,7 +88,7 @@ checking itself against the edit, and no cloud in the frame.
 demo project, Tyler's own recorded material (the co-hosted recording once
 the second mic is routed, wiki `lucid-second-mic`), or public-domain footage
 with its provenance written down (the clip's is NASA's restored Apollo 11,
-`~/proofcut-work/spikes/launch-v4/media/PROVENANCE.md`). **Never a frame of
+`~/proofcut-work/archive/spikes/launch-v4/media/PROVENANCE.md`). **Never a frame of
 Scream.** CLAUDE.md's committed-image rule is about the repo, but a launch
 clip is more public than a README and the same reasoning applies: a
 promotional video of copyrighted film clips invites the one argument the
@@ -98,7 +98,7 @@ in `~/proofcut-work/spikes/agent-trial/`.
 
 **It is not cut with proofcut, so never say it was.** The camera, the speed
 ramps, the type and the mix are a compositor script
-(`~/proofcut-work/spikes/launch-v4/clip.py`) over the two recordings. proofcut's own
+(`~/proofcut-work/archive/spikes/launch-v4/clip.py`) over the two recordings. proofcut's own
 moves are linear and it cannot retime, which is most of why the first three
 shapes read as choppy. "The launch video was cut by the tool" is false, and
 the line that is true is stronger anyway: the film inside the clip is the
@@ -129,7 +129,7 @@ verify clean. Captions burned, because every platform below autoplays muted.
 this loop; what it lacks is a viewer. The recording is mostly of the
 *workspace* pane, because the workspace is what a stranger will open first,
 and the README's screenshot is of it. The terminal beat is a real `claude`
-session recorded byte for byte (`~/proofcut-work/spikes/launch-v4/mcp/`), not a mock-up. Drive the trial's own
+session recorded byte for byte (`~/proofcut-work/archive/spikes/launch-v4/mcp/`), not a mock-up. Drive the trial's own
 brief through `POST /api/agent` (the panel's route) so the run in the video
 is the run the trial measured — no second script, no drift.
 

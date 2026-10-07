@@ -8,7 +8,7 @@ overlays, rather than a staggered still card.
 
 ## What v6 does
 
-`~/proofcut-work/spikes/launch-v4/clip.py`'s `end_card`, read from source
+`~/proofcut-work/archive/spikes/launch-v4/clip.py`'s `end_card`, read from source
 (sizes at 1080 lines; `smooth` is an in-out cubic; times from the start of
 the card's 0.5 s crossfade off the film, not from its first opaque frame, as
 this note first said):
