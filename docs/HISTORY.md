@@ -19393,3 +19393,23 @@ false start is as loud as the film's voice. Run four's brief is kept beside
 it as `brief.run4.txt`. v6's card also has no rule and sets the URL in
 muted Outfit, which no template draws. That waits on Tyler's watch of run
 five.
+
+## B7, run five — 2026-10-07
+
+Run four's material and harness, on the brief edited above
+(`trial/runs/20261007-142330`): 170 turns, $4.74, 17 min, a 48.15 s clip
+(v6 47.02). **All three changes were taken up without being named.** The
+agent placed the false start with `level="speech"` (+5.55 dB on its slice,
+"leave" to "again"), then re-added it by hand at the same gain when it
+moved the in-point. The keys kept `min_gap` 0.045 at −8 dB, and the end
+card is `bumper` with `line1` `[em]the local-first AI video editor[/em]`.
+It also heard its own render (`hear` on three spans of the imported file),
+which run four never did.
+
+Loudness-matched (−2.2 dB, `clip-matched.mp4`, −21.7 like v6): the false
+start's bins now read 2 to 3 LU under v6's (run four: 4 to 7), and the
+clicks' top percentile sits about 5 dB over v6's. The card keeps the
+bumper's rule and sets the URL in Zilla, where v6 has no rule and a muted
+Outfit URL. The scorer's two failed checks (`picture_hung`,
+`render_exists`) are the demo-cut scorer's, as on every B7 run. Waiting on
+Tyler's watch beside v6.
