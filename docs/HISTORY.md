@@ -19357,3 +19357,26 @@ to 960 px, and tapped an answer for each.
   dBFS). The depth was fitted to the synthesized VO, and Tyler is
   re-recording that VO himself, so the duck is not re-fitted until his take
   is in.
+
+**The launch clip's "not yet", traced the same day.** Tyler named the sound
+and the end card, then confirmed or rejected three paired excerpts of run
+four (`clip-matched.mp4`) against v6:
+
+- **The false start is 8 dB quiet: confirmed.** v6 levels the take to
+  −18 dBFS speech RMS (`clip.py`'s `speech_level`). Run four plays the
+  `voice` sound at `gain_db` 0, and its slice measures −26.0. `inset_add`
+  has `level="speech"`, and the agent used it on the film (+8.34 dB);
+  `sound_add` has no such option, so the agent had no way to level the voice.
+- **The typing sounds wrong: his words, "the sound of the text filling
+  out".** In the first 4.5 s run four has 46 clicks, median 45 ms apart and
+  as close as 25 ms, about 9 dB hotter; v6 has 16, median 125 ms. The files
+  are v6's own. proofcut's default `SOUND_MIN_GAP` (0.045, in render time)
+  would have thinned them; the agent passed `min_gap` 0.0002, reading the
+  brief's "Every keystroke clicks" literally. Its hits (`gain_db` −3, keys
+  −9) also sit 6 to 8 dB over v6's (−10/−9/−11, keys about −15), and it left
+  out the land at the report that the brief asks for. He rejected the
+  levels-and-density framing: the typing is what he heard.
+- **The film starting about 2 s late: noticed, does not bother him.**
+- **The end card's tagline** is white because `bumper.svg` fills the
+  footnote with `{{paper}}` and has no slot for another colour; v6's is
+  amber.
