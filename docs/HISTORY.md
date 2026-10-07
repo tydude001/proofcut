@@ -19331,3 +19331,29 @@ One test, red on the old code: a render keeps `outro-30`, drops
 It runs on faked frames through the real `_build_mlt`. There was no live
 check, because the spike's capture folders were already gone from disk.
 The suite: 2927 passed.
+
+## Four watches, answered — 2026-10-07
+
+Tyler watched four built-but-unwatched renders on a served page, transcoded
+to 960 px, and tapped an answer for each.
+
+- **The playing hold: right.** `pip-hold-2` beside the frozen `control`.
+  Nothing to change.
+- **Blur-fill: right as is**, so `brightness 0.7` and `box_blur 12` stand.
+  His note, "the first 7 seconds look different", is the crop the clip
+  opens on; the fill starts at 8 s by design.
+- **The launch clip: not yet** against the approved v6, with no note on
+  what gives it away. The known gaps are still the white tagline (v6's is
+  amber) and the 1.8 s of extra length.
+- **Lambs/Longlegs at `--duck 11`: the rebuild's music is quieter**, heard
+  on 1:30 to 2:30 of `longlegs-native-8` against v10. He could barely hear
+  the music in it at all and wondered if it was the song choice at that
+  moment. The measurement agrees on the direction. Floors per 20 s window
+  (the fifth-quietest half second) track v10 within about 1 dB across the
+  film and sit under it in most windows. That minute is one of the quietest
+  stretches of bed in either mix, and from 2:00 it runs 1.3 to 2.3 dB under
+  v10. That fits the 09-21 table, where a gate ducks quiet speech fully and
+  v10's compressor only partly (2.5 to 3.6 dB under, at VO −40 to −25
+  dBFS). The depth was fitted to the synthesized VO, and Tyler is
+  re-recording that VO himself, so the duck is not re-fitted until his take
+  is in.
