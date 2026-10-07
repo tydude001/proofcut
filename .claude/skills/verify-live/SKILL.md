@@ -9,7 +9,7 @@ description: Drive proofcut's web UI in a real headless browser over CDP — cli
 It cannot prove a gesture works. docs/plans/STUDIO.md's bar for every UI item is the
 real project in a real browser, every click driven at **0ms and ~120ms**
 dwell — a rule that exists because a fix once read green at 0ms and was dead
-in the hand (HISTORY.md § The dwell-timing lesson).
+in the hand (docs/HISTORY.md § The dwell-timing lesson).
 
 `cdp.mjs` is that harness, kept here because it has been rebuilt from scratch
 in more than one session. Node 24's global `WebSocket`, no dependencies.
@@ -29,15 +29,17 @@ uv run proofcut -C /path/to/proj web --port 8793
   --window-size=1400,900 about:blank &
 
 # 3. drive it — each call attaches to the same page, so state persists
-node cdp.mjs goto http://127.0.0.1:8793/
-node cdp.mjs eval '(() => document.querySelector("#truth-strip").textContent)()'
-node cdp.mjs click "#finish-render" 120      # dwell in ms; 0 and ~120 both
-node cdp.mjs dragxy 81 327 145 326 120       # press, move in steps, release
-node cdp.mjs viewport 700 900                # resize; two sweeps (see below)
-node cdp.mjs key "?" - 120                   # a real key press; `-` = no focus target
-node cdp.mjs key Escape "#agent-prompt" 0    # ...or press it with focus in a field
-node cdp.mjs console 3000                    # console errors for N ms, each with its url
-node cdp.mjs shot out.png
+node .claude/skills/verify-live/cdp.mjs goto http://127.0.0.1:8793/
+node .claude/skills/verify-live/cdp.mjs eval '(() => document.querySelector("#truth-strip").textContent)()'
+node .claude/skills/verify-live/cdp.mjs evalfile probe.js                # same as eval, expression read from a file
+node .claude/skills/verify-live/cdp.mjs click "#finish-render" 120       # dwell in ms; 0 and ~120 both
+node .claude/skills/verify-live/cdp.mjs dragxy 81 327 145 326 120        # press, move in steps, release
+node .claude/skills/verify-live/cdp.mjs drag "#track-lanes" 0.2 0.6 120  # horizontal at mid-height; from/to = fractions of width
+node .claude/skills/verify-live/cdp.mjs viewport 700 900                 # resize; two sweeps (see below)
+node .claude/skills/verify-live/cdp.mjs key "?" - 120                    # a real key press; `-` = no focus target
+node .claude/skills/verify-live/cdp.mjs key Escape "#agent-prompt" 0     # ...or press it with focus in a field
+node .claude/skills/verify-live/cdp.mjs console 3000                     # console errors for N ms, each with its url
+node .claude/skills/verify-live/cdp.mjs shot out.png
 ```
 
 `CDP_PORT` overrides 9444.
@@ -68,7 +70,7 @@ What it encodes, and what to keep true if you change it:
   reading `☾` says the attribute is set; only mean luma across the set says
   they read as *one theme*, which is `check_set` and is the check a recapture
   twice did not run. The shots are mostly dark b-roll on a mostly dark page,
-  so a wide spread is a light capture wearing dark footage — HISTORY.md § The
+  so a wide spread is a light capture wearing dark footage — docs/HISTORY.md § The
   screenshots went back to dark.
 - **Render once from Finish** (`#finish-render`). That one SSE stream fills
   both Finish's stage report *and* the Edit agent pane's completion card — the
@@ -78,12 +80,12 @@ What it encodes, and what to keep true if you change it:
   measures `#frame-view` and resizes twice, because the first resize reflows
   what it measured. Captured flat at 1400x900 the pane came out 44% dead
   black, which beside a full Edit shot reads as a different, emptier product
-  — HISTORY.md § The screenshots stopped being captured by hand. A scroll
+  — docs/HISTORY.md § The screenshots stopped being captured by hand. A scroll
   container is measured by its `scrollHeight`: `#frame-rows` is one, so its
   box says nothing about how much is in it.
 - **`check_timeline_width` is a regression test, not a capture step.** The
   repo has no JS test harness, so the assertion that the ruler matches
-  `#track-lanes` is the only thing holding down HISTORY.md § The timeline
+  `#track-lanes` is the only thing holding down docs/HISTORY.md § The timeline
   re-measures when Edit is looked at — a render landing while Edit is hidden
   used to lay every lane out at `computePxPerSec`'s 800px fallback, and the
   render this script drives from Finish is exactly such an event. If it ever
