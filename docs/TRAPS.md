@@ -1672,6 +1672,14 @@ built; docs/plans/INSTALL.md):
   (`browser.py`, `motion.py`), placed by an overlay record's `graphic` as
   three ordinary overlay pieces: intro, hold, outro.** HISTORY.md § Animated
   graphics, built.
+  - **A tail can play one (`tail asset=graphic:NAME`), as picture entries,
+    never overlay pieces**: the intro once, then the hold to the film's last
+    frame. The outro never plays, since nothing follows the tail. The capture
+    must be opaque (`motion.is_opaque`, measured once into `capture.json`),
+    because a tail is the picture and a transparent pixel there shows black.
+    A page with a `<video>` is refused as a tail: its still hold would need
+    `play`'s per-length capture. docs/plans/ENDCARD.md, HISTORY.md § The end
+    card that moves, built.
   - **`browser.DETERMINISTIC_FLAGS` are the capture, not tuning**: without
     them two captures of one page differed on 62 of 91 frames. Never let a
     caller drop them.

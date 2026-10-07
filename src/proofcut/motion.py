@@ -50,6 +50,7 @@ import math
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 from collections.abc import Iterator
@@ -341,6 +342,45 @@ def _refuse_failed_fonts(folder: Path, fonts: list[dict[str, Any]]) -> None:
             f"{folder.name}'s page could not load the font(s) {', '.join(failed)} — a page "
             f"loads only its own folder and the vendored fonts under {browser.FONTS_PATH}"
         )
+
+
+def is_opaque(frames: Path) -> bool:
+    """Whether every intro and hold frame of a capture covers the whole canvas.
+
+    A tail draws its graphic as the picture itself (docs/plans/ENDCARD.md), and
+    a pixel with any transparency there would show black through it. Measured
+    once per capture and kept in its `capture.json`, which the stamp does not
+    read, so a recapture measures again.
+    """
+    record = read_capture(frames)
+    if record is None:
+        raise GraphicError(f"{frames.name} has not been captured")
+    if isinstance(record.get("opaque"), bool):
+        return record["opaque"]
+    opaque = True
+    for phase in ("intro", "hold"):
+        if not any((frames / phase).glob("f*.png")):
+            continue
+        # `format=rgba` first, so a PNG saved without an alpha channel reads
+        # as opaque rather than failing `alphaextract`.
+        proc = subprocess.Popen(
+            ["ffmpeg", "-v", "error", "-nostdin", "-i", phase_pattern(frames, phase),
+             "-vf", "format=rgba,alphaextract", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )  # fmt: skip
+        assert proc.stdout is not None
+        while opaque and (chunk := proc.stdout.read(1 << 20)):
+            opaque = min(chunk) == 255
+        if not opaque:
+            proc.kill()
+        _, err = proc.communicate()
+        if opaque and proc.returncode != 0:
+            raise GraphicError(f"could not read {frames.name}'s {phase} frames: {err.decode(errors='replace').strip()}")
+        if not opaque:
+            break
+    record["opaque"] = opaque
+    (frames / CAPTURE_NAME).write_text(json.dumps(record, indent=2) + "\n")
+    return opaque
 
 
 def phase_pattern(frames: Path, phase: str) -> str:

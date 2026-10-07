@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- proofcut graphic template `endcard`. Phases: intro 0-1.7s (the mark fades
+     in rising 20px over 0.2-1.0s, the tagline rising 14px over 0.7-1.3s, the
+     address fading in over 1.1-1.7s), then a still hold. Sizes are pixels of a
+     1080-tall frame; tops are the line box's, at 27%, 55% and 70% of the height. -->
+<html><head><meta charset="utf-8"><style>
+@font-face { font-family: "Outfit"; font-weight: 100 900; src: url("/_proofcut/fonts/Outfit%5Bwght%5D.ttf"); }
+@font-face { font-family: "Zilla Slab"; font-weight: 600; src: url("/_proofcut/fonts/pages/ZillaSlab-SemiBold.ttf"); }
+:root { --u: calc(min(100vw, 100vh) / 1080); }
+html, body { margin: 0; width: 100vw; height: 100vh; background: {{background}}; overflow: hidden; }
+.line { position: absolute; left: 3vw; right: 3vw; text-align: center; white-space: nowrap; line-height: normal;
+  opacity: 0; animation-fill-mode: both; animation-timing-function: cubic-bezier(.65,0,.35,1); }
+.line:empty { display: none; }
+.mark { top: 27%; font: 700 calc(190 * var(--u)) "Outfit"; color: {{mark_colour}};
+  animation-name: rise20; animation-duration: .8s; animation-delay: .2s; }
+.tagline { top: 55%; font: 600 calc(58 * var(--u)) "Zilla Slab"; color: {{tagline_colour}};
+  animation-name: rise14; animation-duration: .6s; animation-delay: .7s; }
+.url { top: 70%; font: 500 calc(40 * var(--u)) "Outfit"; color: {{url_colour}};
+  animation-name: fade; animation-duration: .6s; animation-delay: 1.1s; }
+@keyframes rise20 { from { opacity: 0; transform: translateY(calc(20 * var(--u))); } to { opacity: 1; transform: none; } }
+@keyframes rise14 { from { opacity: 0; transform: translateY(calc(14 * var(--u))); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+</style></head><body>
+<div class="line mark">{{mark}}</div>
+<div class="line tagline">{{tagline}}</div>
+<div class="line url">{{url}}</div>
+</body></html>

@@ -110,7 +110,7 @@ def test_the_stamp_moves_with_the_page_the_canvas_and_the_rate(tmp_path: Path) -
 
 def test_every_template_declares_phases_and_documents_its_slots() -> None:
     listed = motion.templates()
-    assert {t["name"] for t in listed} == {"typing", "highlight", "letters", "chips"}
+    assert {t["name"] for t in listed} == {"typing", "highlight", "letters", "chips", "endcard"}
     for template in listed:
         assert template["about"], template["name"]
         assert all(decl.get("about") for decl in template["slots"].values()), template["name"]

@@ -11649,8 +11649,8 @@ def continuity_ls(path: Path | str) -> dict[str, Any]:
 #: `SCHEMA_VERSION` bump. `{"asset": "card:name", "seconds": ..., "fade": ...}`
 #: (PLAN.md § Tail time — the design note).
 #:
-#: **`asset` is always a card, never a clip, and `tail()` refuses the other
-#: shape rather than storing it.** `verify` diffs a render's own
+#: **`asset` is always a card or an animated graphic, never a clip, and
+#: `tail()` refuses the other shape rather than storing it.** `verify` diffs a render's own
 #: transcription against the timeline's words, and silence adds none of its
 #: own — a media clip's audio would give `verify` something to disagree
 #: about, permanently, on every project that ever set one.
@@ -11741,6 +11741,84 @@ def _tail_silence(project: Project, seconds: float) -> Path:
     return dest
 
 
+def _tail_graphic_state(project: Project, name: str) -> dict[str, Any]:
+    """What a `graphic:` tail will draw, for `tail`'s report: the capture's
+    state, whether it is opaque once captured, and an outro it will not play.
+    Never refuses on a missing or stale capture: `export` does, by name."""
+    if not (project.graphics_dir / name / anim.SPEC_NAME).is_file():
+        return {"name": name, "capture": "no graphic"}
+    state = _graphic_state(project, name)
+    report: dict[str, Any] = {"name": name, "capture": state["capture"], "intro": state["intro"], "loop": state["loop"]}
+    if state["outro"]:
+        report["outro_ignored"] = (
+            f"its {state['outro']:g}s outro does not play: the tail ends the film, and the graphic holds to the end"
+        )
+    if state["capture"] == "current":
+        with _graphic_errors():
+            report["opaque"] = anim.is_opaque(project.graphic_frames_dir / name)
+    return report
+
+
+def _tail_graphic_pieces(project: Project, name: str, frames: int, rate: float) -> dict[str, Any]:
+    """A `graphic:` tail as picture entries: the intro once, then the hold to
+    the tail's last frame (docs/plans/ENDCARD.md). The outro never plays, since
+    nothing follows the tail. `first` is the still the tail's fade dissolves
+    in from, the intro's first frame.
+
+    Refused: a capture that is missing or stale (as an overlay graphic's is),
+    one with any transparency (it would draw over black, `_resolve_asset`'s
+    refusal of an overlay card), a tail shorter than the intro, and a page
+    with a video, whose still hold would need `anim.play`'s per-length capture
+    on a lane that does not take one yet.
+    """
+    folder = _graphic_folder(project, name)
+    width, height, _ = _graphic_target(project)
+    frames_dir = project.graphic_frames_dir / name
+    with _graphic_errors():
+        current = anim.is_current(folder, frames_dir, width, height, rate)
+    if not current:
+        state = "has never been captured" if anim.read_capture(frames_dir) is None else "has changed since it was captured"
+        raise ProjectError(
+            f"tail graphic {name!r} {state} at this project's {width}x{height}, {rate:g} fps — run graphic_capture"
+        )
+    captured = anim.read_capture(frames_dir) or {}
+    if captured.get("video"):
+        raise ProjectError(f"tail graphic {name!r} shows a video, and a tail does not play one on through its hold")
+    with _graphic_errors():
+        opaque = anim.is_opaque(frames_dir)
+    if not opaque:
+        raise ProjectError(
+            f"tail graphic {name!r} has transparent pixels — as the picture it would draw them over "
+            "black. Give its page an opaque background, or place it over the film with overlay_add"
+        )
+    intro, hold, loop = int(captured["intro"]), int(captured["hold"]), bool(captured["loop"])
+    held = frames - intro
+    if held < 0:
+        raise ProjectError(
+            f"the tail lasts {frames} frames and graphic {name!r}'s intro takes {intro} "
+            f"({intro / rate:.2f}s) — lengthen the tail (tail seconds=…)"
+        )
+    entries: list[tuple[str, int]] = []
+    if intro:
+        entries.append((anim.phase_pattern(frames_dir, "intro"), intro))
+    if held:
+        still = str(frames_dir / "hold" / "f0000.png")
+        entries.append((anim.phase_pattern(frames_dir, "hold") if loop and hold > 1 else still, held))
+    first = str(frames_dir / ("intro" if intro else "hold") / "f0000.png")
+    return {
+        "entries": entries,
+        "first": first,
+        "report": {
+            "name": name,
+            "intro_frames": intro,
+            "hold_frames": held,
+            "loop": loop,
+            "stamp": str(captured.get("stamp", ""))[:12],
+            **({"outro_ignored": int(captured["outro"])} if captured.get("outro") else {}),
+        },
+    }
+
+
 def tail(
     path: Path | str,
     *,
@@ -11760,7 +11838,10 @@ def tail(
     arguments it changes nothing and reports what is in force, which is also
     how to learn the field names.
 
-    `asset` **must be a `card:name`, never a clip_id.** `verify` diffs a
+    `asset` **must be a `card:name` or a `graphic:name`, never a clip_id.**
+    A graphic plays its intro from the tail's first frame and then holds to
+    the end; its outro never plays, since nothing follows the tail, and its
+    page must be opaque (docs/plans/ENDCARD.md). `verify` diffs a
     render's own transcription against the timeline's words; silence adds
     none of its own, and a media clip's audio would give it something to
     disagree about on every check from here on. `seconds` is the tail's whole
@@ -11818,14 +11899,24 @@ def tail(
                 "with nothing to hold. Either alone after that updates its own "
                 "field."
             )
-        if not str(merged_asset).startswith("card:"):
+        if not str(merged_asset).startswith(("card:", "graphic:")):
             raise ProjectError(
-                f"tail asset must be a card (card:name), not {merged_asset!r} — "
+                f"tail asset must be a card (card:name) or an animated graphic "
+                f"(graphic:name), not {merged_asset!r} — "
                 "verify diffs a render's own transcription against the "
                 "timeline's words, and silence adds none of its own; a media "
                 "clip would give it something to disagree about on every check "
                 "from here on"
             )
+        if str(merged_asset).startswith("graphic:"):
+            name = str(merged_asset).removeprefix("graphic:")
+            with _graphic_errors():
+                spec = anim.read_spec(_graphic_folder(project, name))
+            if float(merged_seconds) < spec["intro"]:
+                raise ProjectError(
+                    f"the tail lasts {float(merged_seconds):g}s and graphic {name!r}'s intro takes "
+                    f"{spec['intro']:g}s — a tail plays the whole intro, then holds"
+                )
         if float(merged_seconds) <= 0:
             raise ProjectError(f"tail seconds must be positive, not {merged_seconds!r}")
         if float(merged_fade) < 0:
@@ -11852,7 +11943,11 @@ def tail(
         project.write_manifest(manifest)
 
     asset_exists: bool | None = None
-    if after is not None:
+    graphic: dict[str, Any] | None = None
+    if after is not None and after["asset"].startswith("graphic:"):
+        graphic = _tail_graphic_state(project, after["asset"].removeprefix("graphic:"))
+        asset_exists = graphic["capture"] != "no graphic"
+    elif after is not None:
         name = after["asset"].removeprefix("card:")
         asset_exists = (project.cards_dir / f"{name}.png").is_file()
 
@@ -11860,6 +11955,7 @@ def tail(
         "project": str(project.root),
         "tail": after,
         "asset_exists": asset_exists,
+        **({"graphic": graphic} if graphic is not None else {}),
         "written": write,
         "reset": bool(reset),
         "plan": bool(plan),
@@ -17607,10 +17703,17 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
                 "picture lane to cover the audio track exactly whenever one "
                 "exists"
             )
-        card = _resolve_asset(project, tail["asset"])
-        if not card["is_image"]:
-            raise ProjectError(f"tail asset {tail['asset']!r} resolved to a clip, not a card")
         tail_frames = _tail_frames(project, rate)
+        tail_graphic: dict[str, Any] | None = None
+        if tail["asset"].startswith("graphic:"):
+            tail_graphic = _tail_graphic_pieces(project, tail["asset"].removeprefix("graphic:"), tail_frames, rate)
+            pieces = tail_graphic["entries"]
+            card = {"asset_path": tail_graphic["first"], "is_image": True}
+        else:
+            card = _resolve_asset(project, tail["asset"])
+            if not card["is_image"]:
+                raise ProjectError(f"tail asset {tail['asset']!r} resolved to a clip, not a card")
+            pieces = [(card["asset_path"], tail_frames)]
         # The fade is the card arriving over the film's last `fade` seconds,
         # opaque on the tail's first frame — so the tail stays `seconds` long
         # and the film its own length (HISTORY.md § The bumper the teaser
@@ -17629,13 +17732,18 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
         if lane:
             silence = _tail_silence(project, tail["seconds"])
             audio.append(mlt.Entry(str(silence), 0, tail_frames, is_image=False, has_video=False))
-            lane.append(mlt.Entry(card["asset_path"], 0, tail_frames, is_image=True, has_video=True))
+            lane.extend(mlt.Entry(resource, 0, length, is_image=True, has_video=True) for resource, length in pieces)
         else:
             # A still has no sound, so on the Edit's track the card is its own
             # silence: MLT mixes nothing from a `qimage`.
-            audio.append(mlt.Entry(card["asset_path"], 0, tail_frames, is_image=True, has_video=True))
+            audio.extend(mlt.Entry(resource, 0, length, is_image=True, has_video=True) for resource, length in pieces)
         # The fade the render draws, where there is one; a hard cut reports as ever.
-        tail_report = {**tail, "frames": tail_frames, **({"fade_frames": fade_frames} if fade_frames else {})}
+        tail_report = {
+            **tail,
+            "frames": tail_frames,
+            **({"fade_frames": fade_frames} if fade_frames else {}),
+            **({"graphic": tail_graphic["report"]} if tail_graphic is not None else {}),
+        }
 
     # The A2 music lane: the resolved bed plus real silent entries padding it
     # to the document's exact frame total — lead silence for a bed starting

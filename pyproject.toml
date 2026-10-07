@@ -11,7 +11,7 @@ license = "LicenseRef-PolyForm-Shield-1.0.0"
 # what PEP 639 provides for exactly this. HISTORY.md § The licence, chosen.
 # The vendored typefaces are not covered by it and carry their own OFL-1.1
 # texts beside them, which ship in the package because they sit inside it:
-# src/proofcut/fonts/ (the caption face, FONTS.md) and src/proofcut/web/ (the three
+# src/proofcut/fonts/ (the caption face and the graphic pages' faces, FONTS.md) and src/proofcut/web/ (the three
 # UI faces, web/FONTS.md).
 license-files = ["LICENSE"]
 authors = [

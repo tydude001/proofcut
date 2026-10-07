@@ -138,7 +138,8 @@ no OpenRouter model has been scored by a trial yet.
 How the launch clip's end card gets v6's motion — a tail that plays an
 animated graphic, an `endcard` graphic template, and Zilla Slab vendored for
 the page — is [docs/plans/ENDCARD.md](docs/plans/ENDCARD.md), written
-2026-10-07 off B7 run five and unbuilt.
+2026-10-07 off B7 run five and built the same day (HISTORY.md § The end
+card that moves, built).
 **Competitor research and anything copied from another product follows
 docs/plans/DAYDREAM.md § Copyright, the DMCA, and this work**: a research
 download stays private and is deleted once its notes are checked, never commit
@@ -387,6 +388,8 @@ installed package or the upstream repo, not your memory.
   (`browser.py`, `motion.py`), placed by an overlay record's `graphic` as
   three ordinary overlay pieces: intro, hold, outro.** → TRAPS.md § Animated
   graphics
+  - **A tail can play one (`graphic:`): intro then hold, never the outro, and
+    only an opaque capture**
   - **`browser.DETERMINISTIC_FLAGS` are the capture, not tuning**
   - **Ubuntu 23.10+ refuses Chrome for Testing its sandbox**
   - **The page is served, never opened**

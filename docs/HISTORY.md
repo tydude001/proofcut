@@ -19420,3 +19420,40 @@ v6 (`clip.py`'s `end_card`) eases each line in on its own. The mark rises
 20 px as it fades, the amber tagline rises 14 px 0.2 s after it, and the
 URL fades in 0.4 s after that. proofcut's tail is one still card under a
 single 0.6 s fade, and no option staggers it.
+
+## The end card that moves, built — 2026-10-07
+
+docs/plans/ENDCARD.md, approved and built the same day. `tail
+asset=graphic:NAME` plays an animated graphic's intro from the tail's first
+frame and then its hold to the film's last, as picture entries on the lane a
+card tail uses (the cue lane, or the Edit's own track without cues). The
+outro never plays and `tail` says so. A tail shorter than the intro is
+refused when it is set. At export, a capture that is missing, stale, showing
+a video, or not opaque is refused. Opacity is `motion.is_opaque`: every intro
+and hold frame's alpha through ffmpeg, measured once and kept in
+`capture.json`. A tail fade dissolves in the intro's first frame.
+
+The `endcard` template draws v6's table: Outfit 700 at 190 px, Zilla Slab
+600 at 58 px in amber, Outfit 500 at 40 px dimmed, at 27, 55 and 70 % of the
+height, each line easing in (an in-out cubic, as `clip.py`'s `smooth`) over
+1.7 s on an opaque `#1a1714`. Zilla Slab SemiBold is vendored at
+`fonts/pages/`, outside `fonts.vendored()`, so only a graphic's page sees
+it. The capture records both faces `loaded` from the vendored files.
+
+Two corrections to the note. Its timing table counts from the start of v6's
+0.5 s crossfade, not from the card's first opaque frame, and a proofcut tail
+starts its intro after its fade. So with a 0.5 s fade the lines settle at
+2.2 s, 0.5 s after v6's. The note also had the preview drawing the graphic
+where it draws the card today, but the preview draws no tail at all, so
+nothing there changed. v6's own card, read off its last frames, also carries
+the two `/plugin` install lines in Fira Code under the URL. The brief never
+asked for them and the template has no slot for them.
+
+Checked on a real melt render (`test_server_stdio.py`,
+`test_an_endcard_tail_eases_its_lines_in_on_a_real_render`, 640x360): the
+ground reads `#1a1714` within 8 levels, the tagline band has no pixel over 45
+at 0.1 s and over 200 amber pixels at 1.8 s, and the mark's top edge sits 2
+to 6 rows lower half-way through its rise than at rest (6.7 px of rise at
+that size). A 1080p render beside v6's resting card puts the lines on the
+same rows to within 20 px. Suite 2944 passed.
+

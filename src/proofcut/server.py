@@ -4555,7 +4555,8 @@ def tail(
     it existed (HISTORY.md § The bumper the teaser never had, § The end card).
     Call it with no arguments to read what is in force.
 
-    `asset` must be `card:name`, never a clip_id — `verify` diffs a render's
+    `asset` must be `card:name` or `graphic:name` (an animated graphic, which
+    plays its intro then holds; its page must be opaque), never a clip_id — `verify` diffs a render's
     own transcription against the timeline's words, and silence adds none of
     its own, which is exactly what a card behind it guarantees and a media
     clip would not. `seconds` is the tail's *whole* length, card included, not

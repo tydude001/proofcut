@@ -7352,6 +7352,86 @@ def test_an_overlay_is_drawn_where_and_as_strongly_as_its_keys_say(visible_tmp: 
     assert abs(_frame_rows(output, 60, top) - source_top) <= 4
 
 
+def _rgb(path: Path, frame: int) -> tuple[bytes, int]:
+    """Frame index `frame` of `path` as packed RGB, and its width."""
+    width = int(subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width",
+         "-of", "csv=p=0", str(path)],
+        capture_output=True, check=True, text=True,
+    ).stdout.strip())  # fmt: skip
+    raw = subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-i", str(path),
+         "-vf", f"select=eq(n\\,{frame})", "-frames:v", "1",
+         "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+        capture_output=True, check=True,
+    ).stdout  # fmt: skip
+    return raw, width
+
+
+def _pixels(frame: tuple[bytes, int], rows: range) -> list[tuple[int, int, int]]:
+    raw, width = frame
+    return [tuple(raw[(y * width + x) * 3 : (y * width + x) * 3 + 3]) for y in rows for x in range(width)]
+
+
+def _top_edge(frame: tuple[bytes, int], rows: range, luma: int = 100) -> int | None:
+    """The first row in `rows` holding a pixel brighter than `luma`."""
+    for y in rows:
+        if any(0.299 * r + 0.587 * g + 0.114 * b > luma for r, g, b in _pixels(frame, range(y, y + 1))):
+            return y
+    return None
+
+
+@needs_melt
+@pytest.mark.skipif(browser.chrome_path() is None, reason="no headless browser (PROOFCUT_CHROME)")
+def test_an_endcard_tail_eases_its_lines_in_on_a_real_render(visible_tmp: Path) -> None:
+    """docs/plans/ENDCARD.md against a real melt: the `endcard` template,
+    captured by the browser, played as a 2 s tail after a flat grey film.
+    Every number is read off the rendered frames: the ground is the template's
+    ink, the tagline is not there at 0.1 s and is amber at 1.8 s, and the mark
+    sits a third of its 20 px rise lower half-way through it than at rest (a
+    360-line frame scales 1080's 20 px to 6.7)."""
+    film = visible_tmp / "flat.mp4"
+    subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-y",
+         "-f", "lavfi", "-i", "color=c=0x808080:size=640x360:rate=30:duration=2",
+         "-f", "lavfi", "-i", "sine=frequency=440:duration=2:sample_rate=48000",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(film)],
+        capture_output=True, check=True,
+    )  # fmt: skip
+    project = visible_tmp / "proj"
+    output = visible_tmp / "out.mp4"
+
+    async def body(session: ClientSession) -> Any:
+        client = Client(session)
+        await client.call("init", path=str(project))
+        clip = (await client.call("import_media", path=str(project), source=str(film)))["clip_id"]
+        await client.call("seed_timeline", path=str(project), clip_id=clip, remove_silences=False)
+        await client.call(
+            "graphic_new", path=str(project), name="end", template="endcard",
+            slots={"mark": "proofcut", "tagline": "the local-first AI video editor", "url": "github.com/x/proofcut"},
+        )  # fmt: skip
+        tail = await client.call("tail", path=str(project), asset="graphic:end", seconds=2.0)
+        rendered = await client.call("export", path=str(project), output=str(output), export_format=None)
+        return tail, rendered
+
+    tail, rendered = anyio.run(_with_server, body)
+
+    assert tail["graphic"]["capture"] == "current" and tail["graphic"]["opaque"] is True
+    assert rendered["writer"] == "melt"
+    assert rendered["rendered"]["frames"] == 120
+    assert rendered["tail"]["graphic"]["intro_frames"] == 51
+    at = {s: _rgb(output, 60 + round(s * 30)) for s in (0.1, 0.6, 1.0, 1.8)}
+    corner = _pixels(at[1.8], range(5, 6))[5]
+    assert all(abs(c - want) <= 8 for c, want in zip(corner, (0x1A, 0x17, 0x14), strict=True)), corner
+    tagline = range(round(0.55 * 360), round(0.55 * 360) + 26)
+    amber = [p for p in _pixels(at[1.8], tagline) if p[0] > 150 and p[0] - p[2] > 80]
+    assert len(amber) > 200, "the tagline reads amber once it is in"
+    assert max(max(p) for p in _pixels(at[0.1], tagline)) < 45, "the tagline is not there yet at 0.1 s"
+    rising, rested = _top_edge(at[0.6], range(60, 180)), _top_edge(at[1.0], range(60, 180))
+    assert rising is not None and rested is not None
+    assert 2 <= rising - rested <= 6, (rising, rested)
+
+
 # -- a sound, read back off a real melt render to the sample ----------------
 
 

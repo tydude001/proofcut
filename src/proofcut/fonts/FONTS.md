@@ -11,6 +11,7 @@ in for the other.
 |---|---|---|---|
 | `Outfit[wght].ttf` | Outfit (variable, 100–900) | `captions.CAPTION_FONT` — the caption default every `PRESETS` entry names | OFL-1.1 — `OFL-Outfit.txt` |
 | `static/Outfit-Regular.ttf`, `static/Outfit-Bold.ttf` | Outfit 400 and 700 (static) | the same face, staged into libass's own font directory for a **Windows** burn only (`fonts.libass_fontsdir`) | OFL-1.1 — `OFL-Outfit.txt` |
+| `pages/ZillaSlab-SemiBold.ttf` | Zilla Slab 600 | the `endcard` graphic template's tagline, served to a graphic's page at `/_proofcut/fonts/pages/` and nowhere else | OFL-1.1 — `pages/OFL-ZillaSlab.txt` |
 
 ## Why one file and not the brand set
 
@@ -62,6 +63,22 @@ the same release. SHA-256: Regular
 `3b64ac4f6ab6a8eebddd4b0bc03c811c43602e11e176382ab0ee6be615ab861b`, Bold
 `f620b69582e06d7e1b3bbde74ed8c5876eadabb038390780db2a3414a1490197`. The OFL
 declares no Reserved Font Name, so the family name carries over unchanged.
+
+## The page faces, and why they sit in `pages/`
+
+An animated graphic's page loads fonts only from this directory, served at
+`browser.FONTS_PATH` (TRAPS.md § Animated graphics: the page is served, never
+opened), so a face a built-in template names has to ship here.
+`pages/ZillaSlab-SemiBold.ttf` is the `endcard` template's tagline
+(docs/plans/ENDCARD.md). It sits in `pages/` so `fonts.vendored()` does not
+see it: `install` never puts it where fontconfig looks, and no caption or card
+starts resolving it by accident. The paragraph above still holds for those.
+
+Provenance: byte-identical to `Branding/Fonts/ZillaSlab-SemiBold.ttf` on the
+NAS (md5 `c003d19d75b3e94953705b8dcf976e44`, SHA-256
+`aafcb295b88d520357db1ecf9a1c3167055e87e9ddf5f63e560cbd139ec2805e`), with
+`OFL-zillaslab.txt` from the same folder as its licence. Copyright 2017, The
+Mozilla Foundation; the OFL there declares no Reserved Font Name.
 
 ## Installing it where fontconfig looks
 

@@ -9,8 +9,9 @@ overlays, rather than a staggered still card.
 ## What v6 does
 
 `~/proofcut-work/spikes/launch-v4/clip.py`'s `end_card`, read from source
-(sizes at 1080 lines; `smooth` is eased; times from the card's first opaque
-frame, after a 0.5 s crossfade off the film):
+(sizes at 1080 lines; `smooth` is an in-out cubic; times from the start of
+the card's 0.5 s crossfade off the film, not from its first opaque frame, as
+this note first said):
 
 | line | type | colour | motion |
 |---|---|---|---|
@@ -47,7 +48,9 @@ dissolves in over the film's last `fade` seconds.
 - **Silent**, as a card is, so `verify` has nothing new to hear.
 - **The preview** shows the graphic's frames in the tail where it shows the
   card today, through the same asset route as an overlay graphic, never a
-  second way of drawing one (TRAPS.md § The web UI).
+  second way of drawing one (TRAPS.md § The web UI). *Built:* the preview
+  draws no tail at all today, card or graphic (the web UI lists its seconds
+  and nothing more), so there was nothing to change.
 
 **2. A graphic template, `endcard`**, in `graphic_templates/`, drawing
 v6's table above: three slots (`mark`, `tagline`, `url`), four colours

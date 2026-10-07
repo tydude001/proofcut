@@ -1,0 +1,13 @@
+{
+  "about": "An end card on an opaque ground: a mark, a tagline and a web address, each easing in after the one before. Made to be a tail (tail asset=graphic:NAME), which plays the intro and holds.",
+  "intro": 1.7,
+  "slots": {
+    "mark": {"required": true, "about": "the name, large"},
+    "tagline": {"default": "", "about": "the line under it, in the slab face"},
+    "url": {"default": "", "about": "the address at the bottom"},
+    "background": {"kind": "colour", "default": "#1a1714", "about": "the ground; must be opaque for a tail"},
+    "mark_colour": {"kind": "colour", "default": "#faf5ec", "about": "the mark"},
+    "tagline_colour": {"kind": "colour", "default": "#e8a13c", "about": "the tagline"},
+    "url_colour": {"kind": "colour", "default": "#a89f92", "about": "the address"}
+  }
+}

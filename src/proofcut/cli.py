@@ -1425,7 +1425,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "tail", help="read or change the finishing pass this project plays after its last frame"
     )
     p_tail.add_argument(
-        "--asset", metavar="card:NAME", help="the card to hold — must be card:name, never a clip"
+        "--asset", metavar="card:NAME", help="the card to hold, or graphic:NAME to play an animated graphic's intro then hold it — never a clip"
     )
     p_tail.add_argument(
         "--seconds", type=float, help="the tail's whole length, card included"
