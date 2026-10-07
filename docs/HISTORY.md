@@ -19457,3 +19457,17 @@ to 6 rows lower half-way through its rise than at rest (6.7 px of rise at
 that size). A 1080p render beside v6's resting card puts the lines on the
 same rows to within 20 px. Suite 2944 passed.
 
+
+## B7, run six — 2026-10-07
+
+Run five's material and harness, with the brief's end-card line now "each
+line easing in after the one before" (`trial/runs/20261007-152107`): 172
+turns, $4.33, 13 min, a 48.51 s clip. **The agent found the graphic tail
+unnamed**: `graphic_new` from `endcard` with every slot on the launch
+values, then `tail asset=graphic:endcard seconds=3.5 fade=0.5`. None of its
+five tool errors touched the card. Loudness-matched at −2.7 dB to v6's
+−21.7.
+
+Read beside v6's last seconds: v6's lines are mostly in by the end of its
+crossfade, and run six's start after its fade, so they settle about 0.5 to 1
+s later. v6 also carries the two `/plugin` lines. Waiting on Tyler's watch.
