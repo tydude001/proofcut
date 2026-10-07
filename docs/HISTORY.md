@@ -19471,3 +19471,9 @@ five tool errors touched the card. Loudness-matched at −2.7 dB to v6's
 Read beside v6's last seconds: v6's lines are mostly in by the end of its
 crossfade, and run six's start after its fade, so they settle about 0.5 to 1
 s later. v6 also carries the two `/plugin` lines. Waiting on Tyler's watch.
+
+**Watched the same day: Tyler approves run six, the end card and the whole
+clip.** An agent's unattended re-cut of the launch clip now passes beside
+the approved v6 by his eye, which is what docs/plans/RECUT.md set out to
+make true. The half-second-later settle and the missing `/plugin` lines did
+not stop it.
