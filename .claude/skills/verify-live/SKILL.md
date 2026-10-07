@@ -23,13 +23,14 @@ in more than one session. Node 24's global `WebSocket`, no dependencies.
 ss -ltnp | grep :8793 && echo "8793 taken, pick another port"
 uv run proofcut -C /path/to/proj web --port 8793
 
-# 2. a browser to drive, left running between calls
-~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell \
-  --remote-debugging-port=9444 --headless --disable-gpu --no-sandbox \
-  --window-size=1400,900 about:blank &
+# 2. a browser to drive, left running between calls, on a port Chrome picks
+#    itself; prints CDP_PORT=<n> and the command that stops it
+bash .claude/skills/verify-live/launch.sh            # optional WIDTH,HEIGHT, default 1400,900
 
-# 3. drive it — each call attaches to the same page, so state persists
-node .claude/skills/verify-live/cdp.mjs goto http://127.0.0.1:8793/
+# 3. drive it — each call attaches to the same page, so state persists.
+#    Prefix EVERY call with the printed CDP_PORT=<n> (shell state does not
+#    carry between calls; shown once here, implied below)
+CDP_PORT=<n> node .claude/skills/verify-live/cdp.mjs goto http://127.0.0.1:8793/
 node .claude/skills/verify-live/cdp.mjs eval '(() => document.querySelector("#truth-strip").textContent)()'
 node .claude/skills/verify-live/cdp.mjs evalfile probe.js                # same as eval, expression read from a file
 node .claude/skills/verify-live/cdp.mjs click "#finish-render" 120       # dwell in ms; 0 and ~120 both
@@ -42,7 +43,10 @@ node .claude/skills/verify-live/cdp.mjs console 3000                     # conso
 node .claude/skills/verify-live/cdp.mjs shot out.png
 ```
 
-`CDP_PORT` overrides 9444.
+`CDP_PORT` is required and has no default. A fixed port is how a browser another
+session left running gets driven instead of yours, silently: the new one binds
+only `[::1]` and every call reaches the old page (wiki tooling.md § Headless
+browser). `scripts/capture_screenshots.py` and `record_run.py` pick their own.
 
 ## Capturing the README screenshots
 

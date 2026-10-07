@@ -2,8 +2,8 @@
 //
 //   node scripts/screencast.mjs <dir> [maxWidth] [maxHeight] [quality]
 //
-// Attaches to the same headless Chrome `cdp.mjs` talks to (CDP_PORT, default
-// 9444 — Chrome takes any number of clients on one target), starts
+// Attaches to the same headless Chrome `cdp.mjs` talks to (CDP_PORT, required —
+// Chrome takes any number of clients on one target), starts
 // `Page.startScreencast`, and writes every frame Chrome sends to
 // `<dir>/frames/NNNNNN.jpg` with its timestamp appended to `<dir>/index.jsonl`.
 // Runs until SIGTERM/SIGINT, then stops the screencast and exits 0.
@@ -19,7 +19,8 @@
 import { mkdir, writeFile, appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const PORT = process.env.CDP_PORT || 9444;
+const PORT = process.env.CDP_PORT;
+if (!PORT) { console.error('CDP_PORT unset — see .claude/skills/verify-live/launch.sh'); process.exit(2); }
 const [dir, maxWidth = '1920', maxHeight = '1080', quality = '85'] = process.argv.slice(2);
 if (!dir) { console.error('usage: screencast.mjs <dir> [maxWidth] [maxHeight] [quality]'); process.exit(2); }
 

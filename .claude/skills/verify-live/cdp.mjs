@@ -6,7 +6,10 @@
 // elementFromPoint at the point they press, because el.click() skips hit
 // testing and a clamped popover reads green under it (wiki tooling.md
 // § Headless browser).
-const PORT = process.env.CDP_PORT || 9444;
+// No default port: a fixed one drove another session's leftover browser
+// (launch.sh). Start the browser with launch.sh and pass what it prints.
+const PORT = process.env.CDP_PORT;
+if (!PORT) { console.error('CDP_PORT unset — start a browser with `bash .claude/skills/verify-live/launch.sh` and prefix this call with the CDP_PORT=… it prints'); process.exit(2); }
 
 async function target() {
   const res = await fetch(`http://127.0.0.1:${PORT}/json/list`);
