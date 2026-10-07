@@ -1776,7 +1776,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_sound_add.add_argument("--every", help="play at every event of this name")
     p_sound_add.add_argument("--after", type=int, default=-1, help="only match a phrase forward of this word index")
     p_sound_add.add_argument("--occurrence", type=int, help="pick the Nth phrase match")
-    p_sound_add.add_argument("--gain", type=float, default=0.0, dest="gain_db", help="level in dB (0 is the file's own)")
+    p_sound_add.add_argument("--gain", type=float, dest="gain_db", help="level in dB (0, the default, is the file's own)")
     p_sound_add.add_argument("--jitter", type=float, default=0.0, dest="jitter_db", help="vary each hit by up to this many dB")
     p_sound_add.add_argument(
         "--min-gap", type=float,
@@ -1786,6 +1786,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p_sound_add.add_argument("--src-out", type=float, help="seconds into the asset where the sound stops")
     p_sound_add.add_argument(
         "--ducks", action="store_true", help="the music bed's duck hears this sound, as it hears the voice"
+    )
+    p_sound_add.add_argument(
+        "--level", choices=("speech",), help="measure what plays once and level its speech to -18 dBFS RMS"
     )
     p_sound_add.add_argument("--plan", action="store_true", help="resolve and report without writing")
     sound_sub.add_parser("ls", help="list sound records with how many hits each places")
@@ -3356,6 +3359,7 @@ def _cmd_sound(args: argparse.Namespace) -> int:
                 src_in=args.src_in,
                 src_out=args.src_out,
                 ducks=args.ducks,
+                level=args.level,
                 plan=args.plan,
             )
         )

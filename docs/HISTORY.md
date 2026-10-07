@@ -19380,3 +19380,16 @@ four (`clip-matched.mp4`) against v6:
 - **The end card's tagline** is white because `bumper.svg` fills the
   footnote with `{{paper}}` and has no slot for another colour; v6's is
   amber.
+
+**Built the same day: `sound_add(level="speech")`** (`sound add --level
+speech`), `inset_add`'s measurement on a sound. The slice that plays is
+measured once, and the gain to −18 dBFS RMS is recorded beside what was
+measured. It levels one asset only, and refuses alongside `gain_db`. Two tests, both red on
+the old code. The suite: 2929 passed. **The tagline needed no code:** a line
+slot already takes `[em]…[/em]`, which draws in the pack's amber at weight
+700. The brief never said amber, so run five's brief does. It also says
+"The keystrokes click" in place of "Every keystroke clicks", and that the
+false start is as loud as the film's voice. Run four's brief is kept beside
+it as `brief.run4.txt`. v6's card also has no rule and sets the URL in
+muted Outfit, which no template draws. That waits on Tyler's watch of run
+five.

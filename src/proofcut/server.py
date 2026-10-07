@@ -2077,7 +2077,7 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
             "Play at every event of clip_id with this name (e.g. every keystroke). Events a cut "
             "removed are skipped and counted."
         ),
-        "gain_db": "The level in dB; 0 plays the file as it is. The generated set peaks at -3 dBFS.",
+        "gain_db": "The level in dB; 0 (the default) plays the file as it is. The generated set peaks at -3 dBFS.",
         "jitter_db": "Vary each hit's level by up to this many dB either way. Default 0.",
         "min_gap": (
             "With every: drop a hit closer than this many seconds to the last one kept. Default 0.045."
@@ -2090,6 +2090,10 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
         "ducks": (
             "The music bed's duck hears this sound as it hears the voice: set it for a narrator take or "
             "a line of dialogue placed as a sound, never for clicks. Only matters when the bed has a duck."
+        ),
+        "level": (
+            "'speech' measures what plays (the src_in/src_out slice), once, and records the gain_db that "
+            "brings its speech to -18 dBFS RMS, the level inset_add's film gets. One asset; not with gain_db."
         ),
     },
     "sound_rm": {
@@ -5891,12 +5895,13 @@ def sound_add(
     every: str | None = None,
     after: int = -1,
     occurrence: int | None = None,
-    gain_db: float = 0.0,
+    gain_db: float | None = None,
     jitter_db: float = 0.0,
     min_gap: float | None = None,
     src_in: float | None = None,
     src_out: float | None = None,
     ducks: bool = False,
+    level: str | None = None,
     plan: bool = False,
 ) -> dict[str, Any]:
     """Play a one-shot sound at a word, an event, or every event of one name.
@@ -5928,6 +5933,7 @@ def sound_add(
         src_in=src_in,
         src_out=src_out,
         ducks=ducks,
+        level=level,
         plan=plan,
     )
 

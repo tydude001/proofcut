@@ -16943,6 +16943,11 @@ SOUNDS_KEY = "sounds"
 #: `clip.py`'s thinning of the launch run's keystrokes.
 SOUND_MIN_GAP = 0.045
 
+#: The speech level `sound_add(level="speech")` brings a sound's slice to: the
+#: inset's, since the launch clip levels its false start and its film alike
+#: (`clip.py`'s `speech_level`).
+SOUND_SPEECH_DBFS = INSET_SPEECH_DBFS
+
 
 def _stored_sounds(project: Project) -> list[dict[str, Any]]:
     """Every stored sound record, validated — `_stored_overlays`' discipline."""
@@ -16971,6 +16976,8 @@ def _stored_sounds(project: Project) -> list[dict[str, Any]]:
                     record[key] = kind(item[key])
             if item.get("ducks"):
                 record["ducks"] = True
+            if isinstance(item.get("level"), dict):
+                record["level"] = dict(item["level"])
         except (KeyError, TypeError, ValueError) as exc:
             raise ProjectError(
                 f"{project.manifest_path} has a sound that is not "
@@ -17203,15 +17210,23 @@ def sound_add(
     occurrence: int | None = None,
     event: str | None = None,
     every: str | None = None,
-    gain_db: float = 0.0,
+    gain_db: float | None = None,
     jitter_db: float = 0.0,
     min_gap: float | None = None,
     src_in: float | None = None,
     src_out: float | None = None,
     ducks: bool = False,
+    level: str | None = None,
     plan: bool = False,
 ) -> dict[str, Any]:
     """Place a one-shot sound at a word, an event, or every event of one name.
+
+    `level="speech"` levels a voice placed as a sound, as `inset_add`'s does
+    a film: the slice that plays is measured once, here, as a speech level,
+    and the gain that brings it to `SOUND_SPEECH_DBFS` (−18) is recorded as
+    `gain_db` beside what was measured. One asset only, since one gain
+    serves the record. Run four's false start played 8 dB under v6's for
+    want of it (HISTORY.md § Four watches, answered).
 
     `src_in`/`src_out` trim it: seconds into each asset where it starts and
     stops, so one line of a long take plays and the take runs on no further
@@ -17243,10 +17258,16 @@ def sound_add(
         raise ProjectError("min_gap thins an every run; a single hit has nothing to thin")
     if min_gap is not None and min_gap < 0:
         raise ProjectError(f"min_gap is a length, not {min_gap}")
+    if level is not None and level != "speech":
+        raise ProjectError(f"level is 'speech' or unset, not {level!r}")
+    if level is not None and gain_db is not None:
+        raise ProjectError("pass gain_db or level='speech', not both — the level is what sets the gain")
+    if level is not None and len(names) != 1:
+        raise ProjectError("level='speech' levels one asset; a record's one gain cannot level several")
     record: dict[str, Any] = {
         "assets": [str(name) for name in names],
         "clip_id": clip_id,
-        "gain_db": float(gain_db),
+        "gain_db": float(gain_db or 0.0),
         "jitter_db": float(jitter_db),
     }
     if src_in is not None:
@@ -17274,6 +17295,16 @@ def sound_add(
             occurrence=occurrence,
             edge="first",
         )
+    if level == "speech":
+        # Over exactly what plays: the slice, or the whole file untrimmed.
+        clip = _sound_asset(project, names[0], record)
+        start, end = _sound_slice(record)
+        try:
+            measured = energy.speech_rms_db(media.media_path(project, clip), start=start, end=end)
+        except energy.EnergyError as exc:
+            raise ProjectError(str(exc)) from None
+        record["gain_db"] = round(SOUND_SPEECH_DBFS - measured, 2)
+        record["level"] = {"kind": "speech", "measured_dbfs": round(measured, 2), "target_dbfs": SOUND_SPEECH_DBFS}
     stored = _stored_sounds(project)
     updated = [*stored, record]
     plans = _sound_plan(project, _load_edit(project), stored=updated)

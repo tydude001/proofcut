@@ -16,6 +16,7 @@ What melt plays is read back to the sample by `test_server_stdio.py`
 
 from __future__ import annotations
 
+import math
 import wave
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -362,3 +363,52 @@ def test_a_trim_or_the_duck_flag_re_rolls_no_dice(project: Project) -> None:
     after = ops._sound_plan(project, ops._load_edit(project))[0]["hits"]
 
     assert [(h["asset"], h["gain_db"]) for h in after] == [(h["asset"], h["gain_db"]) for h in before]
+
+
+def _tone(path: Path, parts: list[tuple[float, float]], rate: int = 48000) -> Path:
+    """A mono 440 Hz tone, `(seconds, amplitude)` per part."""
+    frames = bytearray()
+    n = 0
+    for seconds, amplitude in parts:
+        for _ in range(round(seconds * rate)):
+            value = round(amplitude * 32767 * math.sin(2 * math.pi * 440 * n / rate))
+            frames += value.to_bytes(2, "little", signed=True)
+            n += 1
+    with wave.open(str(path), "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(rate)
+        out.writeframes(bytes(frames))
+    return path
+
+
+def test_level_speech_measures_the_slice_that_plays_and_records_the_gain(project: Project, tmp_path: Path) -> None:
+    """Run four's false start played at the take's own −26 dBFS, 8 dB under
+    v6's −18 (HISTORY.md § Four watches, answered). A sine of amplitude 1/8
+    is −21.07 dBFS RMS, so its gain to −18 is +3.07 — measured on the slice
+    alone, since the loud second before it never plays."""
+    take = _tone(tmp_path / "take.wav", [(1.0, 0.5), (1.0, 0.125)])
+    ops.import_media(project.root, take, sheet=False)
+
+    result = ops.sound_add(project.root, "take", "vo", event="sent", src_in=1.0, level="speech", ducks=True)
+
+    stored = project.read_manifest()["sounds"][0]
+    assert stored["level"]["measured_dbfs"] == pytest.approx(-21.07, abs=0.2)
+    assert stored["level"]["target_dbfs"] == ops.SOUND_SPEECH_DBFS == -18.0
+    assert stored["gain_db"] == pytest.approx(3.07, abs=0.2)
+    assert result["sound"]["hits"][0]["gain_db"] == stored["gain_db"]
+    # Kept through a later add's rewrite, and what the writer plays.
+    ops.sound_add(project.root, "tock", "vo", event="sent")
+    assert project.read_manifest()["sounds"][0]["level"] == stored["level"]
+    plans = ops._sound_plan(project, ops._load_edit(project))
+    assert ops._sound_hits(project, plans, 30.0, 0)[0].gain_db == stored["gain_db"]
+
+
+def test_level_speech_with_a_gain_another_level_or_several_assets_is_refused(project: Project) -> None:
+    with pytest.raises(ProjectError, match="gain_db or level='speech', not both"):
+        ops.sound_add(project.root, "vo", "vo", event="sent", level="speech", gain_db=-3.0)
+    with pytest.raises(ProjectError, match="level is 'speech'"):
+        ops.sound_add(project.root, "vo", "vo", event="sent", level="loud")
+    with pytest.raises(ProjectError, match="levels one asset"):
+        ops.sound_add(project.root, ["click", "tock"], "vo", every="key", level="speech")
+    assert "sounds" not in project.read_manifest() or not project.read_manifest()["sounds"]
