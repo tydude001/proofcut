@@ -19413,3 +19413,10 @@ bumper's rule and sets the URL in Zilla, where v6 has no rule and a muted
 Outfit URL. The scorer's two failed checks (`picture_hung`,
 `render_exists`) are the demo-cut scorer's, as on every B7 run. Waiting on
 Tyler's watch beside v6.
+
+**Watched the same day: the sound passes, the end card does not.** Tyler's
+note: v6's card "is more dynamic and pretty, it has a little motion to it."
+v6 (`clip.py`'s `end_card`) eases each line in on its own. The mark rises
+20 px as it fades, the amber tagline rises 14 px 0.2 s after it, and the
+URL fades in 0.4 s after that. proofcut's tail is one still card under a
+single 0.6 s fade, and no option staggers it.
