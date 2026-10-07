@@ -135,6 +135,10 @@ feature (stdin turns, interrupt, pictures, cost, a `/` in the model id picks it,
 supported means scored), is [docs/plans/OPENROUTER.md](docs/plans/OPENROUTER.md),
 written and built 2026-09-29 (HISTORY.md § The OpenRouter director, built);
 no OpenRouter model has been scored by a trial yet.
+How the launch clip's end card gets v6's motion — a tail that plays an
+animated graphic, an `endcard` graphic template, and Zilla Slab vendored for
+the page — is [docs/plans/ENDCARD.md](docs/plans/ENDCARD.md), written
+2026-10-07 off B7 run five and unbuilt.
 **Competitor research and anything copied from another product follows
 docs/plans/DAYDREAM.md § Copyright, the DMCA, and this work**: a research
 download stays private and is deleted once its notes are checked, never commit
