@@ -445,3 +445,17 @@ def test_a_span_past_the_retimed_render_is_refused_by_name(project: Project) -> 
     length = warp.frames / warp.rate
     with pytest.raises(tl.TimelineError, match=rf"runs past the render's {length:.3f}s — with a retime"):
         ops.cut_by_time(project.root, spans=[[length + 1.0, length + 2.0]], plan=True)
+
+
+def test_a_span_ending_within_half_a_frame_past_the_render_ends_at_the_render(project: Project) -> None:
+    """B7's 2026-09-20 agent cut to the end with the length the refusal had
+    printed (48.417 for 48.41666…) and was refused three times."""
+    warp = _stretched(project)
+    length = warp.frames / warp.rate
+    start = length - 1.0
+    exact = ops.cut_by_time(project.root, spans=[[start, length]], plan=True)
+    for end in (round(length, 3), length + 0.49 / warp.rate):
+        assert ops.cut_by_time(project.root, spans=[[start, end]], plan=True)["duration_after"] == exact["duration_after"]
+    with pytest.raises(tl.TimelineError, match="runs past the render"):
+        ops.cut_by_time(project.root, spans=[[start, length + 0.51 / warp.rate]], plan=True)
+

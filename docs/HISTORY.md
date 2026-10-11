@@ -19515,3 +19515,16 @@ segment while FilmCraft rounds the whole cut once. Over a 24 fps video clip
 the imported edit is stored on the frame grid and proofcut's own render and
 `frames` agree at 271. Nothing was changed for it.
 
+
+## A cut to the end of a retimed render — 2026-10-11
+
+Found by tallying every recorded agent trial's tool errors (COMPETITORS.md
+§ The sweep after FilmCraft). In B7's 2026-09-20 run the agent cut to the
+end of a retimed 48.41666 s render three times, with ends of 48.417, 48.4167
+and 48.4169, and `cut_by_time` refused each one as running past "the
+render's 48.417s". The refusal printed the length to the millisecond, and
+the number it printed was itself refused. An end within half a frame past
+the render's last frame is now the end. Past that, the refusal stands.
+`test_a_span_ending_within_half_a_frame_past_the_render_ends_at_the_render`
+fails without the change.
+

@@ -7164,6 +7164,12 @@ def cut_by_time(
         # refusal read "interval 308.500-308.500 is empty" — which is how an
         # agent passing Edit seconds learned nothing (RECUT.md step 9).
         length = warp.frames / warp.rate
+        # An end inside the half frame past the last is the end. The refusal
+        # below prints the length to the millisecond, and B7's 2026-09-20
+        # agent copied it back three times (48.417, 48.4167, 48.4169 against
+        # 48.41666…), each refused for running past the render.
+        slack = 0.5 / warp.rate
+        requests = [(start, length if length < end <= length + slack else end) for start, end in requests]
         past = [(start, end) for start, end in requests if end > length + 1e-6]
         if past:
             raise tl.TimelineError(

@@ -2080,6 +2080,23 @@ its frames against the timeline.
 | [MartinDelophy/ai-video-editor](https://github.com/MartinDelophy/ai-video-editor) · MIT · TS · 911★ | `9514d65` (2026-10-07) | A browser editor with 21 WebMCP tools and a local stdio MCP. Edits preview then apply against a `stateToken`. Its transcript tool reads existing captions and "does not run speech recognition" |
 | [cueframe-ai/cueframe-mcp](https://github.com/cueframe-ai/cueframe-mcp) · Apache-2.0 · 0★ | `5b72859` (2026-10-09) | A client of a hosted service; the renderer is not in the repo |
 
+**Both "worth taking" lines were checked the same day and not built:
+neither failure has happened here.** Every recorded agent trial (25 runs
+under `~/proofcut-work`, 2,043 tool calls, 102 errors) was tallied by tool
+and message. No error came from a word index naming the wrong words, from a
+stale view, or from an edit reaching past what the agent meant. All four
+`cut_by_transcript` errors were "no timeline yet", called before `seed`.
+The cuts that came out wrong (LOCAL.md's hidden retake) were judgments the
+agent made with the right words in front of it, which neither a scope guard
+nor a text round trip touches. `resolve_phrase` is already the cheap form
+of the text route, and the 2026-09-16 runs fetched it and never called it.
+What would reopen either: a trial whose agent cuts the wrong words because
+it miscounted indices, or one edit undoing another's.
+
+The tally found one real papercut instead, fixed the same day (HISTORY.md
+§ A cut to the end of a retimed render). See also § palmier-pro, whose
+stale-index refusal was declined for the same reason.
+
 Heads of existing entries on 2026-10-11, headlines only: OpenChatCut v0.2.16
 (10-07, 2,272★), palmier-pro v0.11.0 (10-05), video-use's README now links a
 waitlist at video-use.com (28,605★), FableCut v1.13.0 (10-10, releasing about
