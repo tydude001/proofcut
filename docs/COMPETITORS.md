@@ -2101,11 +2101,30 @@ Heads of existing entries on 2026-10-11, headlines only: OpenChatCut v0.2.16
 (10-07, 2,272★), palmier-pro v0.11.0 (10-05), video-use's README now links a
 waitlist at video-use.com (28,605★), FableCut v1.13.0 (10-10, releasing about
 daily, 719★), kinocut v1.16.1 (10-06, 203 MCP tools), FilmCraft head
-`4e2d0bc` (9,501★), OpenCut unchanged since `e668010`. Two entries need their
-paths checked: the reader did not re-find Diffusion Studio's 3,129-star repo,
-and found an `iamredmh/rushes` created 10-02 that may not be § Rushes.
+`4e2d0bc` (9,501★), OpenCut unchanged since `e668010`. Diffusion Studio is
+still `diffusionstudio/editor` (3,267★, head `90ba4d0`, pushed 10-11); the
+first reader had failed to re-find it. `iamredmh/rushes` (created 10-02,
+0★) is a different project from § Rushes (`nanzhi84/Rushes`, unchanged
+since `08b05f5`): a review desk that pins notes to a frame for an agent to
+fix, not read.
 
-Seen and not read: OrellBuehler/kerf (a Rust and Tauri editor with an MCP
+A second reader the same day closed the gaps below: the official registry
+over twelve terms, paginated (427 servers), one Glama web search, and three
+more reads. None moves a launch claim, and none adds an idea to take.
+
+| Repo | Read | What it is |
+|---|---|---|
+| [0xpratzyy/cutroom](https://github.com/0xpratzyy/cutroom) · MIT · TS · 1★ | `9666661` (2026-10-04, created 10-02) | **The nearest addressing model found yet.** A headless stdio MCP over its own `cutroom.json`: a word-level transcript with stable indices, cut words shown as `~i:word~` (`src/mcp/server.ts:229-230`), `remove_words`/`restore_words`/`remove_text` by index or text and occurrence (`src/core/shared/ops.ts:29-32`, `:103-125`), `find_retakes`, undo and redo, OTIO export only (`src/core/otio.ts:1-25`). No echo of neighbouring words. Its check is a low-res `preview` contact sheet for the model to look at; `export` returns the path unprobed (`server.ts:470-480`) |
+| [OrellBuehler/kerf](https://github.com/OrellBuehler/kerf) · PolyForm Noncommercial · Rust/Tauri · 8★ | `3646b85` (2026-10-11) | "The app *is* the MCP server" (`crates/kerf-app/src/mcp.rs:1`), HTTP inside the GUI. Cuts by source seconds, Whisper for source captions only, SQLite revision history with undo and diff (`crates/kerf-core/src/project.rs:1733-1745`), loudness of the mix before export (`mcp.rs:3560-3590`), per-platform checks (`crates/kerf-core/src/platform.rs:219`). `export` returns only the path. No OTIO |
+| [cartesiancs/cartcut](https://github.com/cartesiancs/cartcut) · MIT · Electron · 808★ | `41bdccf` (2026-10-11), the MCP layer only | Token-guarded loopback MCP into the running editor (`electron/mcp/tools/cut.ts:44`). Word-level transcripts with confidence (`electron/mcp/tools/read.ts:354-373`), but cuts by millisecond ranges, batched as one undo step. No OTIO; no render check found in the MCP tools |
+
+From the registry, not read: valmera (`io.valmera/video-editor`, cut,
+caption, reframe on real footage), followthepattern/video-editor,
+JXUE0/opencut-controller (Playwright over OpenCut), and hosted editors
+(frapea, VidTL, bitterclip, clipwave). musyta-labs/OrcCut is § Glama's
+mcpCut renamed.
+
+Seen and not read: OrellBuehler/kerf (read above) (a Rust and Tauri editor with an MCP
 server, the likeliest real neighbour), dongnguyenvie/bashcut-agent-kit,
 rakesh0x/OpenCardboard, openreelio/openreelio, kurbaitaev/ghost-editor,
 Kdenlive MCP wrappers, invideo's hosted MCP. Searched: `gh search repos` over
@@ -2113,7 +2132,8 @@ about two dozen phrases with `--created ">2026-09-15"`, the same phrases
 filtered on a push after 2026-09-20, `--topic mcp --topic video-editing`,
 the official MCP registry for `video`, and two web searches. **Not run**: the
 registry for any term but `video` (the loop timed out), Glama's search, and a
-stargazer walk.
+stargazer walk. The second reader ran the registry terms; Glama's own
+listing and the stargazer walk are still not run.
 
 ### Every entry from source (2026-09-28)
 
