@@ -249,9 +249,10 @@ Run 2026-10-11 on the demo (DEMO.md steps 1–3, the retake cut, 4 segments,
   Set to 24 fps it keeps the same edit points, unsnapped.
 - **`verify` passes FilmCraft's renders**: 34 of 34 words at 0.971, the same
   as proofcut's own render of the cut. `frames` agrees at 24 fps (289 = 289).
-  At 1000 fps it agrees only with `--fps 1000`. Without that flag it counts
-  against 24 and reports a delta of 11,717 on a render whose duration matched
-  to 4 ms.
+  At 1000 fps it agreed only with `--fps 1000`. Without that flag it counted
+  against 24 and reported a delta of 11,717 on a render whose duration matched
+  to 4 ms; it now counts a render at its own constant rate (HISTORY.md
+  § `frames` counts a render at its own rate).
 - **FilmCraft's own OTIO export is exact, but proofcut cannot read it.** It
   writes fractional frames at rate 24, so the edit comes back to the
   millisecond. But it puts an empty `Video 1` ahead of `A1`, and

@@ -19528,3 +19528,17 @@ the render's last frame is now the end. Past that, the refusal stands.
 `test_a_span_ending_within_half_a_frame_past_the_render_ends_at_the_render`
 fails without the change.
 
+
+## `frames` counts a render at its own rate — 2026-10-11
+
+COMPETITORS.md § FilmCraft, run against `verify`: on a project whose export
+rate was 24, FilmCraft's 1000 fps render of the exact cut read 11,717 frames
+off unless `--fps 1000` was passed. With no `fps`, `check_frames` now counts
+a render against the constant rate its video stream declares (`r_frame_rate`
+equal to `avg_frame_rate`, read by `media.count_frames`), says so in a note,
+and reports `fps_source` (`render`, `export` or `argument`). A variable-rate
+render keeps the export rate, with a note. An explicit `fps` still wins, and
+an NLE project target is unchanged. The FilmCraft render now agrees, 12,006
+= 12,006; the 24 fps renders and proofcut's own carry no note.
+`test_ops_check_frames.py`'s five tests fail without the change.
+

@@ -6079,7 +6079,9 @@ def check_frames(path: ProjectPath = None,
     render: it has no frames, so nothing was checked.
 
     `fps` must match the rate the export ran at or the two sides are counting on
-    different grids; it defaults to the rate `export` would have picked.
+    different grids. It defaults to a render's own constant rate, else the rate
+    `export` would have picked; `fps_source` says which, and a note says when a
+    render's rate was used.
     """
     return ops.check_frames(path, target, fps=fps)
 

@@ -20336,7 +20336,13 @@ def check_frames(
     * anything else is treated as a render and counted with ffprobe.
 
     `fps` must be the rate the export used, or the two sides are counting
-    against different grids; it defaults to the same rate `export` would pick.
+    against different grids. It defaults to the same rate `export` would pick,
+    except against a render that declares a constant rate of its own: that
+    rate is the one its frames were laid on, so it is counted against that
+    and a note says so (`fps_source`). Without that, a VO project defaulted to
+    24 fps and read FilmCraft's 1000 fps render as 11,717 frames off
+    (COMPETITORS.md § FilmCraft, run against `verify`). A variable-rate render
+    has no such rate and keeps the default, with a note.
 
     An audio-only render has no frames, and that is the ordinary case for a VO
     project rather than a failure: `agrees` comes back null with a note, and the
@@ -20351,6 +20357,7 @@ def check_frames(
     expected = _frame_total_with_tail(project, edit, rate)
     result: dict[str, Any] = {
         "fps": rate,
+        "fps_source": "argument" if fps else "export",
         "segments": len(edit.segments),
         "timeline_duration": edit.duration,
         "expected_frames": expected,
@@ -20374,6 +20381,27 @@ def check_frames(
         counts = media.count_frames(target_path)
         counted = counts["frames"]
         result["target_duration"] = counts["duration"]
+        own = counts.get("fps")
+        if not fps and counts["has_video"] and own is None:
+            notes.append(
+                f"this render's frame rate is variable, so it is counted against the "
+                f"{rate:g} fps proofcut's export would use. Pass `fps` if it was made at another."
+            )
+        elif not fps and own is not None and abs(own - rate) > 1e-6:
+            notes.append(
+                f"this render runs at {own:g} fps, not the {rate:g} fps proofcut's export "
+                f"would use, so it is counted against {own:g}. Pass `fps` to count against another."
+            )
+            rate = own
+            expected = _frame_total_with_tail(project, edit, rate)
+            result.update(
+                {
+                    "fps": rate,
+                    "fps_source": "render",
+                    "expected_frames": expected,
+                    "expected_duration": expected / rate,
+                }
+            )
         if not counts["has_video"]:
             result.update({"target_frames": None, "delta": None, "agrees": None})
             result["notes"] = [

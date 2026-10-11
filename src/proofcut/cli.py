@@ -2229,7 +2229,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_frames.add_argument(
         "--fps",
         type=float,
-        help="the rate the export used (default: the picture's, else 30)",
+        help="the rate the export used (default: a render's own constant rate, "
+        "else the picture's, else 30)",
     )
 
     p_film_check = sub.add_parser(

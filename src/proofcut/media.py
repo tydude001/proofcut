@@ -22,6 +22,7 @@ import subprocess
 import tempfile
 import wave
 from dataclasses import asdict, dataclass
+from fractions import Fraction
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -377,6 +378,10 @@ def count_frames(path: Path | str) -> dict[str, Any]:
 
     `frames` is None when there is no video stream at all. An audio-only render
     is the ordinary case for a VO project, not an error — see `ops.check_frames`.
+
+    `fps` is the stream's declared rate when it is constant (`r_frame_rate`
+    equal to `avg_frame_rate`), else None, since a variable-rate stream has
+    no one grid a frame count could be read against.
     """
     media = Path(path).expanduser()
     if not media.exists():
@@ -388,7 +393,7 @@ def count_frames(path: Path | str) -> dict[str, Any]:
         "v:0",
         "-count_packets",
         "-show_entries",
-        "stream=nb_read_packets,nb_frames:format=duration",
+        "stream=nb_read_packets,nb_frames,r_frame_rate,avg_frame_rate:format=duration",
         "-show_format",
     )
     streams = payload.get("streams", [])
@@ -399,12 +404,23 @@ def count_frames(path: Path | str) -> dict[str, Any]:
 
     if not streams:
         return {
+            "fps": None,
             "frames": None,
             "container_frames": None,
             "duration": float(duration) if duration is not None else None,
             "has_video": False,
         }
+    def _rate(value: Any) -> Fraction | None:
+        try:
+            rate = Fraction(str(value))
+        except (ValueError, ZeroDivisionError):
+            return None
+        return rate if rate > 0 else None
+
+    declared = _rate(streams[0].get("r_frame_rate"))
+    average = _rate(streams[0].get("avg_frame_rate"))
     return {
+        "fps": float(declared) if declared is not None and declared == average else None,
         "frames": _count(streams[0].get("nb_read_packets")),
         "container_frames": _count(streams[0].get("nb_frames")),
         "duration": float(duration) if duration is not None else None,
