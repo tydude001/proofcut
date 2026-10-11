@@ -39,8 +39,8 @@ first two rows.
 |---|---|---|
 | `verify` transcribes the whole render and diffs its words against the cut | video-editor-agent; resolve-mcp; clipwright | video-editor-agent checks each seam with the *source's* word timings and transcribes short windows of the render around suspect seams, arguing the whole render is too wobbly to trust. resolve-mcp's `virtual_transcript` reads the cut's words *before* the render. clipwright recommends transcribing the render, for captions. Nobody diffs a whole render's words against the cut |
 | `check_frames` counts the render's frames exactly against its timeline | hyperframes; davinci-resolve-mcp | hyperframes rejects a render more than one frame short, and passes when the probe has no count. davinci-resolve-mcp compares two renders' frame counts, and a timeline's against a supplied reference. OpenChatCut, Rushes, cutible, ai-montage and video-editor-agent check duration within a tolerance |
-| Edits addressed by transcript word index | palmier-pro; the transcript editors | palmier-pro's `remove_words`, over MCP, alive only with its macOS GUI open. rescript, CutScript, OpenScript, yusaf-cut and ai-montage do it for a person's hands. OpenChatCut's `delete_text` takes a phrase and does not cut video |
-| Headless, with a CLI twin for every MCP tool | OpenChatCut's `occ`; clipwright; cutible; kinocut; splicedeck | `occ` edits and renders headless, but cannot transcribe or check its render without the app. The others are headless and have none of word addressing, persistent undo and a render check together |
+| Edits addressed by transcript word index | palmier-pro; FilmCraft; the transcript editors | palmier-pro's `remove_words`, over MCP, alive only with its macOS GUI open. FilmCraft's `transcript.extract` takes a word range headless, frame-snapped outward, but only in a source build, since Whisper is off in its releases (added 2026-10-11). rescript, CutScript, OpenScript, yusaf-cut and ai-montage do it for a person's hands. OpenChatCut's `delete_text` takes a phrase and does not cut video |
+| Headless, with a CLI twin for every MCP tool | OpenChatCut's `occ`; FilmCraft; clipwright; cutible; kinocut; splicedeck | `occ` edits and renders headless, but cannot transcribe or check its render without the app. FilmCraft's CLI and MCP run the same 693 commands headless, with undo, and check nothing about the render (added 2026-10-11). The others are headless and have none of word addressing, persistent undo and a render check together |
 | OTIO as the source of truth | clipwright | Its project state is an OTIO file behind 25 MCP tools; no undo, no word addressing, no render check |
 | Frozen and silent spans in a render | OpenChatCut, CutPilot, Rushes, cutible, video-editor-agent, davinci-resolve-mcp | **proofcut lacks this** (docs/plans/RENDER-CHECKS.md). Rushes and video-editor-agent filter findings through what the plan declared intentional |
 
@@ -56,6 +56,7 @@ a dash means no source exists.
 | Entry | What it is | Licence | ★ | Read |
 |---|---|---|---|---|
 | § OpenChatCut | Electron NLE, MCP + `occ` CLI | AGPL-3.0 | 2,040 | 2026-09-28 `bb2a4f7` |
+| § FilmCraft | Rust Premiere clone, 693 commands over MCP + CLI | MIT OR Apache-2.0 | 9,435 (10-11) | 2026-10-11 `2ff3f5e`, built and run |
 | § Daydream | macOS NLE, local MCP | closed | – | – (site, 2026-09-16) |
 | § FableCut | browser NLE, `project.json` over MCP | MIT | 695 | 2026-09-12 `6ed70b0` (head 2026-09-16) |
 | § kinocut | MCP + CLI, 201 tools | Apache-2.0 | 175 | 2026-09-16 `e593881` |
@@ -195,6 +196,84 @@ source of truth. Whether that remainder justifies proofcut was the go/no-go
 question in [PLAN.md](PLAN.md), answerable only by running both on a real
 recording; that trial ("cut words 30–45; keep take 2, drop take 1",
 iteratively, over its MCP endpoint) has not been run here.
+
+### FilmCraft
+
+[storytold/filmcraft](https://github.com/storytold/filmcraft) · MIT OR
+Apache-2.0 · Rust · created 2026-09-30 · 9,435★ on 2026-10-11
+
+**Source read** 2026-10-11 at `2ff3f5e` (the 0.6.0 release commit), a shallow
+clone, docs and grep, not a full read. **Built and run**: `filmcraft-cli`
+built from that commit, run headless against proofcut's demo
+(§ FilmCraft, run against `verify`).
+
+A clean-room, pure-Rust Premiere Pro by the ArtCraft team, one of seven
+"Crafting Apps" (photo, vector, motion graphics and others). It writes its own
+codecs (H.264, HEVC, ProRes, AAC and more) and GPU compositor, and uses no GPL
+or LGPL code (README.md:449). It is a human's NLE first. The agent surface is
+that every action is a command, and the UI, the CLI, a JSON-lines control
+channel and an MCP server all dispatch the same ones (README.md:224): 693 of
+them in this build (`filmcraft-cli commands --json`), behind 19 MCP tools
+(`#[tool` in `crates/automation/src/server.rs`) that run headless or
+bridged to the open app. It is built largely by agents: the roadmap prices
+beta at "~400–700 Opus 5.5 agent-hours" (ROADMAP.md:20).
+
+What it has of proofcut's:
+
+- **Word-addressed cuts, headless.** `transcript.select`, `transcript.extract`
+  and `transcript.lift` take a word range (docs/transcripts.md:30–31), and
+  `transcript.removeFillers`/`removePauses` ripple out disfluencies and air
+  (:33–34). The selection is "frame-snapped outward" (:30). But Whisper (on
+  candle, in Rust) is a feature that is **off in releases** (docs/gaps.md G19,
+  :246–249), so a downloaded FilmCraft cannot transcribe.
+- **OTIO, FCP7 XML, FCPXML, AAF, OMF and EDL** import and export
+  (docs/architecture.md:700–706).
+- **Loudness** to BS.1770/R128, with auto-match and ducking that writes
+  keyframes (README.md:153; ROADMAP.md 2026-10-01 M7.4).
+- **Undo** for edits run as commands (docs/agents.md:62).
+
+What it does not have: **any check on its render.** The agent's loop is
+inspect, run, then `render_frame` or a screenshot, then `edit.undo` if the frame looks
+wrong (docs/agents.md:79–80). No file under `crates/export` or
+`crates/automation` mentions transcription (grep, re-run unfiltered).
+
+#### FilmCraft, run against `verify`
+
+Run 2026-10-11 on the demo (DEMO.md steps 1–3, the retake cut, 4 segments,
+12.006 s). The record is in Tyler's `artcraft-linux` workbench,
+`results/2026-10-11-filmcraft-otio-proofcut/`, outside this repo.
+
+- **proofcut's `project.otio` imports into FilmCraft exactly.** Every segment lands
+  at the right millisecond. The sequence takes its frame rate from the OTIO's
+  `rate`, so proofcut's rate-1000 timeline comes in as a 1000 fps sequence.
+  Set to 24 fps it keeps the same edit points, unsnapped.
+- **`verify` passes FilmCraft's renders**: 34 of 34 words at 0.971, the same
+  as proofcut's own render of the cut. `frames` agrees at 24 fps (289 = 289).
+  At 1000 fps it agrees only with `--fps 1000`. Without that flag it counts
+  against 24 and reports a delta of 11,717 on a render whose duration matched
+  to 4 ms.
+- **FilmCraft's own OTIO export is exact, but proofcut cannot read it.** It
+  writes fractional frames at rate 24, so the edit comes back to the
+  millisecond. But it puts an empty `Video 1` ahead of `A1`, and
+  `timeline.from_otio` reads only the first track, so proofcut finds no clips.
+  It also drops `metadata.proofcut`. With those two things changed by hand (the
+  empty track dropped, `clip_id` stamped by media path, as `import_edit`
+  matches `.kdenlive` resources), the round trip closes: 34/34, 289 = 289.
+- **`verify` catches a stale FilmCraft render.** After a trim made in
+  FilmCraft ("local first" extracted), the untrimmed render is flagged with
+  exactly `+local +first`. The new render passes, 32/32. `frames` is one
+  frame off on that edit (272 against 271), because `expected_frames`
+  quantises each segment edge separately (`check_frames`'s docstring), while
+  FilmCraft renders the timeline as one span.
+- **FilmCraft's Out mark includes the frame under it.** `markOut` at 2.56 s
+  removed through 2.6017 s. An agent cutting by word times has to take a frame
+  off Out. Here that cost no word: a control cut ending at exactly 2.56 heard
+  the same thing.
+
+So FilmCraft is a working handoff and render target over OTIO today, given
+a two-change shim, and `verify` and `frames` (with `--fps`) both hold on what it
+delivers. Reading another editor's OTIO is the half proofcut lacks.
+`import-edit` reads only MLT.
 
 ### Daydream
 
@@ -1952,6 +2031,19 @@ frame count, and hyperframes' floor is still one frame loose. **One claim
 corrected**: Remotion has no speed ramp (§ Corrections). hyperframes'
 first read misplaced its hold-dedup citation and undercounted its skills;
 both are fixed in the entry.
+
+### FilmCraft, read and run (2026-10-11)
+
+Asked for by name, by Tyler, while testing the Crafting Apps on Linux. FilmCraft
+was created two days after this file's 2026-09-28 sweep, which is why no
+earlier pass found it. Shallow clone at `2ff3f5e` (0.6.0), docs and grep, not
+a full source read. Every count and absence was re-run around the output filter.
+It is the first entry here to be built and run against proofcut itself
+(§ FilmCraft, run against `verify`).
+
+**No launch claim moved.** FilmCraft does not transcribe its render or count
+its frames against the timeline. It joins the word-addressing and headless-CLI
+rows as the nearest open NLE to each.
 
 ### Every entry from source (2026-09-28)
 
