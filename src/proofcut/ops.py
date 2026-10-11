@@ -4153,21 +4153,31 @@ def import_edit(
     source = Path(document).expanduser()
     if not source.is_file():
         raise ProjectError(f"no such edit document: {source}")
-    try:
-        tree = ET.parse(source)
-    except ET.ParseError as exc:
-        raise ProjectError(f"{source.name} is not readable as XML: {exc}") from exc
-    root = tree.getroot()
-    if root.tag != "mlt":
-        raise ProjectError(
-            f"{source.name} has a <{root.tag}> root, not <mlt> — a .kdenlive project "
-            "is an MLT document, and this is not one"
-        )
-
-    try:
-        ranges, rate = mlt.read_ranges(root)
-    except mlt.MLTError as exc:
-        raise ProjectError(str(exc)) from exc
+    root_attr: str | None = None
+    if source.suffix.lower() in tl.OTIO_SUFFIXES:
+        try:
+            outside, rate = tl.read_outside(source)
+        except tl.TimelineError as exc:
+            raise ProjectError(f"{source.name}: {exc}") from exc
+        ranges = [mlt.ImportedRange(resource=r.resource, start=r.start, end=r.end) for r in outside]
+        declared: dict[str, int] = {}  # an OTIO document states no length apart from its clips
+    else:
+        try:
+            tree = ET.parse(source)
+        except ET.ParseError as exc:
+            raise ProjectError(f"{source.name} is not readable as XML: {exc}") from exc
+        root = tree.getroot()
+        if root.tag != "mlt":
+            raise ProjectError(
+                f"{source.name} has a <{root.tag}> root, not <mlt> — a .kdenlive project "
+                "is an MLT document, and this is not one"
+            )
+        root_attr = root.get("root")
+        try:
+            ranges, rate = mlt.read_ranges(root)
+        except mlt.MLTError as exc:
+            raise ProjectError(str(exc)) from exc
+        declared = mlt.declared_length(root, rate)
 
     resources = list(dict.fromkeys(r.resource for r in ranges if not r.silence))
     if clip_id is not None and len(resources) > 1:
@@ -4187,7 +4197,7 @@ def import_edit(
         mapping = {}
         unmatched = []
         for resource in resources:
-            resolved = _resolve_resource(source, root.get("root"), resource)
+            resolved = _resolve_resource(source, root_attr, resource)
             if resolved in by_source:
                 mapping[resource] = by_source[resolved]
             else:
@@ -4239,7 +4249,6 @@ def import_edit(
     # (§ The import that was one frame short, sixty-three times): every range
     # is individually plausible and the total is the only thing that is wrong.
     read_frames = sum(round(entry.duration * rate) for entry in ranges)
-    declared = mlt.declared_length(root, rate)
     disagrees = sorted({name for name, frames in declared.items() if frames != read_frames})
     report: dict[str, Any] = {
         "project": str(project.root),

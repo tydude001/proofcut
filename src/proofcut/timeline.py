@@ -26,6 +26,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 import opentimelineio as otio
 
@@ -781,6 +783,126 @@ def from_otio(timeline: otio.schema.Timeline) -> Edit:
 
 def read(path: Path | str) -> Edit:
     return from_otio(otio.adapters.read_from_file(str(path)))
+
+
+#: The suffixes `import_edit` reads as OTIO; anything else is an MLT document.
+OTIO_SUFFIXES = (".otio", ".otioz", ".otiod")
+
+
+@dataclass(frozen=True)
+class OutsideRange:
+    """One clip of a cut another editor wrote to OTIO, before any project resolves it.
+
+    `resource` is the media reference as a filesystem path, decoded out of its
+    `file://` URL but not yet resolved: a relative one means the document's own
+    directory, and only the caller knows where that is. `start`/`end` are
+    source seconds, half-open, read off the rational range so a 24 fps export's
+    fractional frames (FilmCraft writes 91.2) come back to the millisecond.
+    """
+
+    resource: str
+    start: float
+    end: float
+
+
+def _reference_path(clip: otio.schema.Clip) -> str:
+    reference = clip.media_reference
+    url = getattr(reference, "target_url", None)
+    if not url:
+        raise TimelineError(
+            f"clip {clip.name!r} has no external media reference, so nothing says which "
+            "file it cuts — an import matches clips to registered media by path"
+        )
+    parsed = urlparse(url)
+    if parsed.scheme in ("", "file"):
+        return url2pathname(parsed.path) if parsed.scheme else url
+    if len(parsed.scheme) == 1:
+        return url  # a Windows drive letter, `C:\…`, parsed as a scheme
+    raise TimelineError(f"clip {clip.name!r} references {url!r}, which is not a local file")
+
+
+def read_outside_ranges(timeline: otio.schema.Timeline) -> tuple[list[OutsideRange], float]:
+    """Every clip of an outside editor's OTIO cut, plus the rate it was written at.
+
+    The OTIO twin of `mlt.read_ranges`, holding the same three refusals for
+    the same reasons, because a cut that `Edit` cannot express is refused by
+    name rather than half-read:
+
+    * **Every track that holds a clip is read, and they must agree.** An NLE
+      writes a linked cut once per track (FilmCraft: an empty `Video 1`, then
+      `A1` holding the clips), and `from_otio`'s first-track rule finds nothing
+      in that file at all (COMPETITORS.md § FilmCraft, run against `verify`).
+      Two tracks carrying different cuts are a multi-track edit.
+    * **A gap is refused**, since `Edit` lays its segments contiguously and
+      would close it, shortening the film. So is a transition, a nested stack,
+      a disabled clip and a clip carrying effects (a speed change among them):
+      each is something the import would drop and still report success.
+    """
+    candidates: list[tuple[str, list[OutsideRange]]] = []
+    rate: float | None = None
+    for track in timeline.tracks:
+        ranges: list[OutsideRange] = []
+        for item in track:
+            name = f"{track.name!r}: {item.name!r}"
+            if isinstance(item, otio.schema.Gap):
+                raise TimelineError(
+                    f"track {name} is a gap of {item.duration().to_seconds():.3f}s — runtime "
+                    "with nothing under it, which an Edit has nowhere to put"
+                )
+            if isinstance(item, otio.schema.Transition):
+                raise TimelineError(f"track {name} is a transition, which an Edit cannot express")
+            if not isinstance(item, otio.schema.Clip):
+                raise TimelineError(
+                    f"track {name} is a {item.schema_name()}, not a clip — a nested "
+                    "or generated item has no source range in one file to cut"
+                )
+            if not item.enabled:
+                raise TimelineError(f"track {name} is disabled, and still holds its runtime")
+            if item.effects:
+                raise TimelineError(
+                    f"track {name} carries {', '.join(e.schema_name() for e in item.effects)}, "
+                    "which the import would drop — a retime belongs to `retime`"
+                )
+            source_range = item.trimmed_range()
+            rate = rate or source_range.duration.rate
+            ranges.append(
+                OutsideRange(
+                    resource=_reference_path(item),
+                    start=source_range.start_time.to_seconds(),
+                    end=source_range.end_time_exclusive().to_seconds(),
+                )
+            )
+        if ranges:
+            candidates.append((track.name or "?", ranges))
+
+    if not candidates:
+        raise TimelineError("no track in this timeline holds a clip — there is no cut here to import")
+    first_name, first = candidates[0]
+    for other_name, other in candidates[1:]:
+        agree = len(other) == len(first) and all(
+            a.resource == b.resource
+            and abs(a.start - b.start) < 1e-6
+            and abs(a.end - b.end) < 1e-6
+            for a, b in zip(first, other, strict=True)
+        )
+        if not agree:
+            raise TimelineError(
+                f"tracks {first_name!r} and {other_name!r} carry different cuts "
+                f"({len(first)} clips against {len(other)}) — proofcut's timeline is one "
+                "track with A/V linked, so a multi-track edit is refused rather than half-read"
+            )
+    return first, float(rate or 1.0)
+
+
+def read_outside(path: Path | str) -> tuple[list[OutsideRange], float]:
+    """`read_outside_ranges` over a file, with OTIO's own parse errors made one kind."""
+    try:
+        timeline = otio.adapters.read_from_file(str(path))
+    except Exception as exc:  # OTIO's exception tree, plus bare ValueErrors from its JSON
+        raise TimelineError(f"not readable as OTIO: {exc}") from exc
+    if not isinstance(timeline, otio.schema.Timeline):
+        raise TimelineError(f"holds a {timeline.schema_name()}, not a timeline")
+    return read_outside_ranges(timeline)
 
 
 def write(timeline: otio.schema.Timeline, path: Path | str) -> None:

@@ -141,6 +141,7 @@ uv run proofcut -C myproject cut-at 40.4+4.4                # or cut by what an 
 uv run proofcut -C myproject restore vo 111:114             # changed your mind about one cut
 uv run proofcut -C myproject export cut.kdenlive            # an MLT project to finish in
 uv run proofcut -C myproject import-edit trimmed.kdenlive   # ...and the trim you made there, back
+uv run proofcut -C myproject import-edit trimmed.otio       # or the OTIO another editor exported
 uv run proofcut -C myproject verify final.mp4               # did the render say what you edited?
 ```
 

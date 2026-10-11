@@ -19477,3 +19477,41 @@ clip.** An agent's unattended re-cut of the launch clip now passes beside
 the approved v6 by his eye, which is what docs/plans/RECUT.md set out to
 make true. The half-second-later settle and the missing `/plugin` lines did
 not stop it.
+
+
+## Another editor's OTIO, imported — 2026-10-11
+
+COMPETITORS.md § FilmCraft, run against `verify` found the handoff half
+proofcut lacked: FilmCraft opened proofcut's `project.otio` exactly, but
+proofcut could not read FilmCraft's export back. `import-edit` read only MLT,
+and FilmCraft's file has an empty `Video 1` ahead of the `A1` that holds the
+clips, plus no proofcut metadata. A two-change shim had closed the round trip
+by hand.
+
+`import-edit` now takes an `.otio` (`.otioz`, `.otiod`). It is the MLT
+reader's rules over OTIO (`timeline.read_outside_ranges`): every track that
+holds a clip is read and they must carry the same cut, clips are matched to
+registered media by their reference's path (a relative one against the
+document's directory), `--clip-id` maps a single-source document, and the
+rest of the op (clamping, the snapshot, undo) is unchanged. A gap, a
+transition, an effect, a disabled clip or a nested stack is refused by name,
+because each is something the import would drop and still report success.
+`timeline.from_otio`, which reads proofcut's own file, keeps its one-track
+rule.
+
+Checked on FilmCraft's real trim export (`fc-24-trim.otio`, rate 24 with
+fractional frames), imported into a copy of that run's demo project with no
+shim: 5 segments, 11.2643 s, then `verify` passes the new FilmCraft render
+32/32 at 0.969 and flags the stale one with exactly `+local +first`, the
+shimmed run's numbers. `undo` restores the four-segment cut. Seven tests in
+`test_ops_import_edit.py` build documents in FilmCraft's shape, and one
+imports a proofcut project's own `project.otio` into a second project as the
+same edit.
+
+The same run's `frames` disagreement (272 expected, 271 rendered) was
+measured and is neither program's bug: it comes from the demo's audio-only
+project keeping millisecond edges, which `frames --fps 24` rounds segment by
+segment while FilmCraft rounds the whole cut once. Over a 24 fps video clip
+the imported edit is stored on the frame grid and proofcut's own render and
+`frames` agree at 271. Nothing was changed for it.
+

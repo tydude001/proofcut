@@ -6124,12 +6124,13 @@ def import_edit(
     clip_id: str | None = None,
     plan: bool = False,
 ) -> dict[str, Any]:
-    """Lay a cut made in Kdenlive down as this project's timeline.
+    """Lay a cut made in Kdenlive or another editor's OTIO down as this project's timeline.
 
     The supported way to bring an outside edit in. `seed_timeline` lays a clip
     down and lets auto-editor find the cuts; this takes a `.kdenlive` (or
-    `.mlt`) playlist somebody already trimmed by hand and reads its surviving
-    ranges into the timeline. It replaces the whole timeline, and the previous
+    `.mlt`) playlist, or an `.otio` timeline another editor exported,
+    somebody already trimmed by hand and reads its surviving ranges into the
+    timeline. It replaces the whole timeline, and the previous
     one is snapshotted first, so it is undoable like any other mutation —
     which is the part the hand-rolled version of this never had (HISTORY.md
     § The VO the project was holding: 63 ranges were parsed out of a
@@ -6147,9 +6148,10 @@ def import_edit(
     the tail by one frame, so a clean `overshot` is worth reading rather than
     assuming. `plan` resolves and checks without writing.
 
-    Refused by name rather than half-read: a `<blank>` in the playlist (real
-    runtime an `Edit` has nowhere to put), and two playlists carrying
-    different cuts (a multi-track picture edit, which proofcut's one linked A/V
+    Refused by name rather than half-read: a `<blank>` in the playlist or a
+    gap in an OTIO track (real runtime an `Edit` has nowhere to put), an OTIO
+    transition, effect or disabled clip, and two tracks carrying different
+    cuts (a multi-track picture edit, which proofcut's one linked A/V
     track has no shape for).
     """
     return ops.import_edit(path, document, clip_id=clip_id, plan=plan)

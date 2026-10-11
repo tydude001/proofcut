@@ -399,3 +399,130 @@ def test_a_silence_entry_is_runtime_and_imports_as_silence(tmp_path: Path) -> No
     assert first["clip_id"] != "vo" and last["clip_id"] != "vo"
     registered = {c["clip_id"] for c in ops.assets(root)["clips"]} - clips_before
     assert registered == {first["clip_id"], last["clip_id"]}
+
+
+# --- OTIO: a cut another editor wrote ---------------------------------------
+#
+# COMPETITORS.md § FilmCraft, run against `verify`: FilmCraft's OTIO export is
+# exact but carries an empty `Video 1` ahead of the `A1` that holds the clips,
+# writes fractional frames at rate 24, and drops proofcut's metadata. Each
+# document below is built in that shape. The real export was imported by hand
+# on 2026-10-11 and gave the same `verify` numbers as the shimmed run.
+
+
+def _otio_doc(
+    path: Path,
+    tracks: list[tuple[str, list[Any]]],
+    *,
+    rate: float = 24.0,
+) -> Path:
+    import opentimelineio as otio
+
+    timeline = otio.schema.Timeline(name="outside")
+    for name, items in tracks:
+        kind = otio.schema.TrackKind.Video if name.startswith("V") else otio.schema.TrackKind.Audio
+        track = otio.schema.Track(name=name, kind=kind)
+        for item in items:
+            if isinstance(item, float):
+                track.append(otio.schema.Gap(duration=otio.opentime.RationalTime(item * rate, rate)))
+                continue
+            url, start, end = item
+            track.append(
+                otio.schema.Clip(
+                    name=f"clip-{len(track)}",
+                    media_reference=otio.schema.ExternalReference(target_url=url),
+                    source_range=otio.opentime.TimeRange(
+                        otio.opentime.RationalTime(start * rate, rate),
+                        otio.opentime.RationalTime((end - start) * rate, rate),
+                    ),
+                )
+            )
+        timeline.tracks.append(track)
+    otio.adapters.write_to_file(timeline, str(path))
+    return path
+
+
+@needs_ffmpeg
+def test_an_otio_cut_with_an_empty_track_first_becomes_the_timeline(tmp_path: Path) -> None:
+    root, source, _ = _project(tmp_path)
+    url = source.resolve().as_uri()
+    # 91.2 frames at 24 fps: FilmCraft's fractional frames, which must come back to the millisecond.
+    document = _otio_doc(
+        tmp_path / "cut.otio",
+        [("Video 1", []), ("A1", [(url, 0.0, 3.8), (url, 9.16, 9.366), (url, 9.933, 11.5)])],
+    )
+
+    report = ops.import_edit(root, document)
+
+    assert report["ranges"] == 3
+    assert report["rate"] == 24.0
+    assert report["clips"] == ["vo"]
+    assert report["timeline_duration"] == pytest.approx(3.8 + 0.206 + 1.567, abs=1e-9)
+    assert report["declared_frames"] == {}
+    assert ops.status(root)["segments"] == 3
+
+
+@needs_ffmpeg
+def test_linked_otio_tracks_must_carry_the_same_cut(tmp_path: Path) -> None:
+    root, source, _ = _project(tmp_path)
+    url = source.resolve().as_uri()
+    same = [(url, 1.0, 3.0), (url, 5.0, 8.0)]
+    document = _otio_doc(tmp_path / "linked.otio", [("V1", same), ("A1", same)])
+    assert ops.import_edit(root, document, plan=True)["segments"] == 2
+
+    differ = _otio_doc(tmp_path / "split.otio", [("V1", same), ("A1", [(url, 1.0, 3.0)])])
+    with pytest.raises(ProjectError, match="carry different cuts"):
+        ops.import_edit(root, differ)
+
+
+@needs_ffmpeg
+def test_an_otio_gap_is_refused_rather_than_closed(tmp_path: Path) -> None:
+    root, source, _ = _project(tmp_path)
+    url = source.resolve().as_uri()
+    document = _otio_doc(tmp_path / "gap.otio", [("A1", [(url, 0.0, 2.0), 1.5, (url, 4.0, 6.0)])])
+    with pytest.raises(ProjectError, match="gap of 1.500s"):
+        ops.import_edit(root, document)
+
+
+@needs_ffmpeg
+def test_an_otio_reference_resolves_relative_to_the_document(tmp_path: Path) -> None:
+    root, source, _ = _project(tmp_path)
+    document = _otio_doc(tmp_path / "rel.otio", [("A1", [(source.name, 0.0, 2.0)])])
+    assert ops.import_edit(root, document)["clips"] == ["vo"]
+
+
+@needs_ffmpeg
+def test_unregistered_otio_media_is_named(tmp_path: Path) -> None:
+    root, _, _ = _project(tmp_path)
+    stranger = (tmp_path / "elsewhere.mp4").resolve().as_uri()
+    document = _otio_doc(tmp_path / "stranger.otio", [("A1", [(stranger, 0.0, 2.0)])])
+    with pytest.raises(ProjectError, match="has not registered"):
+        ops.import_edit(root, document)
+
+
+@needs_ffmpeg
+def test_proofcuts_own_otio_imports_as_the_same_edit(tmp_path: Path) -> None:
+    """The handoff's other end: what proofcut writes, another project reads."""
+    root, _, _ = _project(tmp_path)
+    ops.seed_timeline(root, "vo", remove_silences=False)
+    ops.cut_by_time(root, spans=[[2.0, 4.5]])
+    exported = tmp_path / "handoff.otio"
+    shutil.copy(root / "project.otio", exported)
+    before = ops.status(root)
+
+    other = tmp_path / "other"
+    ops.init(other)
+    ops.import_media(other, tmp_path / "vo.mp4")
+    report = ops.import_edit(other, exported)
+
+    assert report["segments"] == before["segments"]
+    assert report["timeline_duration"] == pytest.approx(before["timeline_duration"], abs=1e-6)
+
+
+def test_an_unreadable_otio_is_refused_as_otio(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    ops.init(root)
+    bad = tmp_path / "bad.otio"
+    bad.write_text("{not json", encoding="utf-8")
+    with pytest.raises(ProjectError, match="not readable as OTIO"):
+        ops.import_edit(root, bad)

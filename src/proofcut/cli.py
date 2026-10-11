@@ -2317,9 +2317,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_import_edit = sub.add_parser(
         "import-edit",
-        help="lay a cut made in Kdenlive down as this project's timeline",
+        help="lay a cut made in Kdenlive (or exported as OTIO) down as this project's timeline",
     )
-    p_import_edit.add_argument("document", help="a .kdenlive (or .mlt) playlist to read")
+    p_import_edit.add_argument(
+        "document", help="a .kdenlive or .mlt playlist, or an .otio timeline, to read"
+    )
     p_import_edit.add_argument(
         "--clip-id",
         help="the registered clip a single-source document maps onto, for when the "

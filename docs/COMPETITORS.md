@@ -272,8 +272,24 @@ Run 2026-10-11 on the demo (DEMO.md steps 1–3, the retake cut, 4 segments,
 
 So FilmCraft is a working handoff and render target over OTIO today, given
 a two-change shim, and `verify` and `frames` (with `--fps`) both hold on what it
-delivers. Reading another editor's OTIO is the half proofcut lacks.
-`import-edit` reads only MLT.
+delivers. Reading another editor's OTIO was the half proofcut lacked:
+`import-edit` read only MLT. **Built the same day**: `import-edit` takes an
+`.otio`, reads every track that holds a clip and requires them to agree,
+matches clips to registered media by path, and refuses a gap, a transition,
+an effect or a disabled clip by name (`timeline.read_outside_ranges`).
+FilmCraft's raw trim export now imports with no shim and gives the shimmed
+run's numbers: the new render 32/32, the stale one flagged `+local +first`
+(HISTORY.md § Another editor's OTIO, imported).
+
+**The 272 against 271 is neither program's bug.** It is the demo's
+audio-only project: its timeline keeps millisecond edges (timebase 1000), and
+`frames --fps 24` rounds each segment's edges on their own (272), while
+FilmCraft lays the same cut on a continuous clock and rounds once (270.34
+frames, rendered as 271). The control: the same trim imported over a 24 fps
+video clip is stored on that clip's frame grid, and proofcut's own render and
+`frames` both say 271. So `frames` holds for any render made at the
+project's own rate, and an outside render of a timeline kept at a finer
+timebase can differ by about a frame per two segments.
 
 ### Daydream
 
@@ -2044,6 +2060,43 @@ It is the first entry here to be built and run against proofcut itself
 **No launch claim moved.** FilmCraft does not transcribe its render or count
 its frames against the timeline. It joins the word-addressing and headless-CLI
 rows as the nearest open NLE to each.
+
+### The sweep after FilmCraft (2026-10-11)
+
+Asked the same day ("anything from competitors we should look at?"). One
+Sonnet reader repeated the earlier passes' searches for projects new since
+2026-09-15, read six from shallow clones (depth 50, source before README,
+nothing run) and checked the heads of the existing entries. **The claims
+below are that reader's, cited to file and line, and were not re-read here.**
+**No launch claim moved**: none of the six transcribes its render or counts
+its frames against the timeline.
+
+| Repo | Read | What it is |
+|---|---|---|
+| [YansIlinta/video-agent-runtime](https://github.com/YansIlinta/video-agent-runtime) · MIT · TS · 1★ | `085afd6` (2026-08-25, older than the window, never found before) | **The nearest design found this pass.** A headless MCP server with 59 tools: `asr_transcribe`, transcripts with word ids (`packages/core/src/schemas.ts:44-68`), edits as plans or patches applied as immutable versions with revert (`packages/mcp/src/server.ts:56-57`). Its render check probes the preview for streams, a duration within 0.5 s, and empty captions (`packages/render/src/self-check.ts:4-14`). No OTIO, no render transcription. **Worth taking:** `edit_patch_validate` refuses a patch that strays outside its declared scope (`server.ts:59`), a guard an agent's batch edit could carry |
+| [theSamPadilla/montaj](https://github.com/theSamPadilla/montaj) · MIT · Python · 26★ | `389e597` (2026-10-10) | A CLI of about 60 steps over a `project.json`. Its MCP surface is only `render`, frozen on purpose (`tests/test_mcp_surface.py:1-9`). **Speech is edited as text**: `speech_text` writes numbered lines, `speech_edit` applies an edited copy in one write with a preview, refused if a content hash of the track says the text is stale (`lib/speech_text.py:109-121`). Render QA samples frames for pops and jump cuts (`steps/render/sample_diff.py`). **Worth taking:** the text round trip as a second way into word addressing, for an agent that would rather rewrite prose than name indices |
+| [VelornLabs/velorn](https://github.com/VelornLabs/velorn) · GPL-3.0 · JS · 501★ | `fdd8255` (2026-09-26) | An Electron workstation, generation-first, with a loopback MCP server of about 130 tools that needs the app open (`electron/mcpServer.js`). `inspect_export_file` checks width, height, codec and duration (`:6356-6370`); `export_fcpxml` |
+| [WeftCut/WeftCut](https://github.com/WeftCut/WeftCut) · MIT · Electron + Rust · 189★ | `14daede` (2026-10-11) | A GUI NLE with MCP over loopback HTTP. Transcribes clips and cuts pauses as one undoable edit; integer-microsecond frame grid (its ADR 0037). Its README says there is no headless copy. No OTIO |
+| [MartinDelophy/ai-video-editor](https://github.com/MartinDelophy/ai-video-editor) · MIT · TS · 911★ | `9514d65` (2026-10-07) | A browser editor with 21 WebMCP tools and a local stdio MCP. Edits preview then apply against a `stateToken`. Its transcript tool reads existing captions and "does not run speech recognition" |
+| [cueframe-ai/cueframe-mcp](https://github.com/cueframe-ai/cueframe-mcp) · Apache-2.0 · 0★ | `5b72859` (2026-10-09) | A client of a hosted service; the renderer is not in the repo |
+
+Heads of existing entries on 2026-10-11, headlines only: OpenChatCut v0.2.16
+(10-07, 2,272★), palmier-pro v0.11.0 (10-05), video-use's README now links a
+waitlist at video-use.com (28,605★), FableCut v1.13.0 (10-10, releasing about
+daily, 719★), kinocut v1.16.1 (10-06, 203 MCP tools), FilmCraft head
+`4e2d0bc` (9,501★), OpenCut unchanged since `e668010`. Two entries need their
+paths checked: the reader did not re-find Diffusion Studio's 3,129-star repo,
+and found an `iamredmh/rushes` created 10-02 that may not be § Rushes.
+
+Seen and not read: OrellBuehler/kerf (a Rust and Tauri editor with an MCP
+server, the likeliest real neighbour), dongnguyenvie/bashcut-agent-kit,
+rakesh0x/OpenCardboard, openreelio/openreelio, kurbaitaev/ghost-editor,
+Kdenlive MCP wrappers, invideo's hosted MCP. Searched: `gh search repos` over
+about two dozen phrases with `--created ">2026-09-15"`, the same phrases
+filtered on a push after 2026-09-20, `--topic mcp --topic video-editing`,
+the official MCP registry for `video`, and two web searches. **Not run**: the
+registry for any term but `video` (the loop timed out), Glama's search, and a
+stargazer walk.
 
 ### Every entry from source (2026-09-28)
 
