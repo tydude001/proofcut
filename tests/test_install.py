@@ -13,6 +13,7 @@ Every test runs in a fake home, since setup's whole job is writing into one.
 
 from __future__ import annotations
 
+import email.message
 import hashlib
 import io
 import os
@@ -22,6 +23,7 @@ import shutil
 import ssl
 import sys
 import tarfile
+import urllib.error
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -315,6 +317,64 @@ def test_a_download_that_does_not_hash_to_its_pin_keeps_nothing(
     assert not list(deps.root().rglob("*.part"))
     assert "auto-editor" not in install.read_record()["pieces"]
     assert result["ok"] is False
+
+
+def _refusing(times: int, code: int, retry_after: str | None = None) -> tuple[Any, list[str]]:
+    """A `urlopen` that answers `code` `times` times, then opens the URL for real."""
+    real = install.urllib.request.urlopen
+    calls: list[str] = []
+
+    def urlopen(url: str, timeout: float = 0) -> Any:
+        calls.append(url)
+        if len(calls) <= times:
+            headers = email.message.Message()
+            if retry_after is not None:
+                headers["Retry-After"] = retry_after
+            raise urllib.error.HTTPError(url, code, "refused", headers, None)
+        return real(url, timeout=timeout)
+
+    return urlopen, calls
+
+
+@pytest.mark.parametrize("code", [429, 503])
+def test_a_host_that_says_not_now_is_waited_out(
+    home: Path, pins: dict[str, install.Pin], monkeypatch: pytest.MonkeyPatch, code: int
+) -> None:
+    """evermeet.cx sent 429 to CI's shared Intel Mac runners on 2026-10-11 and
+    setup failed on a pin that was fine. The wait the host names is the one
+    taken."""
+    urlopen, calls = _refusing(2, code, retry_after="7")
+    waits: list[float] = []
+    monkeypatch.setattr(install.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(install.time, "sleep", waits.append)
+    dest = deps.root() / "auto-editor.bin"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    install._fetch(pins["auto-editor"], dest, say=lambda line: None)
+    assert len(calls) == 3 and waits == [7.0, 7.0]
+    assert hashlib.sha256(dest.read_bytes()).hexdigest() == pins["auto-editor"].sha256
+
+
+@pytest.mark.parametrize(
+    ("times", "code", "retry_after", "tries"),
+    [
+        (1, 404, None, 1),  # a missing file is not a busy host
+        (1, 429, "3600", 1),  # an hour is not waited out
+        (99, 429, None, install._FETCH_ATTEMPTS),  # nor is a host that never relents
+    ],
+)
+def test_a_refusal_that_will_not_clear_fails_as_before(
+    home: Path, pins: dict[str, install.Pin], monkeypatch: pytest.MonkeyPatch,
+    times: int, code: int, retry_after: str | None, tries: int,
+) -> None:
+    urlopen, calls = _refusing(times, code, retry_after)
+    monkeypatch.setattr(install.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(install.time, "sleep", lambda seconds: None)
+    dest = deps.root() / "auto-editor.bin"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with pytest.raises(install.InstallError, match=f"could not download .*{code}"):
+        install._fetch(pins["auto-editor"], dest, say=lambda line: None)
+    assert len(calls) == tries
+    assert not dest.exists() and not list(dest.parent.glob("*.part"))
 
 
 def test_a_melt_missing_desktop_libraries_names_them_and_keeps_nothing(

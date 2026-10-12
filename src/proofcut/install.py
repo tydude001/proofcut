@@ -44,6 +44,8 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
+import urllib.error
 import urllib.request
 import zipfile
 from collections.abc import Callable
@@ -533,13 +535,51 @@ def plan(report: dict[str, Any] | None = None) -> dict[str, Any]:
 Say = Callable[[str], None]
 
 
+#: Statuses a host sends to say "not now" rather than "no". evermeet.cx sent
+#: 429 to GitHub's shared Intel Mac runners twice on 2026-10-11, and setup
+#: failed on a pin that was fine.
+_RETRY_STATUSES = frozenset({429, 503})
+#: Attempts at one URL, and the wait between them when the host names none.
+_FETCH_ATTEMPTS = 4
+_RETRY_WAIT = 15.0
+#: A `Retry-After` past this is not waited out; the attempt fails as before.
+_RETRY_WAIT_MAX = 120.0
+
+
+def _retry_wait(exc: urllib.error.HTTPError, attempt: int) -> float | None:
+    """Seconds to wait before trying `exc`'s URL again, or None to give up."""
+    if exc.code not in _RETRY_STATUSES or attempt >= _FETCH_ATTEMPTS:
+        return None
+    after = exc.headers.get("Retry-After") if exc.headers else None
+    try:
+        wait = float(after) if after is not None else _RETRY_WAIT * attempt
+    except ValueError:
+        wait = _RETRY_WAIT * attempt  # an HTTP-date; the doubling default is close enough
+    return wait if wait <= _RETRY_WAIT_MAX else None
+
+
+def _open(pin: Pin, say: Say) -> Any:
+    """`urlopen` on `pin.url`, waiting out a 429 or 503 a few times first."""
+    attempt = 1
+    while True:
+        try:
+            return urllib.request.urlopen(pin.url, timeout=60)
+        except urllib.error.HTTPError as exc:
+            wait = _retry_wait(exc, attempt)
+            if wait is None:
+                raise
+            say(f"    {exc.code} from the host; trying again in {wait:.0f} s")
+            time.sleep(wait)
+            attempt += 1
+
+
 def _fetch(pin: Pin, dest: Path, say: Say) -> None:
     """Download `pin` to `dest`, refusing anything whose SHA-256 is not the pin's."""
     part = dest.with_name(dest.name + ".part")
     digest = hashlib.sha256()
     say(f"  downloading {pin.url}")
     try:
-        with urllib.request.urlopen(pin.url, timeout=60) as response, part.open("wb") as out:
+        with _open(pin, say) as response, part.open("wb") as out:
             done, shown = 0, 0
             while chunk := response.read(1 << 20):
                 out.write(chunk)
