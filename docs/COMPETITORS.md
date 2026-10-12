@@ -38,7 +38,7 @@ first two rows.
 | proofcut | Nearest found | How near |
 |---|---|---|
 | `verify` transcribes the whole render and diffs its words against the cut | video-editor-agent; resolve-mcp; clipwright | video-editor-agent checks each seam with the *source's* word timings and transcribes short windows of the render around suspect seams, arguing the whole render is too wobbly to trust. resolve-mcp's `virtual_transcript` reads the cut's words *before* the render. clipwright recommends transcribing the render, for captions. Nobody diffs a whole render's words against the cut |
-| `check_frames` counts the render's frames exactly against its timeline | hyperframes; davinci-resolve-mcp | hyperframes rejects a render more than one frame short, and passes when the probe has no count. davinci-resolve-mcp compares two renders' frame counts, and a timeline's against a supplied reference. OpenChatCut, Rushes, cutible, ai-montage and video-editor-agent check duration within a tolerance |
+| `check_frames` counts the render's frames exactly against its timeline | hyperframes; davinci-resolve-mcp; open-edit | hyperframes rejects a render more than one frame short, and passes when the probe has no count. davinci-resolve-mcp compares two renders' frame counts, and a timeline's against a supplied reference. open-edit's `render` counts the packets of an *HTML page's* render exactly against `round(duration × fps)` and refuses a mismatch, but its footage cut (`apply-edl`) is not counted (added 2026-10-12). OpenChatCut, Rushes, cutible, ai-montage, video-editor-agent and Timeline Studio check duration within a tolerance or not at all |
 | Edits addressed by transcript word index | palmier-pro; FilmCraft; the transcript editors | palmier-pro's `remove_words`, over MCP, alive only with its macOS GUI open. FilmCraft's `transcript.extract` takes a word range headless, frame-snapped outward, but only in a source build, since Whisper is off in its releases (added 2026-10-11). rescript, CutScript, OpenScript, yusaf-cut and ai-montage do it for a person's hands. OpenChatCut's `delete_text` takes a phrase and does not cut video |
 | Headless, with a CLI twin for every MCP tool | OpenChatCut's `occ`; FilmCraft; clipwright; cutible; kinocut; splicedeck | `occ` edits and renders headless, but cannot transcribe or check its render without the app. FilmCraft's CLI and MCP run the same 693 commands headless, with undo, and check nothing about the render (added 2026-10-11). The others are headless and have none of word addressing, persistent undo and a render check together |
 | OTIO as the source of truth | clipwright | Its project state is an OTIO file behind 25 MCP tools; no undo, no word addressing, no render check |
@@ -62,8 +62,9 @@ a dash means no source exists.
 | § kinocut | MCP + CLI, 201 tools | Apache-2.0 | 175 | 2026-09-16 `e593881` |
 | § Diffusion Studio | browser canvas, `dapi` CLI + MCP | MPL-2.0 | 3,129 | 2026-09-20 `57c3983` |
 | § palmier-pro | macOS editor, MCP while GUI open | GPL-3.0 snapshot | 14,482 | 2026-09-28 `eeafde2` |
-| § video-use | coding-agent skill, cloud ASR | MIT | 27,506 | 2026-09-16 `9575612` |
-| § open-edit | CLI + skill over a closed renderer | Apache-2.0 + Shield binary | 966 | 2026-09-28 `dd7913b` |
+| § video-use | coding-agent skill, cloud ASR | MIT | 28,790 (10-12) | 2026-10-12 `43cfc56` |
+| § open-edit | CLI + skill, its own headless-Chrome renderer | Apache-2.0 | 1,639 (10-12) | 2026-10-12 `1d3b75b` |
+| § Timeline Studio | browser editor, JSON plan CLI + MCP | MIT | 926 (10-12) | 2026-10-12 `8217377` |
 | § oh-my-cassette | MCP client of a hosted agent | MIT | 156 | 2026-09-28 `4bebe25` |
 | § splicedeck | nine verbs, CLI + MCP | Apache-2.0 | 3 | 2026-09-16 `1d6b31b` (unchanged 09-28) |
 | § Rushes | conversational editor, internal agent | none | 24 | 2026-09-28 `08b05f5` |
@@ -85,6 +86,7 @@ a dash means no source exists.
 | § hyperframes | HTML-to-video renderer | Apache-2.0 | 56,154 (10-03) | 2026-10-03 `ce08f204` |
 | § Remotion | React-to-video framework | custom (company licence past 3 staff) | 61,661 (10-03) | 2026-10-03 `e385a83` |
 | sentrysearch, B-Roll-Finder (§ Footage retrieval) | footage search | Apache-2.0; none | 4,525; 4 | 2026-09-20 |
+| § claude-real-video | video to keyframes + transcript for an LLM | MIT + paid Pro | 2,216 (10-12) | 2026-10-12 `ab4b9b2` |
 | VoiceStudio, voice-pro (§ Voice) | TTS and dubbing | AGPL-3.0; GPL-3.0 | 44,377; 12,955 | 2026-09-20 |
 | § openshorts | shorts pipeline, MCP | MIT + commercial `cloud/` | 5,772 | 2026-09-28 `29c54fa` |
 | davinci-resolve-mcp, resolve-mcp (§ DaVinci Resolve drivers) | Resolve over MCP | MIT; none | 3,221; 1 | 2026-09-28 |
@@ -574,10 +576,14 @@ output checks included; the model behind its hosted transcription; its full
 ### video-use
 
 [browser-use/video-use](https://github.com/browser-use/video-use) · MIT ·
-Python · 27,506★ on 2026-09-28 (19.9k★ and 18 commits on 2026-08-06, 25,156★
-on 2026-09-20; stars ride the browser-use org's distribution)
+Python · 28,790★ on 2026-10-12, created 2026-04-12, 23 commits (19.9k★ and
+18 commits on 2026-08-06, 25,156★ on 2026-09-20; stars ride the browser-use
+org's distribution)
 
-**Source read** 2026-09-16 at `9575612`; re-checked 2026-09-20, same head.
+**Source read** 2026-09-16 at `9575612`; re-checked 2026-09-20, same head;
+re-read 2026-10-12 at `43cfc56` (2026-10-08), the diff since `9575612` in
+full: two commits, `SKILL.md` +22 lines and a caption chunker in
+`helpers/render.py`.
 
 The distribution threat, not a substitute. Agent-driven editing through coding
 agents (Claude Code, Codex): filler-word removal, grading, subtitle burn-in,
@@ -597,11 +603,112 @@ a word-level transcript packed into ~12KB of markdown, ffmpeg underneath.
 - **`project.md` session memory** persisting editorial decisions across
   sessions, a cheaper cousin of kinocut's receipts.
 
+**What the composite is** (re-read 2026-10-12). `helpers/timeline_view.py`
+(392 lines, the same name as proofcut's `timeline_view` and a different
+thing) takes a video and a `[start, end]`, pulls N evenly spaced frames
+(default 10, 320 px wide, `:37-66`), draws an RMS envelope under them, and
+labels the envelope with the transcript's words, shading gaps over 0.4 s as
+silence (`:135`). Its docstring forbids running it in a scan loop: it is a
+drill-down for an ambiguous pause, a retake, or a cut point. The `--edl`
+whole-project mode says "not yet" (`:18`). proofcut's agent gets the same
+facts as text (`timeline_view`'s seams named by their words, `hear`, the
+waveform lane in the web UI); no proofcut sheet puts frames, envelope and
+words for one seam in a single picture.
+
+**What moved since 2026-09-16.** The self-eval prompt now also asks for
+`ebur128` loudness and true peak per section, and for one "critic
+sub-agent" that roasts a render meant for publishing (`SKILL.md:99-101`).
+Both are still prose. Captions chunk on punctuation and on pauses of 0.3 s or
+more, and a chunk grows to three words rather than flash under 0.35 s
+(`render.py` `chunk_words`); a missing subtitles file now exits rather than
+rendering without captions. A "Music and sound effects" section adds
+rules from launch edits (duck music under speech, two-pass loudnorm to -14
+LUFS, start an effect its attack before the frame). The README trades the
+Browser Use Cloud link for a waitlist at video-use.com: a hosted video-use is
+coming. Transcription is still Scribe only, and `SKILL.md:330-331` still
+rejects local Whisper ("slow and it normalizes fillers").
+
+**freecut**, [Moh4696/freecut](https://github.com/Moh4696/freecut) · MIT ·
+280★ on 2026-10-12. A copy of video-use (not a GitHub fork), created
+2026-07-01 and pushed once that day: two commits, `f1d4334`, read in full
+against video-use. It changes nine files; the substance is
+`helpers/transcribe.py` (241 to 496 lines), which adds a `--backend` of
+`whisper` (the default: mlx-whisper on Apple Silicon, else faster-whisper),
+`vibevoice` (an HTTP endpoint you host) and `elevenlabs`. The faster-whisper
+call is `word_timestamps=True, vad_filter=False` (`transcribe.py:187-193`)
+with no hallucination guard and nothing for the fillers video-use says
+Whisper drops, so the filler-cutting that is video-use's headline rests on a
+transcriber that may not print them. It forked before video-use's fps,
+rotation and silent-track fixes and has none of them. Proof that the Scribe
+lock-in is a one-file change, and nothing else: unmaintained, and not worth
+tracking.
+
+**Worth taking:** the seam composite, as an image a tool returns, for the
+judgments the text views leave to the agent (a jump cut's picture, a breath
+the words do not show). Nothing in the trials yet says an agent missed one
+for want of a picture (§ The sweep after FilmCraft's tally found no such
+error), so it is an idea held, not a gap.
+
 ### open-edit
 
 [veedstudio/open-edit](https://github.com/veedstudio/open-edit) · Apache-2.0
-CLI over a **PolyForm Shield** renderer binary · TypeScript · 966★ on
-2026-09-28 (169★ on 2026-08-06)
+· TypeScript · 1,639★ on 2026-10-12, created 2026-07-22 (966★ on 2026-09-28,
+169★ on 2026-08-06)
+
+**Source read** 2026-10-12 at `1d3b75b` (2026-10-07), the two commits since
+`dd7913b` by `git diff --stat` and the files they added, read; every claim
+below that differs from the 2026-09-28 read is in § open-edit, re-read
+(2026-10-12), and the 2026-09-28 read follows it unchanged, as the record.
+
+#### open-edit, re-read (2026-10-12)
+
+**The closed renderer is gone.** Both commits since `dd7913b` are Copybara
+mirrors of a private `veed-llm-editor` repo (402 files, +13,459 / -54,250).
+`veed-engine-cli`, `install-engine`, the PolyForm Shield paragraph of
+`NOTICE`, the recipe templates under `refs/`, `check-delivery`, the preview
+page and a dozen gate and lint commands are deleted. The renderer is now
+open: `openedit render page.html` drives a pinned headless Chrome shell
+frame by frame under a virtual clock (fixed seed, fixed epoch,
+`cli/src/commands/render.ts:1-36`), in 2 s segments across parallel workers,
+and **re-renders only the segments a `--from/--to` touches**, splicing them
+back by stream copy so every other frame stays bit-identical. It then counts
+the joined file's packets (`ffprobe -count_packets`, `render/encode.ts:119-123`)
+and throws unless they equal the frames it planned (`render.ts:547-548`), and
+refuses a render where every frame is one flat colour (`render.ts:536-544`).
+That is an exact frame count, but of a motion-graphics page, not of an edit.
+
+**Linux is supported now**, by README: the platform badge and table name it,
+"the least exercised" because CI covers macOS and Windows
+(`.github/README.md:150-153`). That CI is private: the mirror carries 57
+test files under `cli/tests`, and its one public workflow, a merge gate on
+`ubuntu-latest`, only echoes ("open-edit ships no test suite", its own
+comment). init prints the apt commands rather than
+running them, and the pinned Chrome has `linux64` and `linux-arm64` builds
+(`render/browser.ts:24-32`). Nothing on Linux was run here.
+
+**Speech.** `transcribe` with no `--provider` now runs whatever
+`.open-edit-prefs.json` records and **refuses when nothing is recorded**,
+"because the provider is the user's choice" (`transcribe.ts:3-4`). The
+2026-09-28 finding that the code defaults to WhisperX no longer holds.
+`whisper` maps a Whisper-family JSON from your own service into its
+transcript shape.
+
+**Added:** `fal` (generation through fal.ai, a `FAL_KEY`), `veed-project`
+(hand a finished edit to VEED's web editor as an editable project, its last
+step a bookmarklet in the user's own session) and `veed-pull`, background
+removal and lipsync. The hosted side grew while the local side opened up.
+Still no MCP server (the same grep, empty), still no undo, and `apply-edl`'s
+footage cut is probed for durations but not counted.
+
+**Worth taking now:** the segment patch. proofcut's animated graphics
+already reuse a capture stamped with the page's bytes, the canvas and the
+rate (TRAPS.md § Animated graphics), so the gain is only for a long page
+edited in one place, which no film has needed. The "worth taking" below,
+the sampled picture-against-source sync search, was deleted upstream with
+`check-delivery`; the idea stands, and the code to read for it is at
+`dd7913b`.
+
+#### open-edit, read (2026-09-28)
 
 **Source read** 2026-09-28 at `dd7913b` (2026-09-22), 23 commits, about 17.4k
 lines in `cli/src`. The 2026-08-06 and 2026-09-16 entries rested on the
@@ -637,6 +744,64 @@ openshorts.
 **Worth taking:** the sampled picture-against-source sync search, a cheap
 frame-offset check; frame-grid snapping with a half-frame trim edge
 (`apply-edl.ts:38-46`).
+
+### Timeline Studio
+
+[MartinDelophy/ai-video-editor](https://github.com/MartinDelophy/ai-video-editor)
+· MIT · JavaScript (React, Vite) · 926★ on 2026-10-12, created 2026-07-09,
+pushed daily (911★ on 2026-10-11)
+
+**Source read** 2026-10-12 at `8217377` (2026-10-12), shallow clone: the
+headless CLI (`scripts/timeline-command.mjs`, 222 lines, in full), its stdio
+MCP server, the plan engine's validation (`src/lib/projectCommandEngine.js`,
+1,143 lines, by grep) and the skill; not the ~166k lines of browser app. The
+2026-10-11 sweep's one-row note (§ The sweep after FilmCraft) is this
+project.
+
+A local-first browser NLE (WebGPU and WASM: in-browser Whisper, TTS,
+music generation, LivePortrait talking avatars, depth maps, RIFE
+interpolation), with an agent surface bolted on twice: WebMCP tools inside
+the page, and a Node CLI plus an eight-tool stdio MCP server
+(`skills/edit-timeline-studio/mcp/server.mjs`) that work on a saved
+`.timeline` archive with no browser open. A hosted "Anna" edition saves
+projects to its cloud; Puter.js and Hugging Face Spaces plug in for remote
+generation.
+
+- **Edit.** A JSON plan of operations (`visual.trim`, `visual.split`,
+  `timed.move`, `caption.update`, `asset.import`, about twenty) carrying a
+  `baseRevision`; a stale one fails `REVISION_CONFLICT`
+  (`projectCommandEngine.js:1106-1107`). `project.diff` dry-runs a plan into
+  a field-level before/after; `project.run` writes a **new** archive and
+  refuses to overwrite its input or any existing file
+  (`OUTPUT_OVERWRITE_BLOCKED`, `timeline-command.mjs:176`, then a `wx`
+  write), so every step is a file to go back to.
+  Edits are in seconds; nothing is addressed by word.
+- **Speech.** Transcription is in the browser only
+  (`onnx-community/whisper-small_timestamped`, `src/config/models.js:4`).
+  Headless, `transcript.inspect` reads captions already saved in the project
+  and "does not run speech recognition" (`docs/webmcp.md:31`). A headless
+  agent cannot transcribe a new source.
+- **Render and check.** `project.render` builds an ffmpeg argument list from
+  the project and runs the host's ffmpeg; the check is that a video stream
+  exists at the planned width and height (`timeline-command.mjs:118-120`).
+  Duration is reported, not compared. Nothing counts frames or transcribes
+  the render.
+- **Linux.** The app is a web page; the CLI needs Node and ffmpeg, and its
+  host bootstrap has a `.sh` route that asks before `sudo apt-get`
+  (`references/host-environment.md:56`). CI is one `ubuntu-latest` job. Not
+  run here.
+
+**Against proofcut:** the nearest shape is the CLI's plan, revision and
+diff, which proofcut has as snapshots and `undo --steps N [--plan]`
+(docs/plans/GROUPED-UNDO.md) rather than as a refusal of a stale plan.
+palmier-pro's stale-index refusal was declined for the same reason the
+2026-10-11 tally gave: no trial has failed that way. It does not compete
+on the launch claims. **Worth taking:** nothing new. **Before borrowing
+anything from it:** the repo ships face reenactment (LivePortrait- and
+JoyVASA-derived models) under a "responsible use of deep synthesis" notice,
+with the models' own licences listed apart in `MODEL_LICENSES.md`, so its MIT
+file does not cover everything in the tree. The hosted Anna edition's agent
+plans "from metadata, without analyzing video frames or audio" (README).
 
 ### oh-my-cassette
 
@@ -1751,6 +1916,65 @@ accepts a varying rate.
   it would be held to is in-sample (held out, the learned prior scores 7),
   and there is one film's worth of human picks to test on.
 
+### claude-real-video
+
+[HUANGCHIHHUNGLeo/claude-real-video](https://github.com/HUANGCHIHHUNGLeo/claude-real-video)
+("crv") · MIT, with a paid closed "crv Pro" ($29) and a paid Codex build
+($9.90) sold beside it · Python · 2,216★ on 2026-10-12, created 2026-06-30,
+v0.10.7, on PyPI
+
+**Source read** 2026-10-12 at `ab4b9b2` (2026-10-09), depth-50 clone of 57
+commits: the frame pipeline, dedup, the Whisper paths and the MCP server in
+`src/claude_real_video/` (3,596 lines) read; `benchmark/benchmark.md` read;
+`memory.py`, `speakers.py` and the viewer skimmed. Nothing run.
+
+Not an editor: it turns a video into what a model can read, keyframes and a
+transcript, from a local file or any URL yt-dlp takes. A CLI (`crv`), a
+five-tool stdio MCP server (`watch_video`, `get_frames`, `get_transcript`,
+`search_memory`, `list_watched`, `mcp_server.py:88-244`) that returns frames
+as images, and a skill. CI runs Ubuntu, macOS and Windows.
+
+- **Frames.** One ffmpeg pass keeps a frame on `gt(scene,0.30)` **or** once a
+  second, whichever comes first (`core.py:460-488`), with `showinfo`'s
+  timestamps kept so VFR sources stay right. Then a dedup against the last
+  four kept frames, in three channels (`core.py:581-660`): a 16x16 global
+  diff for cuts and pans; a "settled local" channel at 192x192 that keeps a
+  frame when a small region changed and stopped changing (a caption swap,
+  ink, a UI update) while the scene is otherwise still; and an "action"
+  channel for a subject under 1% of the frame. `--adaptive` swaps the fixed
+  threshold for a score against a 2 s rolling average (`core.py:531-579`).
+  Grids tile the kept frames 3x3 for one image a model reads in order.
+- **Speech.** faster-whisper with Silero VAD on and
+  `condition_on_previous_text=False`; a run where the VAD finds no speech is
+  a result, and does not fall back to the ungated CLI "because it would
+  reintroduce the hallucination" (`core.py:1234-1269`). mlx-whisper is gated
+  by the same VAD. **Segment timestamps only**: no word timings anywhere in
+  `core.py`.
+- **Its own benchmark records its misses.** `benchmark/benchmark.md` runs six
+  public clips against plain 1 fps and 0.5 fps extraction and keeps the
+  frames crv dropped that 1 fps caught (a caption card, a screen state), and
+  finds `--adaptive` backfires on grainy footage (53 to 116 frames, nothing
+  new).
+
+**Against `describe`:** `describe` samples three frames per fixed 10 s
+window, off the window's edges (`describe.py` `frame_times`), because the
+VRAM measurements fixed the frames per call and PLAN.md § B-roll by
+description (§ Measured on this box, item 5) measured scene detection as a cliff, not a dial (0.1 to
+118 cuts, 0.3 to 5, on one source), and allowed it only to *subdivide* a
+window. crv's own benchmark reaches the same place from the other side: a
+fixed scene threshold misses slow change, an adaptive one fires on grain. So
+crv is not a frame picker `describe` should adopt. What it adds is the
+**settled-local channel**: a cheap, model-free test for "a small part of a
+still frame changed and stayed changed", which is what a title card, a
+lower third or a screen recording's state change looks like, and which
+`describe`'s evenly spaced frames can straddle. Its word-less transcript and
+URL fetching rule it out as an ingest for proofcut (proofcut transcribes for
+word timings, and never fetches media it was not handed).
+
+**Worth taking:** the settled-local test, if a window's three frames are ever
+shown to miss on-screen text that a description needed. Not needed by
+anything yet.
+
 ### Voice: VoiceStudio and voice-pro
 
 **Source read** 2026-09-20: VoiceStudio at `7c9e7a4`, voice-pro at
@@ -2135,6 +2359,27 @@ the official MCP registry for `video`, and two web searches. **Not run**: the
 registry for any term but `video` (the loop timed out), Glama's search, and a
 stargazer walk. The second reader ran the registry terms; Glama's own
 listing and the stargazer walk are still not run.
+
+### Four repos, asked for by name (2026-10-12)
+
+Tyler named four from a quick scan: video-use and its copy freecut,
+claude-real-video, open-edit and Timeline Studio. Each was re-read from a
+fresh clone (depth 50, source before README, nothing installed or run), and
+every count and absence was re-run around the output filter. Two were
+already entries and are updated in place; Timeline Studio was a row in the
+2026-10-11 sweep and is an entry now; claude-real-video is new, under
+Adjacent, since it edits nothing.
+
+**No launch claim moved.** None transcribes its render. **One row did:**
+open-edit's renderer is open now and counts its own render's frames exactly,
+so it joins the `check_frames` row in § Where proofcut stands, with the
+caveat that what it counts is an HTML page's render, not a cut. The other
+news is open-edit's: the closed PolyForm Shield binary and `check-delivery`
+are gone, and Linux is supported by README. video-use's head moved only in
+prose and captions; its hosted version is announced.
+
+Not checked: whether any of the four runs on this box. freecut's stars
+(280 for two commits on one day) were not explained.
 
 ### Every entry from source (2026-09-28)
 
