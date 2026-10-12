@@ -228,7 +228,7 @@ function renderCoverage(coverage) {
   const staleOn = coverage.stale_seconds > 0;
   setChip(
     $("frame-chip-stale"),
-    staleOn ? `${coarse(coverage.stale_seconds)} stale` : "no stale framing",
+    staleOn ? `${coarse(coverage.stale_seconds)} stale crop` : "no stale crops",
     staleOn ? "warn" : "ok",
     staleOn
       ? `${coverage.stale_seconds}s of framing held across a cut, over ${coverage.stale_stretches} stretch${coverage.stale_stretches === 1 ? "" : "es"}`
@@ -237,7 +237,7 @@ function renderCoverage(coverage) {
   const steps = coverage.steps.length;
   setChip(
     $("frame-chip-steps"),
-    steps ? `${steps} unexplained step${steps === 1 ? "" : "s"}` : "no step gaps",
+    steps ? `${steps} unexplained jump${steps === 1 ? "" : "s"}` : "no jumps",
     steps > 0 ? "warn" : "ok",
   );
   // Informational only — never .warn and never .ok either. A ratio is not a
@@ -245,7 +245,9 @@ function renderCoverage(coverage) {
   // fault, it is nine cuts of which six are inside one continuous framing.
   // default_seconds (the centre crop doing what it always did) is
   // deliberately not read anywhere here.
-  setChip($("frame-chip-cuts"), `${coverage.cuts_framed}/${coverage.cuts} cuts framed`, null);
+  // Worded as what it counts: cuts where a new crop starts. "0/21 cuts
+  // framed" read beside "framing ok" as a contradiction (2026-10-12).
+  setChip($("frame-chip-cuts"), `reframed at ${coverage.cuts_framed} of ${coverage.cuts} cut${coverage.cuts === 1 ? "" : "s"}`, null);
 }
 
 /* -- the sheet job --------------------------------------------------------- */

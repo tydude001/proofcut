@@ -34,7 +34,7 @@
  * first place.
  */
 
-import { $, el, secs } from "./dom.js";
+import { $, el, fmt, secs } from "./dom.js";
 
 let ctx = null;
 let lastView = null;
@@ -103,6 +103,88 @@ function rows(obj, omit = []) {
   return table;
 }
 
+/** The project's own `status`, worded the way a person says it.
+ *
+ * The one bundle this pane labels rather than dumps, because it is the one
+ * shown with nothing selected, and `expected_frames`/`undo_depth` were the
+ * transport talking (the 2026-10-12 watch). It is still complete: every key
+ * this function does not word falls through to `rows()`'s raw line, so a
+ * field `ops.status` grows later shows up rather than silently vanishing.
+ * Three lengths that agree become one row; when a head, tail or retime makes
+ * the render longer than the Edit, the row names both. */
+function statusRows(status) {
+  const table = el("table", "rows");
+  const body = document.createElement("tbody");
+  const used = new Set(["seeded", "project"]);
+  const add = (label, text, keys, dim = false) => {
+    for (const key of keys) used.add(key);
+    const tr = document.createElement("tr");
+    tr.append(el("td", null, label), el("td", dim ? "none" : null, text));
+    body.append(tr);
+  };
+  const plural = (n, one) => `${n.toLocaleString()} ${one}${n === 1 ? "" : "s"}`;
+
+  if (status.seeded === false) {
+    add("Timeline", "not built yet", [], true);
+  } else {
+    const edit = status.timeline_duration;
+    const render = status.expected_duration;
+    let length;
+    if (render === null || render === undefined) {
+      length = `${fmt(edit)} · render length unknown`;
+    } else if (Math.abs(render - edit) >= 0.05) {
+      length = `${fmt(edit)} edit · ${fmt(render)} render · ${plural(status.expected_frames, "frame")}`;
+    } else {
+      length = `${fmt(edit)} · ${plural(status.expected_frames, "frame")}`;
+    }
+    add("Length", length, ["timeline_duration", "expected_duration", "expected_frames"]);
+  }
+  if (status.canvas) add("Canvas", String(status.canvas).replace("x", " × "), ["canvas"]);
+  if (Array.isArray(status.clips)) add("Clips", fmtValue("clips", status.clips), ["clips"], !status.clips.length);
+  if (typeof status.segments === "number") {
+    const cuts = lastView && Array.isArray(lastView.seams) ? `, ${plural(lastView.seams.length, "cut")}` : "";
+    add("Pieces", `${status.segments} kept${cuts}`, ["segments"]);
+  }
+  const bookend = (value) => `${value.asset} · ${fmt(value.seconds)}`;
+  add("Cold open", status.head ? bookend(status.head) : "none", ["head"], !status.head);
+  add("End card", status.tail ? bookend(status.tail) : "none", ["tail"], !status.tail);
+  if ("retime" in status) {
+    const retime = status.retime;
+    let text = "none";
+    if (retime && retime.error) text = `can't resolve: ${retime.error}`;
+    else if (retime) {
+      const n = (retime.stretches || []).length;
+      text = `${n} stretch${n === 1 ? "" : "es"}`;
+    }
+    add("Speed changes", text, ["retime"], !retime);
+  }
+  if (status.pack) {
+    const pack = status.pack;
+    let text = "not applied";
+    if (pack.applied) {
+      text = `${pack.name}${pack.active_variant ? ` · ${pack.active_variant}` : ""}`;
+      if (pack.stale_cards && pack.stale_cards.length) text += ` · stale: ${pack.stale_cards.join(", ")}`;
+    }
+    add("Channel look", text, ["pack"], !pack.applied);
+  }
+  if (typeof status.undo_depth === "number") {
+    add("Undo", status.undo_depth ? `${plural(status.undo_depth, "step")} back` : "nothing to undo", ["undo_depth"]);
+  }
+  if (status.project) {
+    const folder = String(status.project).split(/[\\/]/).filter(Boolean).pop();
+    add("Folder", `…/${folder}`, ["project"]);
+    body.lastChild.lastChild.title = status.project;
+  }
+  for (const [key, value] of Object.entries(status)) {
+    if (used.has(key)) continue;
+    const tr = document.createElement("tr");
+    tr.append(el("td", null, key), el("td", null, fmtValue(key, value)));
+    body.append(tr);
+  }
+  table.append(body);
+  return table;
+}
+
 function section(title, contentNode) {
   const box = el("div", "prop-section");
   box.append(el("h3", null, title));
@@ -156,7 +238,7 @@ function renderBundle(result) {
   if (!body) return;
   body.textContent = "";
 
-  body.append(section("status", rows(result.status)));
+  body.append(section("project", statusRows(result.status)));
   body.append(section("canvas", rows(result.canvas)));
   body.append(section("caption style", rows(result.caption_style)));
 

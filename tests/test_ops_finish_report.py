@@ -484,3 +484,21 @@ def test_holds_runs_hold_check_against_the_last_render(project: Project) -> None
         "count": 0,
         "faults": 0,
     }
+
+
+def test_last_render_says_whether_the_window_can_play_it(project: Project, tmp_path: Path) -> None:
+    """`GET /api/output` streams only a file inside the project, so a render
+    an agent exported beside it is real, on disk, and unplayable in Finish.
+    Finish drew that as a black player (2026-10-12); `inside` lets it say so."""
+    outside = tmp_path / "elsewhere" / "cut.mp4"
+    outside.parent.mkdir(parents=True)
+    outside.write_bytes(b"a render written outside the project")
+    renderlog.append(project, output=str(outside), preset=None, expected_duration=1.5, stages={})
+    last = ops.finish_report(project.root)["last_render"]
+    assert last["exists"] is True and last["inside"] is False
+
+    inside = project.root / "renders" / "cut.mp4"
+    inside.parent.mkdir(parents=True, exist_ok=True)
+    inside.write_bytes(b"a render inside it")
+    renderlog.append(project, output=str(inside), preset=None, expected_duration=1.5, stages={})
+    assert ops.finish_report(project.root)["last_render"]["inside"] is True

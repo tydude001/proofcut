@@ -185,17 +185,32 @@ function renderManifest() {
   // `autoeditor.frame_layout`). Writing "a + b = c" would assert arithmetic
   // that is false, and the render hits the third number, not the sum.
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
-  const lines = [
-    `preset: ${presetLabel}`,
-    `duration: ${fmt(b.duration.total_seconds)} — the length the render must hit`,
-    `           edit ${fmt(b.duration.edit_seconds)} · tail ${fmt(b.duration.tail_seconds)}`,
-    `canvas: ${b.canvas.canvas}`,
-    `captions: ${b.captions.configured ? "configured" : "no style"} · last render burned: ${b.captions.burned}`,
-    `picture: ${plural(b.picture.cue_count, "cue")}, ${b.picture.pinned_count} pinned${b.picture.shots_error ? " · picture refused: " + b.picture.shots_error : ""}`,
-    plural(b.flags.count, "flag"),
+  // A mark is drawn only where the bundle itself holds a verdict (captions'
+  // `burned`, the flag count, `shots_error`); every other row is a stated
+  // fact with a neutral dot. This file still forms no opinion.
+  const rows = [
+    ["fact", `Length ${fmt(b.duration.total_seconds)}, the length the render must hit`,
+      b.duration.tail_seconds ? `edit ${fmt(b.duration.edit_seconds)} · tail ${fmt(b.duration.tail_seconds)}` : null],
+    ["fact", `Canvas ${String(b.canvas.canvas).replace("x", " × ")}`, null],
+    b.captions.burned === "yes"
+      ? ["yes", "Captions burned into the last render", null]
+      : ["fact", `Captions burned into the last render: ${b.captions.burned}`, null],
+    ["fact", b.captions.configured ? "Caption style set" : "No caption style (the default look)", null],
+    b.picture.shots_error
+      ? ["no", `Picture refused: ${b.picture.shots_error}`, null]
+      : ["fact", `${plural(b.picture.cue_count, "b-roll cue")}, ${b.picture.pinned_count} pinned`, null],
+    b.flags.count ? ["no", plural(b.flags.count, "flag"), null] : ["yes", "No flags", null],
   ];
   box.textContent = "";
-  for (const line of lines) box.append(el("div", null, line));
+  box.append(el("div", "finish-manifest-head", `A render with ${presetLabel}`));
+  for (const [state, text, sub] of rows) {
+    const row = el("div", `finish-check ${state}`);
+    row.append(el("span", "mark", { yes: "✓", no: "✗", fact: "·" }[state]));
+    const body = el("span", null, text);
+    if (sub) body.append(el("span", "sub", ` (${sub})`));
+    row.append(body);
+    box.append(row);
+  }
 }
 
 /* -- the last render, playable ---------------------------------------------- */
@@ -208,21 +223,44 @@ function renderManifest() {
 // It never lists `renders/` and never lets the page name a file: the route
 // resolves the render log's own last output, so what plays here is exactly
 // what the report above describes.
+let player = null; // the built .finish-player, kept across re-renders
+let playerName = null; // the render it plays
+
 function renderLastOutput() {
   const box = $("finish-output");
   if (!box) return;
   box.textContent = "";
   const last = lastFinish && lastFinish.last_render;
-  if (!last) {
-    // Its own column now, so "nothing here yet" has to be SAID — an empty
-    // half of the screen reads as a pane that failed to load.
-    box.append(el("div", "pane-placeholder", "nothing rendered from this window yet"));
+  // `inside === false` is a real render that /api/output will not stream,
+  // because it was written outside the project (an agent's `export --out
+  // ../cut.mp4`): a player for it would only ever show black.
+  if (!last || !last.exists || last.inside === false) {
+    player = null;
+    playerName = null;
+    // Its own column, so "nothing here yet" has to be SAID: an empty half
+    // of the screen reads as a pane that failed to load.
+    let note;
+    if (!last) note = el("div", "pane-placeholder", "nothing rendered from this window yet");
+    else if (!last.exists) note = el("div", "warn", `last render: ${last.name} — no longer on disk`);
+    else {
+      note = el("div", "warn", `last render: ${last.name} was saved outside this project, so it can't play here`);
+      note.title = last.output;
+    }
+    box.append(note);
     return;
   }
-  if (!last.exists) {
-    box.append(el("div", "warn", `last render: ${last.name} — no longer on disk`));
-    return;
+  // Played in place since 2026-10-12. It used to wait behind a Watch
+  // button so a visit would not pull the file over, but the player asks
+  // for `preload="metadata"`, which is a ranged read of the header and the
+  // first frame (/api/output honours Range), not the file. The node is kept
+  // while the render is the same one, because every `project-changed`
+  // re-renders this column and a rebuilt <video> would stop someone
+  // mid-watch whenever an agent made a cut.
+  if (!player || playerName !== last.name) {
+    player = buildPlayer();
+    playerName = last.name;
   }
+  box.append(player);
   const line = el("div", "finish-output-line");
   line.append(el("span", "hint", "last render"));
   // The name is a 60-character hash and this column is not always wide, so
@@ -236,21 +274,9 @@ function renderLastOutput() {
   // nothing, since "not recorded" is not "unchanged".
   if (last.current === false) {
     const stale = el("span", "warn", "older than the edit");
-    stale.title = "The timeline or project settings changed after this render. Export again to watch the current cut.";
+    stale.title = "The timeline or project settings changed after this render. Render again to watch the current cut.";
     line.append(stale);
   }
-  line.append(el("span", "spacer"));
-  const watch = el("button", null, "Watch");
-  watch.type = "button";
-  // Still lazy, and for the reason it always was: /api/output streams the
-  // render, and building the element is what starts the fetch. Visiting
-  // Finish to read the checklist must not pull the whole file over.
-  watch.addEventListener("click", () => {
-    if (box.querySelector("video")) return;
-    watch.disabled = true;
-    box.append(buildPlayer());
-  });
-  line.append(watch);
   box.append(line);
 }
 

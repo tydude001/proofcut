@@ -4471,6 +4471,16 @@ def _referenced_clip_ids(manifest: dict[str, Any], on_timeline: set[str]) -> set
     return referenced
 
 
+def _inside(path: Path, root: Path) -> bool:
+    """Whether `path` resolves to somewhere under `root` — `GET /api/output`'s
+    own confinement test, stated once more for the report that offers it."""
+    try:
+        path.resolve().relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
 def finish_report(
     path: Path | str, *, framing: bool = False, holds: bool = False, continuity: bool = False
 ) -> dict[str, Any]:
@@ -4561,7 +4571,9 @@ def finish_report(
     returns a report (empty `by_kind`, zero `count`), the `framing` shape.
 
     `last_render` is the render log's own last `output`, its basename, its
-    timestamp, whether that file is still on disk, and `current` — whether
+    timestamp, whether that file is still on disk, `inside` — whether it sits
+    in the project, which is the only place `GET /api/output` streams from —
+    and `current` — whether
     the edit that render read is still the project's (`renderlog.current`:
     `None` for a render logged before stamps existed) — `None` when nothing
     has ever rendered here. It is what `GET /api/output` streams and what the
@@ -4658,6 +4670,11 @@ def finish_report(
             "output": str(out_path),
             "name": out_path.name,
             "exists": out_path.is_file(),
+            # Whether `GET /api/output` will stream it: that route serves only
+            # a file inside the project (its own docstring has why), and an
+            # agent's `export --out ../cut.mp4` is a real render it refuses.
+            # Finish showed such a render as a black player (2026-10-12).
+            "inside": _inside(out_path, project.root),
             "timestamp": run.get("timestamp"),
             # Whether the edit has moved since this render read it. Reported
             # and never a flag: an edit after a render is what editing is, and

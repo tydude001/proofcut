@@ -521,7 +521,7 @@ function captionLabel(captions) {
   return "captions: unknown";
 }
 
-/** `"framing ok"` when `ops.finish_report`'s composed `framing` section
+/** `"no stale crops"` when `ops.finish_report`'s composed `framing` section
  * raised neither flag, else the stale-seconds / step-gap counts it did
  * raise, joined — the `captionLabel` precedent one line up: a small local
  * formatter, no decision. `worst_offset` is deliberately not read here or
@@ -543,9 +543,13 @@ function framingLabel(framing) {
   // has not run rides the tooltip, set at the call site.
   if (!framing) return "framing — not scanned";
   const parts = [];
-  if (framing.stale_seconds > 0) parts.push(`${framing.stale_stretches} stale`);
-  if (framing.steps > 0) parts.push(`${framing.steps} step gap${framing.steps === 1 ? "" : "s"}`);
-  return parts.length ? parts.join(" / ") : "framing ok";
+  if (framing.stale_seconds > 0) {
+    parts.push(`${framing.stale_stretches} stale crop${framing.stale_stretches === 1 ? "" : "s"}`);
+  }
+  if (framing.steps > 0) parts.push(`${framing.steps} jump${framing.steps === 1 ? "" : "s"}`);
+  // Not "framing ok": these two are all the scan measures, and a centre crop
+  // that cuts a face out passes both (the 2026-10-12 watch's reframe sheet).
+  return parts.length ? parts.join(" / ") : "no stale crops";
 }
 
 // The framing chip has two sources, and the report outranks the scan. When

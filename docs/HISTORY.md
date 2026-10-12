@@ -19542,3 +19542,48 @@ an NLE project target is unchanged. The FilmCraft render now agrees, 12,006
 = 12,006; the 24 fps renders and proofcut's own carry no note.
 `test_ops_check_frames.py`'s five tests fail without the change.
 
+
+## The workspace watched on real footage, and four fixes — 2026-10-12
+
+The redesign and the four sheets had never been watched on real material. A
+served page put the current build on a copy of the Scream trial project
+beside all four sheets made from it. Tyler's notes: the top-left logo looked
+wrong. He approved mockups of the logo and three fixes the page had flagged,
+and all four were built.
+
+- **The logo is in the bar.** The bar still drew "proofcut" in the italic
+  serif, a stand-in from before the logo (§ The logo) that never got
+  replaced. `index.html` and `picker.html` now inline
+  `proofcut-horizontal-*.svg` at 160 px, LOGO.md's minimum. Its two fills
+  are `--accent` and `--ink`, which is what the four colourways already
+  were. Measured in both themes: tick `#73A8E7`/`#2461BC`.
+- **Properties words its project rows.** `expected_frames`, `undo_depth` and
+  `seeded` were the transport talking. `statusRows` labels the known keys,
+  folds the three lengths into one row (both when a head, tail or retime
+  makes the render longer), and still prints any key it does not know raw,
+  so the pane stays complete. The canvas and caption-style sections are
+  unchanged.
+- **The framing chips say what they measured.** "framing ok" sat over
+  "0/21 cuts framed" and read as a contradiction. Worse, the reframe sheet
+  showed the centre crop cutting faces out while the chip said ok. The scan
+  measures only stale crops and unexplained steps, so the chips now say
+  "no stale crops", "no jumps" and "reframed at 0 of 21 cuts". The mockup
+  had offered "21 of 21 cuts on centre crop"; `cuts_framed` counts cuts
+  where a window boundary sits, which is not the same claim, so it was not
+  built that way.
+- **Finish plays the render in place, with the checklist under it.** Two
+  thirds of Finish was blank behind a Watch button. The player is built at
+  once (`preload="metadata"`, a ranged read) and kept across
+  `project-changed` re-renders while the render is the same one, so an
+  agent's cut does not stop someone mid-watch. The manifest became a
+  checklist: a mark only where the bundle holds a verdict (captions burned,
+  flags, `shots_error`), a dot for every other fact.
+- **A render outside the project now says so.** Verifying Finish found it:
+  the trial's render was `export --out ../cut.mp4`, `exists` was true, and
+  `/api/output` refuses anything outside the project, so the player was
+  black. `finish_report`'s `last_render` gained `inside`, and Finish names
+  the case instead of drawing a dead player. One test, red on the old code.
+
+Verified in headless Chrome over CDP, and playback in the Google Chrome
+flatpak: the Playwright headless shell has no H.264 decoder and shows any
+render as black. Suite: 2963 passed.
