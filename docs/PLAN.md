@@ -245,7 +245,7 @@ left. The conclusion survives because it was always the load-bearing one, but
     where it was, because `webui.py` had no route under `renders/` at all.
     What shipped is the one file the flow itself recorded:
     `finish_report`'s new `last_render`, `GET /api/output` streaming it
-    through the existing `_stream_file`, and a Watch button in Finish. It is
+    through the existing `_stream_file`, and Finish playing it in place. It is
     **not** a listing of `renders/`, not a path the client may name, and not
     a third caller of `media.preview_path()` — a render is not a preview.
     HISTORY.md § The window plays its own render.

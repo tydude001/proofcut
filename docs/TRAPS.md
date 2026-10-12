@@ -733,7 +733,7 @@ built; docs/plans/INSTALL.md):
       narrow: a chip goes green only where zero is the op's own verdict
       about its own subject (`flags.count`, `stale_seconds`, `steps`), never
       on a fact that is neither good nor bad (a canvas, a caption state, a
-      `cuts framed` ratio) — that would be the window forming an opinion.
+      `reframed at N of M cuts` ratio) — that would be the window forming an opinion.
   - **The rail (`#rail-pane`) is ONE pane with three tab panels, not three
     columns** — agent, assets and properties, each getting the whole rail
     when its tab is on. Two panes stacked in one column at `flex: 1 1 50%`
