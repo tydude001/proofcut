@@ -646,8 +646,8 @@ tracking.
 **Worth taking:** the seam composite, as an image a tool returns, for the
 judgments the text views leave to the agent (a jump cut's picture, a breath
 the words do not show). Nothing in the trials yet says an agent missed one
-for want of a picture (§ The sweep after FilmCraft's tally found no such
-error), so it is an idea held, not a gap.
+for want of a picture (the tally in § The sweep after FilmCraft found no
+such error), so it is an idea held, not a gap.
 
 ### open-edit
 
@@ -690,8 +690,17 @@ running them, and the pinned Chrome has `linux64` and `linux-arm64` builds
 `.open-edit-prefs.json` records and **refuses when nothing is recorded**,
 "because the provider is the user's choice" (`transcribe.ts:3-4`). The
 2026-09-28 finding that the code defaults to WhisperX no longer holds.
-`whisper` maps a Whisper-family JSON from your own service into its
-transcript shape.
+The providers are `veed`, `whisperx` (local, free) and `custom`, which is
+not code: the agent gets a Whisper-family JSON from the user's own service
+and hands it to the `whisper` command, which maps it into the transcript
+shape (`transcribe.ts:9-11`, `:38`).
+
+**The licence precedent is gone.** HISTORY.md § The licence, chosen cites
+open-edit as "the precedent in this exact field for a PolyForm text over an
+agent-facing editor". With the binary deleted, the tree is Apache-2.0 only
+and no PolyForm text remains. The decision stands on its own reasons
+(DECISIONS.md), which never rested on open-edit; the field simply has no
+other PolyForm editor now.
 
 **Added:** `fal` (generation through fal.ai, a `FAL_KEY`), `veed-project`
 (hand a finished edit to VEED's web editor as an editable project, its last
@@ -1959,9 +1968,9 @@ as images, and a skill. CI runs Ubuntu, macOS and Windows.
 **Against `describe`:** `describe` samples three frames per fixed 10 s
 window, off the window's edges (`describe.py` `frame_times`), because the
 VRAM measurements fixed the frames per call and PLAN.md § B-roll by
-description (§ Measured on this box, item 5) measured scene detection as a cliff, not a dial (0.1 to
-118 cuts, 0.3 to 5, on one source), and allowed it only to *subdivide* a
-window. crv's own benchmark reaches the same place from the other side: a
+description (§ Measured on this box, item 5) measured scene detection as a
+cliff, not a dial (0.1 to 118 cuts, 0.3 to 5, on one source), and allowed it
+only to *subdivide* a window. crv's own benchmark reaches the same place from the other side: a
 fixed scene threshold misses slow change, an adaptive one fires on grain. So
 crv is not a frame picker `describe` should adopt. What it adds is the
 **settled-local channel**: a cheap, model-free test for "a small part of a
@@ -2362,8 +2371,8 @@ listing and the stargazer walk are still not run.
 
 ### Four repos, asked for by name (2026-10-12)
 
-Tyler named four from a quick scan: video-use and its copy freecut,
-claude-real-video, open-edit and Timeline Studio. Each was re-read from a
+Tyler named four from a quick scan, five repos counting video-use's copy:
+video-use and freecut, claude-real-video, open-edit and Timeline Studio. Each was re-read from a
 fresh clone (depth 50, source before README, nothing installed or run), and
 every count and absence was re-run around the output filter. Two were
 already entries and are updated in place; Timeline Studio was a row in the
@@ -2375,8 +2384,10 @@ open-edit's renderer is open now and counts its own render's frames exactly,
 so it joins the `check_frames` row in § Where proofcut stands, with the
 caveat that what it counts is an HTML page's render, not a cut. The other
 news is open-edit's: the closed PolyForm Shield binary and `check-delivery`
-are gone, and Linux is supported by README. video-use's head moved only in
-prose and captions; its hosted version is announced.
+are gone, which also leaves the Shield decision's cited precedent
+(HISTORY.md § The licence, chosen) without a living example, and Linux is
+supported by README. video-use's head moved only in prose and captions; its
+hosted version is announced.
 
 Not checked: whether any of the four runs on this box. freecut's stars
 (280 for two commits on one day) were not explained.
