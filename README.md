@@ -134,11 +134,10 @@ a render.
 
 ## What it can do
 
-One project, and proofcut's own commands from the first import to the
-delivered file. No NLE finishes the film, and nothing else touches the render.
-Each stage is one command, and each row links the section of the
-[manual](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md) that
-walks it.
+Every stage from the first import to the delivered file is a proofcut
+command. No NLE finishes the film, and nothing else touches the render. Each
+row links the [manual](https://github.com/tydude001/proofcut/blob/main/docs/MANUAL.md)
+section that walks it.
 
 | Stage | Command |
 |---|---|
@@ -180,16 +179,16 @@ Beyond those stages:
 - **Screen recordings.** Named instants (`events`) that a crop, a sound or a
   speed change can hang off, a clip inset into the recording, and a retime
   for the slow parts.
-- **Animated graphics.** A graphic is a web page an agent writes or fills
-  from a template (typing, a highlighter sweep, a letter build, chips),
-  captured frame by frame by a headless browser and placed over a span of
-  words. It animates in, holds as long as the span lasts, and animates out,
-  so a cut never breaks one. A page can show a span of the project's own
-  footage, exact to the frame. Saved graphics carry across projects.
+- **Animated graphics.** A web page, written by an agent or filled from a
+  template (typing, a highlighter sweep, a letter build, chips), captured
+  frame by frame and placed over a span of words. It animates in, holds for
+  the span, and animates out, so a cut never breaks one. A page can show the
+  project's own footage, exact to the frame, and saved graphics carry across
+  projects.
 - **Stills and stickers.** Photos and cut-outs go in once, upright, and play
-  full frame or ride over the film as stickers: placed, sized, turned, framed
-  as a photo card, popping or sliding in. Paste one into the agent's prompt
-  and it is added.
+  full frame or ride over the film: placed, sized, turned, framed as a photo
+  card, popping or sliding in. Paste one into the agent's prompt and it is
+  added.
 - **Built for agents.** 132 MCP tools with typed inputs, structured returns
   and read/write annotations, so Claude Code, Codex or your own agent can
   drive it and a permission layer can tell a look from a change.
@@ -305,9 +304,9 @@ it would do first. [§ What it puts on your machine](#what-it-puts-on-your-machi
 is the whole footprint and how to reverse it.
 
 **Check your machine**, before cloning anything. `proofcut doctor` probes every
-tool proofcut uses and prints the fix for anything missing
-([§ Requirements](#requirements) has the list). It only looks. It installs
-nothing and writes nothing. With [uv](https://docs.astral.sh/uv/) installed:
+tool proofcut uses ([§ Requirements](#requirements) has the list) and prints
+the fix for anything missing. It only looks, and writes nothing. With
+[uv](https://docs.astral.sh/uv/) installed:
 
 ```sh
 uvx proofcut doctor
@@ -317,10 +316,9 @@ That first run downloads Python 3.13 if uv has none, plus proofcut's
 dependencies. That is about 230 MB, all of it inside uv's own cache, which
 `uv cache clean` empties.
 
-**Then read what an install would do.** On Linux, Windows and a Mac of either
-kind,
-`proofcut setup --plan` prints every piece it would fetch, its size, and which
-doctor row asked for it, then stops without touching anything:
+**Then read what an install would do.** On Linux, Windows and either kind of
+Mac, `proofcut setup --plan` prints every piece it would fetch, its size, and
+which doctor row asked for it, then stops without touching anything:
 
 ```sh
 uvx proofcut setup --plan
@@ -421,10 +419,10 @@ than guessed at, and `proofcut migrate` brings it forward.
 
 ## What it puts on your machine
 
-proofcut is a local tool that needs real media binaries, so `proofcut setup`
-does download a few hundred megabytes. Here is all of it, where it goes, and
-what takes it away. Sizes are a Linux x86_64 bare machine; `proofcut setup
---plan` prints yours.
+proofcut is a local tool that needs real media binaries, so on a bare machine
+`proofcut setup` downloads about 2.2 GB, most of it whisper. Here is
+all of it, where it goes, and what takes it away. Sizes are a Linux x86_64
+bare machine; `proofcut setup --plan` prints yours.
 
 | What | Where | Size | Removed by |
 |---|---|---|---|
@@ -478,11 +476,14 @@ it touches nothing outside your own user account.
 ## Help wanted: a Mac or a Windows run
 
 GitHub's macOS and Windows runners take the demo to a checked render, but a
-runner never reads the instructions. On a Mac, one person has taken the demo
-to a checked render, on an Intel Mac (i7-8850H, macOS 15.7.9); on Apple
-silicon only the runner has. On Windows, the author's own Windows 11 laptop has, twice, and
-nobody else's PC; Windows 10 and ARM64 PCs have not been tried at all. If you
-have one of these machines and half an hour, one script installs what
+runner never reads the instructions. By hand, so far:
+
+- **Mac:** one person, on an Intel Mac (i7-8850H, macOS 15.7.9). On Apple
+  silicon only the runner has.
+- **Windows:** the author's own Windows 11 laptop, twice, and nobody else's
+  PC. Windows 10 and ARM64 PCs have not been tried at all.
+
+If you have one of these machines and half an hour, one script installs what
 proofcut needs, makes a short test video, has proofcut cut, score, master and
 check it, and puts a report on your Desktop. It asks before it starts,
 records what it added, and removes exactly that on request, nothing you
@@ -520,27 +521,27 @@ It downloads `uv` into one folder under `%LOCALAPPDATA%` and uses it to run
 `proofcut setup`, which fetches whatever of ffmpeg, auto-editor, Shotcut's
 renderer and whisper your PC is missing. Nothing is installed system-wide
 and it needs no administrator rights. The same command with `-Uninstall`
-runs `proofcut setup --uninstall` and deletes that folder. It puts `proofcut-windows-report.zip` on
-your Desktop with your home folder's name taken out; [file the report](https://github.com/tydude001/proofcut/issues/new?template=windows-test.yml).
+runs `proofcut setup --uninstall` and deletes that folder. It puts
+`proofcut-windows-report.zip` on your Desktop with your home folder's name
+taken out; [file the report](https://github.com/tydude001/proofcut/issues/new?template=windows-test.yml).
 
 </details>
 
 ## Requirements
 
 proofcut is developed on Linux (a Fedora-based desktop). On macOS and Windows
-the test suite passes on CI; where each OS stands by hand is
+the test suite passes on CI; where each stands by hand is
 [§ Help wanted](#help-wanted-a-mac-or-a-windows-run) above, and in detail
 [docs/plans/PORTABILITY.md](https://github.com/tydude001/proofcut/blob/main/docs/plans/PORTABILITY.md).
 
-Every hard part of an editor already exists as mature open source, and
-proofcut is the layer that lets an agent drive those tools and check what
-they produced. Run `uv run proofcut doctor` to check everything below at
-once. On Linux, Windows and a Mac of either kind, `uv run proofcut setup` installs
-any of the last four that doctor marks ✗
-([§ What it puts on your machine](#what-it-puts-on-your-machine), and
-`--plan` to read it first): a static ffmpeg, whisper,
-auto-editor's release binary and Shotcut's melt (on Linux the portable
-build, which renders with no display at all;
+Every hard part of an editor already exists as mature open source; proofcut
+is the layer that lets an agent drive those tools and check what they
+produced. `proofcut doctor` checks everything below at once. On Linux,
+Windows and either kind of Mac, `proofcut setup` installs whichever of the
+last four doctor marks ✗: a static ffmpeg, whisper, auto-editor's release
+binary and Shotcut's melt, which on Linux is the portable build that renders
+with no display at all
+([§ What it puts on your machine](#what-it-puts-on-your-machine);
 [docs/plans/INSTALL.md](https://github.com/tydude001/proofcut/blob/main/docs/plans/INSTALL.md)).
 
 | You need | For | Notes |
@@ -583,15 +584,11 @@ The documentation:
 proofcut's reasoning is part of what it ships, so the design record is public:
 
 - [PLAN.md](https://github.com/tydude001/proofcut/blob/main/docs/PLAN.md): architecture, stack decisions, open questions.
-- [HISTORY.md](https://github.com/tydude001/proofcut/blob/main/docs/HISTORY.md): the dated record of what shipped and what the
-  evidence said.
-- [COMPETITORS.md](https://github.com/tydude001/proofcut/blob/main/docs/COMPETITORS.md): what else exists in this space, and what
-  proofcut does that they don't.
+- [HISTORY.md](https://github.com/tydude001/proofcut/blob/main/docs/HISTORY.md): the dated record of what shipped and what the evidence said.
+- [COMPETITORS.md](https://github.com/tydude001/proofcut/blob/main/docs/COMPETITORS.md): what else exists in this space, and what proofcut does that they don't.
 - [NEXT.md](https://github.com/tydude001/proofcut/blob/main/docs/NEXT.md): the directions after the queues closed, ranked.
-- [TRIAL.md](https://github.com/tydude001/proofcut/blob/main/docs/TRIAL.md): an agent cutting a video end to end, unattended
-  and scored.
-- [docs/plans/](https://github.com/tydude001/proofcut/tree/main/docs/plans): the plans, in progress and finished. A step
-  that landed says "Shipped" and names its HISTORY.md section.
+- [TRIAL.md](https://github.com/tydude001/proofcut/blob/main/docs/TRIAL.md): an agent cutting a video end to end, unattended and scored.
+- [docs/plans/](https://github.com/tydude001/proofcut/tree/main/docs/plans): the plans, in progress and finished. A step that landed says "Shipped" and names its HISTORY.md section.
 
 ## License
 
