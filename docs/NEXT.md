@@ -89,6 +89,10 @@ second reason 1 runs first.
 
 ## 3. The co-hosted recording — the critical path is physical
 
+**Shelved, 2026-10-21:** Tyler is not buying the second mic. So nothing below
+moves, and speaker attribution stays measured on synthetic voice only, until
+a second mic exists.
+
 The co-hosted note's steps 2 and 5 explicitly **have nothing to be built
 against until the five-minute two-mic test recording exists** (PLAN.md § The
 co-hosted recording — the design note), and right now `RecTracks=3` records two copies of one mix,

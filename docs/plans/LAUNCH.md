@@ -484,6 +484,11 @@ queue they produced closed.
 
 ## Step 5 — Show HN
 
+**Dropped, 2026-10-21 (Tyler):** HN never answered the 2026-09-21 email.
+Step 6's remaining channels and replies were dropped the same day. GitHub
+Sponsors is still pending review; add `FUNDING.yml`'s `github:` line if it
+is approved. Steps 5 and 6 below are kept as the record.
+
 **HN refused the first attempt, 2026-09-21**: submitting a Show HN
 redirected to `news.ycombinator.com/showlim`, which says Show HNs are
 temporarily restricted to users who already know the site, and to come back
