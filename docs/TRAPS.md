@@ -89,7 +89,7 @@ built; docs/plans/INSTALL.md):
   overwhelmingly say `FastMCP`; check the installed package before writing
   server code, not your memory of the API.
   - **`MCPServer.run()`'s `transport` argument is `Literal["stdio", "sse",
-    "streamable-http"]`, verified against the installed 2.0.0** — but calling
+    "streamable-http"]`, verified against the installed 2.3.0** — but calling
     it with `transport="streamable-http"` builds the Starlette app and the
     uvicorn `Config` internally, with no injection point for middleware and no
     way to learn a `port=0` ephemeral port before it blocks. `proofcut mcp
@@ -97,6 +97,15 @@ built; docs/plans/INSTALL.md):
     — a Starlette app with its lifespan already wired — because the loopback
     guard needs to wrap the app and the bound port needs to be knowable before
     it blocks. HISTORY.md § MCP over HTTP, built.
+  - **From 2.2 a tool's exception reaches the client as `Error executing tool
+    <name>` and nothing else, unless it is the SDK's `ToolError`.** Every
+    proofcut refusal is some other type, so the stdio suite failed 52 tests
+    on the bump. `server._Server.call_tool` re-raises the cause's message as a
+    `ToolError`, which is 2.0's reply; keep it rather than converting each
+    refusal. The bump was GHSA-84m7-p3x7-pcfv (HTTP sessions never expired),
+    2026-10-27, and its `session_idle_timeout`/`max_sessions` defaults are
+    what `proofcut mcp --transport http` now runs on. HISTORY.md § The mcp
+    2.3 bump, for an HTTP session leak.
 
 ### auto-editor
 

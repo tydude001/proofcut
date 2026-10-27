@@ -38,6 +38,7 @@ import anyio.from_thread
 import anyio.lowlevel
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
+from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 from mcp.server.mcpserver.utilities.types import Image
 from mcp.types import Icon, ToolAnnotations
 from pydantic import Field
@@ -137,7 +138,25 @@ def _icons() -> list[Icon]:
     return [Icon(src=f"data:image/svg+xml;base64,{data}", mime_type="image/svg+xml", sizes=["any"])]
 
 
-mcp: MCPServer = MCPServer(
+class _Server(MCPServer):
+    """`MCPServer`, with a tool's own refusal reaching the client as text.
+
+    From mcp 2.2 the SDK answers anything a tool raises but its `ToolError`
+    with `Error executing tool <name>` and drops the message. That is every
+    refusal proofcut makes: they are `MediaError`, `ValueError` and the rest,
+    and the message is the whole of one (`tests/test_server_stdio.py`). This
+    restores 2.0's reply, prefix included, at the one place the SDK documents
+    for telling the two apart, so no tool's registration changes.
+    """
+
+    async def call_tool(self, name: str, arguments: dict[str, Any], context: Any = None) -> Any:
+        try:
+            return await super().call_tool(name, arguments, context)
+        except UnexpectedToolError as exc:
+            raise ToolError(f"Error executing tool {name}: {exc.__cause__}") from exc.__cause__
+
+
+mcp: MCPServer = _Server(
     name="proofcut",
     title=TITLE,
     description=DESCRIPTION,

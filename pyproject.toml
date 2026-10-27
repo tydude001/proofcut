@@ -26,7 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "mcp>=2",
+    "mcp>=2.2",
     "opentimelineio>=0.18.1",
     # `server.py` imports `pydantic.Field` directly, to hang a `description` on
     # the `path` parameter of every tool. mcp already pulls pydantic in, but an

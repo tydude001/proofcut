@@ -19587,3 +19587,32 @@ and all four were built.
 Verified in headless Chrome over CDP, and playback in the Google Chrome
 flatpak: the Playwright headless shell has no H.264 decoder and shows any
 render as black. Suite: 2963 passed.
+
+## The mcp 2.3 bump, for an HTTP session leak — 2026-10-27
+
+Dependabot's GHSA-84m7-p3x7-pcfv (CVE-2026-59951, medium): before 2.2 a
+streamable-HTTP server never expired a session, so any client that could
+reach `proofcut mcp --transport http` could grow its memory without bound.
+The loopback guard limits who can reach it, and `--allow-remote` widens that.
+The lock moved to 2.3.0 and the floor to `mcp>=2.2`, and the server now runs
+on the SDK's defaults (`session_idle_timeout` 1800 s, `max_sessions` 10000).
+
+- **2.2 hides a tool's exception behind its name.** Anything but the SDK's
+  own `ToolError` now reaches the client as `Error executing tool <name>`,
+  which is every proofcut refusal. 54 tests went red, 52 of them in
+  `test_server_stdio.py`. A wrapper in `_tool()` fixed them and broke
+  `test_every_tool_taking_a_path_goes_through_the_binding`, which reads
+  `__wrapped__` as "confined". So the fix moved to `server._Server.call_tool`,
+  the place the SDK documents for telling a crash from a refusal, which gives
+  2.0's reply back with its prefix and changes no registration.
+- **One test stalls on 2.3 and not on 2.0, and the cause is not found.**
+  `test_director.py::test_turns_on_stdin_are_one_conversation_and_stop_ends_only_the_running_turn`
+  failed in 3 of 11 full `-n auto` runs on 2.3.0, and in 0 of 7 on 2.0.0
+  with the same tree otherwise. It never fails alone, nor beside the two
+  server test files. Each time, the interrupt's `control_response` arrives
+  and the stopped turn's `result` never does within 60 s, with nothing on the
+  director's stderr. A probe that dumped every thread on the stall ran 5
+  clean in a row, so no stack was caught. 0 of 7 against 3 of 11 is
+  suggestive (about 1 in 10 by chance), not proof.
+
+Suite on the final tree: 2963 passed, apart from that stall.

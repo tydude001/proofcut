@@ -188,7 +188,9 @@ installed package or the upstream repo, not your memory.
 - **The MCP SDK is v2. `FastMCP` no longer exists** → TRAPS.md § The MCP SDK
   is v2
   - **`MCPServer.run()`'s `transport` argument is `Literal["stdio", "sse",
-    "streamable-http"]`, verified against the installed 2.0.0**
+    "streamable-http"]`, verified against the installed 2.3.0**
+  - **From 2.2 a tool's own exception reaches the client as a bare name;
+    `server._Server.call_tool` puts the message back.**
 - **auto-editor is Nim, and PyPI is stale.** → TRAPS.md § auto-editor
   - **31.x gates multi-*source* timelines behind a paid key, and the render
     path degrades to 720x576 with a warning and **exit 0** rather than
