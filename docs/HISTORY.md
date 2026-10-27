@@ -19605,7 +19605,8 @@ on the SDK's defaults (`session_idle_timeout` 1800 s, `max_sessions` 10000).
   `__wrapped__` as "confined". So the fix moved to `server._Server.call_tool`,
   the place the SDK documents for telling a crash from a refusal, which gives
   2.0's reply back with its prefix and changes no registration.
-- **One test stalls on 2.3 and not on 2.0, and the cause is not found.**
+- **One test stalls on 2.3 and not on 2.0** (the cause, found later the same
+  day, is the director's and not the SDK's: § The director's Stop stall, found).
   `test_director.py::test_turns_on_stdin_are_one_conversation_and_stop_ends_only_the_running_turn`
   failed in 3 of 11 full `-n auto` runs on 2.3.0, and in 0 of 7 on 2.0.0
   with the same tree otherwise. It never fails alone, nor beside the two
@@ -19620,3 +19621,24 @@ on the SDK's defaults (`session_idle_timeout` 1800 s, `max_sessions` 10000).
   holds the fix, so there is no version to pin that has the fix without the stall.
 
 Suite on the final tree: 2963 passed, apart from that stall.
+
+## The director's Stop stall, found — 2026-10-27
+
+The stall in § The mcp 2.3 bump was a race in `director._stdin_reader`, not
+the SDK. The reader scheduled the interrupt and only then wrote its
+`control_response`, so a loaded box could let the loop emit the stopped
+turn's `result` first. The test's `until("control_response")` throws away
+every other event type, so it ate the one `result` and the next wait timed
+out. Holding the reader for 0.5 s between the two reproduced it 3 of 3.
+
+- **The ack now goes out before the interrupt is scheduled.** A new in-process
+  test drives `_stdin_reader` with a fake loop and checks the order: red on
+  the old code, green on the new. Eleven full `-n auto` runs, 0 stalls,
+  against 3 of 11 before.
+- **`emit` is one locked write.** `print` writes the text and its newline
+  separately, and the reader thread emits too, so two emits could splice
+  into one line the panel cannot parse. The panel never reads
+  `control_response`, so the order alone never reached a person; the splice
+  could have.
+- **Why 2.0 never showed it is not known.** 0 of 7 against 3 of 11 is about
+  1 in 10 by chance, and the race needs only timing to move.

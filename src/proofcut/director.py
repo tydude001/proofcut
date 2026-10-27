@@ -103,8 +103,17 @@ def api_key(url: str) -> str | None:
     return os.environ.get(KEY_ENV if is_openrouter(url) else OTHER_KEY_ENV) or None
 
 
+_EMIT = threading.Lock()
+
+
 def emit(event: dict[str, Any]) -> None:
-    print(json.dumps(event), flush=True)
+    """One event, one whole line: the stdin reader thread emits too, and
+    `print` writes the text and its newline separately, so two unlocked
+    emits can splice into one line the panel cannot parse."""
+    line = json.dumps(event) + "\n"
+    with _EMIT:
+        sys.stdout.write(line)
+        sys.stdout.flush()
 
 
 def note(text: str) -> None:
@@ -524,10 +533,14 @@ def _stdin_reader(loop: asyncio.AbstractEventLoop, inbox: asyncio.Queue[str | No
             loop.call_soon_threadsafe(inbox.put_nowait, user_text(message))
         elif message.get("type") == "control_request":
             request = message.get("request") or {}
-            if request.get("subtype") == "interrupt" and director:
-                loop.call_soon_threadsafe(director[0].interrupt.set)
+            # The ack goes out before the interrupt is scheduled: the other
+            # way round, the loop can emit the stopped turn's `result` first,
+            # and a reader waiting for the ack skips past it (HISTORY.md §
+            # The director's Stop stall, found).
             emit({"type": "control_response", "response": {
                 "subtype": "success", "request_id": message.get("request_id")}})
+            if request.get("subtype") == "interrupt" and director:
+                loop.call_soon_threadsafe(director[0].interrupt.set)
     loop.call_soon_threadsafe(inbox.put_nowait, None)
 
 

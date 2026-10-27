@@ -228,6 +228,34 @@ def test_turns_on_stdin_are_one_conversation_and_stop_ends_only_the_running_turn
         proc.wait(timeout=10)
 
 
+def test_the_interrupt_is_acknowledged_before_the_turn_can_stop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The stall in the test above, made deterministic. When the reader
+    scheduled the interrupt and then acked it, the loop could emit the
+    stopped turn's `result` first, and a reader waiting on the ack skipped
+    past the one `result` it would ever get: 3 of 11 full runs.
+    """
+    import io
+
+    order: list[str] = []
+    out = io.StringIO()
+
+    class Loop:
+        def call_soon_threadsafe(self, callback: Any, *args: Any) -> None:
+            order.append("written" if out.getvalue() else "nothing written")
+            callback(*args)
+
+    class Holder:
+        interrupt = threading.Event()
+
+    request = {"type": "control_request", "request_id": "r1", "request": {"subtype": "interrupt"}}
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(request) + "\n"))
+    monkeypatch.setattr(sys, "stdout", out)
+    inbox = type("Inbox", (), {"put_nowait": lambda self, item: None})()
+    director._stdin_reader(Loop(), inbox, [Holder()])  # type: ignore[arg-type]
+    assert order[0] == "written", "the interrupt was scheduled before its control_response went out"
+    assert json.loads(out.getvalue().splitlines()[0])["type"] == "control_response"
+
+
 def test_a_wider_allowlist_is_refused_before_anything_starts(fake: FakeModel, tmp_path: Path) -> None:
     done = subprocess.run(
         [sys.executable, "-m", "proofcut.director", "-p", "x", "--mcp-config", str(_config(tmp_path)),
