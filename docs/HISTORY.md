@@ -19614,5 +19614,9 @@ on the SDK's defaults (`session_idle_timeout` 1800 s, `max_sessions` 10000).
   director's stderr. A probe that dumped every thread on the stall ran 5
   clean in a row, so no stack was caught. 0 of 7 against 3 of 11 is
   suggestive (about 1 in 10 by chance), not proof.
+- **Pinning 2.2.0 does not avoid it.** The same stall, same shape, came in
+  the third of four full runs on 2.2.0, so the lock stayed on 2.3.0. If the
+  SDK is the cause, it came in between 2.0.0 and 2.2.0, the same range that
+  holds the fix, so there is no version to pin that has the fix without the stall.
 
 Suite on the final tree: 2963 passed, apart from that stall.
