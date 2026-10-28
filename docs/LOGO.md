@@ -43,4 +43,18 @@ are not set; they need a printed proof.
 - **Don't** recolour the name, stretch, rotate, retype it in another face, or
   put the colour version on a mid tone.
 
-Not yet trademark-searched. A tick is a common shape.
+**Trademark: a first pass only (2026-10-28), not clearance.** No registered
+PROOFCUT was found, though the search reached USPTO only through search-engine
+snippets. As a control, the same search found CAPCUT, 88959492. The register itself
+(tmsearch, which needs JavaScript), WIPO (captcha) and EUIPO were not searched.
+
+- **The word: medium risk.** Two video or creator tools already use the name:
+  `gongyu/ProofCut`, an educational video tool on GitHub dated 2026-05-31,
+  before ours; and `Vikings-Studio/proofcut-releases`, a macOS app dated
+  2026-08-25 whose product is unknown. proofcut.com is a beauty-jobs site.
+  None of the three was found registered.
+- **The tick: low to medium risk.** It is two straight square-ended legs
+  with a cut, so it is not the Swoosh. No design-code search was done.
+
+A proper search of the USPTO and EU registers is the next step before putting
+money into the name.
