@@ -58,6 +58,7 @@ a dash means no source exists.
 | § OpenChatCut | Electron NLE, MCP + `occ` CLI | AGPL-3.0 | 2,040 | 2026-09-28 `bb2a4f7` |
 | § FilmCraft | Rust Premiere clone, 693 commands over MCP + CLI | MIT OR Apache-2.0 | 9,435 (10-11) | 2026-10-11 `2ff3f5e`, built and run |
 | § Daydream | macOS NLE, local MCP | closed | – | – (site, 2026-09-16) |
+| § Kino | Electron NLE on Remotion, local MCP, cloud proxies | closed | – | – (site and docs, 2026-11-04) |
 | § FableCut | browser NLE, `project.json` over MCP | MIT | 695 | 2026-09-12 `6ed70b0` (head 2026-09-16) |
 | § kinocut | MCP + CLI, 201 tools | Apache-2.0 | 175 | 2026-09-16 `e593881` |
 | § Diffusion Studio | browser canvas, `dapi` CLI + MCP | MPL-2.0 | 3,129 | 2026-09-20 `57c3983` |
@@ -1011,6 +1012,52 @@ and an entry: § Analysis and cloud clients.)
   with 88 tools, read 2026-09-16 from press coverage. A GUI with an MCP front
   end; no coverage mentions a render check. A major NLE now has agent hooks
   out of the box.
+- **Kino** ([kino.ai](https://kino.ai), YC S23, four people, closed; [Launch
+  HN](https://news.ycombinator.com/item?id=50368804) 2026-11-04, 70 points
+  and 26 comments the same evening), read 2026-11-04 from the site, the
+  docs, the changelog and the HN thread. An Electron NLE whose edits, titles
+  and 3D scenes are Remotion code, with a media library that transcribes,
+  describes and face-tags every clip on ingest, and browser review links
+  whose comments land on the timeline for the agent to act on. The nearest
+  thing yet to proofcut's pitch *and* to Daydream's, in one product, and it
+  ships on Ubuntu. What the reads established:
+  - **The MCP server is the running desktop app**
+    (`http://127.0.0.1:45680/mcp`; "keep it open while it works"). A
+    display-less Linux box runs it under `xvfb-run` with a remote-debugging
+    port and signs in inside the virtual display. Headless is a workaround,
+    not a mode: palmier-pro's shape, which this file already records as
+    "alive only with its macOS GUI open". The docs name no tool and list no
+    tool count; the only capability statement is "search your footage and
+    edit your projects". Nothing on the site, in the docs or in the thread
+    says an agent can transcribe or count a finished render.
+  - **Local render, cloud proxy.** Originals stay on the drive and exports
+    render on the machine, but a 720p proxy of every clip uploads by default
+    and the AI index runs in the cloud. The docs do not say where the index
+    lives. "Terabytes scrub locally" and "every clip streams from Kino" are
+    both true, of different files.
+  - **Agent calls are metered.** Free is 100 MCP tool calls a week, shared
+    across the organization; Pro ($25 per editor per month) is unlimited.
+    proofcut's three trial films spent 30, 76 and 42 calls each (TRIAL.md),
+    so one film is a third to three quarters of Kino's free week. The
+    built-in agent (Claude Code or Codex *inside* the app, on the user's own
+    plan, since August 2026) is metered the same way.
+  - **Word-level transcript timing** arrived in the editor in September
+    2026, with silence detection, caption styles and scene-cut splitting.
+    Whether an agent can address an edit by word index is not stated.
+  - **Export is a ZIP of a Resolve, Premiere or After Effects project**
+    (beta), and import reads `.drp`, `.prproj`, `.fcpbundle`, CapCut drafts
+    and `.aep`, where "the first import leaves gaps" the agent is asked to
+    fill. No XML, EDL or OTIO is named in either direction.
+  - **Its own comparison page is against Claude Code**, and concedes the
+    point proofcut makes: on Claude Code alone, review is "Render, open the
+    file, describe the change in words". Kino's answer is a timeline with
+    comments, not a check. Its other comparison pages are Descript, Resolve
+    and Dropbox.
+  - **The founder's thread answers** put rendering at about real time on
+    heavy footage and faster on light timelines, name WebCodecs and
+    Mediabunny under custom ProRes, BRAW and R3D decoders, and say Remotion
+    was chosen for WYSIWYG editing. Nobody in the thread asked whether the
+    agent checks its cut.
 
 ## The render backend and the handoff
 
@@ -2391,6 +2438,18 @@ hosted version is announced.
 
 Not checked: whether any of the four runs on this box. freecut's stars
 (280 for two commits on one day) were not explained.
+
+### Kino, asked for by name (2026-11-04)
+
+Tyler sent kino.ai the day of its Launch HN. Read from the site, the
+docs (working-with-agents, storage, import-from-other-editors,
+teams-and-billing), the changelog (July to October 2026) and the HN thread;
+no source exists. Entry: § Closed products read from their sites. It
+displaces nothing in § Where proofcut stands: no page claims a render
+check, a frame count or a word-addressed edit over MCP, and its MCP is the
+app's own process. The row that moves is distribution: a YC company with
+Ubuntu builds, Claude Code embedded, and a comparison page against Claude
+Code itself is now in the market proofcut's README describes.
 
 ### Every entry from source (2026-09-28)
 
