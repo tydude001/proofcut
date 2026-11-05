@@ -113,7 +113,8 @@ passed every one of its checks:
 ## How it compares
 
 [COMPETITORS.md](https://github.com/tydude001/proofcut/blob/main/docs/COMPETITORS.md)
-reads every entry from its source, most recently on 2026-09-28. In short:
+reads every entry from its source, most recently on 2026-10-11, and the
+closed products from their sites, most recently on 2026-11-04. In short:
 
 - **Transcript editors** (the Descript model, and its open-source
   re-implementations) cut by deleting words, for a person's hands. None of
@@ -131,6 +132,33 @@ reads every entry from its source, most recently on 2026-09-28. In short:
 
 What proofcut lacks that others have: a check for frozen or silent spans in
 a render.
+
+### Claude Code, alone and with proofcut
+
+Agent editors have begun comparing themselves to Claude Code on its own
+([Kino](https://kino.ai)'s comparison page, read 2026-11-04). On its own,
+Claude Code cuts video with ffmpeg and the scripts it writes as it goes,
+and checks a render by opening the file. Here is what it has with proofcut
+instead:
+
+| | Claude Code alone | Claude Code with proofcut |
+|---|---|---|
+| The edit | ffmpeg commands and scripts, one per change | one OpenTimelineIO timeline, addressed by the words in it, with undo |
+| Checking the cut | render, open the file, watch it | the render is transcribed and its words diffed against the edit, and its frames are counted |
+| Where footage goes | your disk | your disk; proofcut uploads nothing, and whisper, the vision model and the face detector run locally. What reaches a model is what your agent reads in its own context |
+| Where it runs | a terminal | a terminal, [the plugin](#in-claude-code), or the workspace with its agent pane; every tool is also a CLI command, and no window has to stay open |
+| Finishing elsewhere | exports it writes by hand | `.kdenlive` or OTIO to Kdenlive, Resolve or Premiere, and `verify` on what comes back |
+| What it costs | your Claude plan | your Claude plan; proofcut meters nothing and is free under [PolyForm Shield](#license) |
+
+What Kino has that proofcut does not, as its pages read that day: a
+multiplayer timeline, review links where a teammate comments on a frame, a
+media library shared across machines, and native BRAW and R3D. proofcut's
+review round is `proofcut review serve`, a page a phone reaches with a
+verdict that lands in the project. What its pages do not say is that its
+agent checks a render; its MCP server is the desktop app itself, which must
+stay open, and the free plan is 100 tool calls a week. The trial films
+above took 30, 76 and 42. The full read is
+[COMPETITORS.md § Closed products read from their sites](https://github.com/tydude001/proofcut/blob/main/docs/COMPETITORS.md#closed-products-read-from-their-sites).
 
 ## What it can do
 
