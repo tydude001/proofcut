@@ -450,6 +450,15 @@ twos, with time to fix what they find.
   GitHub App is not installed; it changes how fresh their copy is, not the
   score. Its badge stays off the README,
   where it would print the C on the PyPI page too.
+  **mcprush invited a claim on 2026-11-06** and held the entry out of its
+  catalogue until then, because a PolyForm Shield package needs the author's
+  say. It indexes PyPI and npm and also sells and hosts. It is weeks old: the
+  terms took effect 2026-10-13, the CLI repo was created 2026-09-28, and
+  neither the terms nor the domain names an operator (Florida law, Miami-Dade
+  courts). It takes 12% of net plus Stripe's fee and is merchant of record.
+  Claimed the same day by GitHub sign-in, with no file in the repo. Its pages
+  refuse a non-browser fetch, so the listing's going live was not checked
+  from here.
   Shipped — see HISTORY.md § The launch clip's product defects, fixed,
   § Glama takes a submission, and the probe that missed it.
 - **A Claude Code plugin.** The agent pane already spawns `claude` against a
