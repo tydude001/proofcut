@@ -118,12 +118,17 @@ def espeak_shim(folder: Path) -> None:
         shim.chmod(0o755)
 
 
+UV_TOOL_DIR_OWN = frozenset({".gitignore", ".lock"})
+
+
 def touched(env: dict[str, str]) -> dict[str, list[str]]:
     """What setup may add, listed: its folder, ~/.local/bin, and uv's tools and Pythons."""
     from proofcut import deps, install
 
-    def listing(folder: Path | None) -> list[str]:
-        return sorted(p.name for p in folder.iterdir()) if folder and folder.is_dir() else []
+    def listing(folder: Path | None, ignore: frozenset[str] = frozenset()) -> list[str]:
+        if not folder or not folder.is_dir():
+            return []
+        return sorted(p.name for p in folder.iterdir() if p.name not in ignore)
 
     uv_dirs = {}
     for which in ("tool", "python"):
@@ -132,7 +137,9 @@ def touched(env: dict[str, str]) -> dict[str, list[str]]:
     return {
         "deps": listing(deps.root()),
         "bin": listing(install.bin_dir()),
-        "uv tools": listing(uv_dirs["tool"]),
+        # uv's own bookkeeping, left once any tool has been installed and kept
+        # after the last is removed (setup-demo, 2026-11-18): not ours to remove.
+        "uv tools": listing(uv_dirs["tool"], UV_TOOL_DIR_OWN),
         "uv pythons": listing(uv_dirs["python"]),
     }
 
