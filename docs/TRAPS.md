@@ -1450,9 +1450,12 @@ built; docs/plans/INSTALL.md):
     numerics legacy and plans `uselocale` (mltframework/mlt#1326, 2026-09-30).
     Its branch stopped the crash in the A/B soak (0 crashes in 451 renders,
     master 20 in 451), and the reworked version merged as 97854f3
-    held too (0 in 400, its parent 22 in 400), so keep the strip until a Shotcut release ships that
-    libmlt and the plain soak passes on it. HISTORY.md § The Mac melt crash,
-    found, and § The upstream fix for the Mac melt crash, soaked.
+    held too (0 in 400, its parent 22 in 400). It is in MLT 7.42.0, and setup
+    pins Shotcut 26.11.15 (melt 7.43.0, read off each OS's build 2026-11-18).
+    **The strip stays anyway** (Tyler, 2026-11-18): `melt_command` also runs a
+    PATH melt or any Shotcut.app a user already has, older ones included, and
+    the strip costs one rewritten copy per render. HISTORY.md § The Mac melt
+    crash, found, and § The upstream fix for the Mac melt crash, soaked.
   - **A *failed* render's staging directory survives on purpose, and
     `sweep_scratch` drops it after `SCRATCH_RETENTION_DAYS`.** It sweeps by
     name (`_SCRATCH_NAME`), never by age alone — a hand-placed directory in

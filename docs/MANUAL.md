@@ -59,7 +59,7 @@ Will install
       because: whisper is not on PATH.
   auto-editor — 31.6.0, about 46 MB
       because: auto-editor is not on PATH.
-  melt — Shotcut 26.8.1 (melt 7.41.0), about 155 MB
+  melt — Shotcut 26.11.15 (melt 7.43.0), about 154 MB
       because: melt is not on PATH.
   total: about 2.2 GB
 ```

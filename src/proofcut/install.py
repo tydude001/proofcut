@@ -84,10 +84,10 @@ class Pin:
 #: dmg's own Mach-O headers 2026-09-20), so Apple silicon downloads the same
 #: file an Intel Mac does. macOS 12 or later.
 _SHOTCUT_MACOS = Pin(
-    "Shotcut 26.8.1",
-    "https://github.com/mltframework/shotcut/releases/download/v26.8.1/shotcut-macos-26.8.1.dmg",
-    "7bab10bd96fe3590bb3ba0461d21d3022681574b324bb1c21366d5432cac5657",
-    208795955,
+    "Shotcut 26.11.15",
+    "https://github.com/mltframework/shotcut/releases/download/v26.11.15/shotcut-macos-26.11.15.dmg",
+    "664c6ea4195d58dbf3fd43f3d74ae46d59b6310f9ac628d5e70a8e2786a4f80b",
+    211234714,
 )
 
 #: Piece → target (`target()`) → download, or several downloads for one
@@ -198,17 +198,17 @@ PINS: dict[str, dict[str, Pin | tuple[Pin, ...]]] = {
     },
     "melt": {
         "x86_64": Pin(
-            "Shotcut 26.8.1 (melt 7.41.0)",
-            "https://github.com/mltframework/shotcut/releases/download/v26.8.1/"
-            "shotcut-linux-x86_64-26.8.1.txz",
-            "c4befab2240964389df6139f00aae0b92949f398fd98083b922f3aabd8b7a844",
-            155181712,
+            "Shotcut 26.11.15 (melt 7.43.0)",
+            "https://github.com/mltframework/shotcut/releases/download/v26.11.15/"
+            "shotcut-linux-x86_64-26.11.15.txz",
+            "9b92e233b8ce672991908ccf07d0f7c69639dc4a4c1302f6097c288fa303eeb5",
+            153944796,
         ),
         "windows-x86_64": Pin(
-            "Shotcut 26.8.1, portable",
-            "https://github.com/mltframework/shotcut/releases/download/v26.8.1/shotcut-win64-26.8.1.zip",
-            "b0148856de01b39add4bf4d6a813bfbc554b4663b65e3ca25cb2589f47555a6a",
-            225002077,
+            "Shotcut 26.11.15, portable",
+            "https://github.com/mltframework/shotcut/releases/download/v26.11.15/shotcut-win64-26.11.15.zip",
+            "d704c12a8ce6d1fbe1a13155578ee5cf36b749a26503500cce38d8e68f900b0d",
+            196097953,
         ),
         "macos-x86_64": _SHOTCUT_MACOS,
         "macos-aarch64": _SHOTCUT_MACOS,
