@@ -24,7 +24,7 @@
  * section's own comment for the specific measurement or trap it answers.
  */
 
-import { $, fmt, debounce, progressText } from "./dom.js";
+import { $, fmt, debounce, plural, progressText } from "./dom.js";
 import { api, connectEvents } from "./api.js";
 import * as player from "./player.js";
 import * as transcript from "./transcript.js";
@@ -544,9 +544,9 @@ function framingLabel(framing) {
   if (!framing) return "framing — not scanned";
   const parts = [];
   if (framing.stale_seconds > 0) {
-    parts.push(`${framing.stale_stretches} stale crop${framing.stale_stretches === 1 ? "" : "s"}`);
+    parts.push(plural(framing.stale_stretches, "stale crop"));
   }
-  if (framing.steps > 0) parts.push(`${framing.steps} jump${framing.steps === 1 ? "" : "s"}`);
+  if (framing.steps > 0) parts.push(plural(framing.steps, "jump"));
   // Not "framing ok": these two are all the scan measures, and a centre crop
   // that cuts a face out passes both (the 2026-10-12 watch's reframe sheet).
   return parts.length ? parts.join(" / ") : "no stale crops";

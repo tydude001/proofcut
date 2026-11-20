@@ -281,6 +281,13 @@ def capture(
                 f"{layout['outro_at']:.3f}s differs from the page at {layout['hold_at']:.3f}s — make the "
                 "loop's animations repeat on its period, or change its length"
             )
+        # Whether a tail can draw it as the picture (`is_opaque`). A read that
+        # fails leaves the key out rather than failing a good capture; the
+        # tail then measures it, and refuses there if it still cannot.
+        try:
+            opaque: bool | None = measure_opaque(staging)
+        except (GraphicError, OSError):
+            opaque = None
         record = {
             "stamp": stamp(folder, width, height, fps),
             "canvas": [width, height],
@@ -294,6 +301,8 @@ def capture(
             "seconds": round(time.monotonic() - started, 2),
             "pages": len(tabs),
         }
+        if opaque is not None:
+            record["opaque"] = opaque
         if video.get("videos"):
             record["video"] = {"videos": video["videos"], "ends": video.get("ends")}
         (staging / CAPTURE_NAME).write_text(json.dumps(record, indent=2) + "\n")
@@ -348,15 +357,25 @@ def is_opaque(frames: Path) -> bool:
     """Whether every intro and hold frame of a capture covers the whole canvas.
 
     A tail draws its graphic as the picture itself (docs/plans/ENDCARD.md), and
-    a pixel with any transparency there would show black through it. Measured
-    once per capture and kept in its `capture.json`, which the stamp does not
-    read, so a recapture measures again.
+    a pixel with any transparency there would show black through it. `capture`
+    measures it and keeps it in `capture.json` (`opaque`), which the stamp does
+    not read, so a recapture measures again. A capture made before that key
+    existed is measured here, once, and the answer written into its record.
     """
     record = read_capture(frames)
     if record is None:
         raise GraphicError(f"{frames.name} has not been captured")
     if isinstance(record.get("opaque"), bool):
         return record["opaque"]
+    record["opaque"] = measure_opaque(frames)
+    (frames / CAPTURE_NAME).write_text(json.dumps(record, indent=2) + "\n")
+    return record["opaque"]
+
+
+def measure_opaque(frames: Path) -> bool:
+    """`is_opaque`'s measurement, reading the frames and writing nothing: an
+    alpha pass over every intro and hold frame, stopped at the first pixel
+    below full opacity."""
     opaque = True
     for phase in ("intro", "hold"):
         if not any((frames / phase).glob("f*.png")):
@@ -378,8 +397,6 @@ def is_opaque(frames: Path) -> bool:
             raise GraphicError(f"could not read {frames.name}'s {phase} frames: {err.decode(errors='replace').strip()}")
         if not opaque:
             break
-    record["opaque"] = opaque
-    (frames / CAPTURE_NAME).write_text(json.dumps(record, indent=2) + "\n")
     return opaque
 
 
@@ -518,7 +535,7 @@ def sweep_outros(frames: Path, keep: set[str]) -> list[str]:
 
     One is captured per hold length a render asked for, so every cut that
     moves a span leaves one behind. The render that captures is the one that
-    knows which it draws (`_build_mlt`), and it keeps exactly those: a length
+    knows which it draws (`ops._sweep_outros`), and it keeps exactly those: a length
     asked for again is recaptured, which costs its outro's frames alone.
     `hold-play/` is not swept, since every length shares its prefix. Never
     raises — a sweep is a side effect of rendering.

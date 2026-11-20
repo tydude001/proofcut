@@ -791,7 +791,9 @@ def test_a_render_drops_every_outro_a_cut_left_behind(project: Project) -> None:
     (unplaced / "outro-7").mkdir(parents=True)
     (unplaced / "outro").mkdir()
 
-    ops._build_mlt(project, ops._load_edit(project), fps=None)
+    built = ops._build_mlt(project, ops._load_edit(project), fps=None)
+    assert "outro-12" in {p.name for p in frames.iterdir()}, "building a document sweeps nothing; a render does"
+    ops._sweep_outros(project, built)
     assert sorted(p.name for p in frames.iterdir() if p.is_dir()) == ["hold", "hold-play", "intro", "outro", "outro-30"]
     assert sorted(p.name for p in unplaced.iterdir()) == ["outro"], "a graphic no render draws keeps no outro-<n>"
     assert motion.sweep_outros(project.root / "absent", set()) == []

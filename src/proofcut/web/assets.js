@@ -60,7 +60,7 @@
  * summary line survives a `load()` and did not survive the reload.
  */
 
-import { $, el, progressText, secs } from "./dom.js";
+import { $, el, plural, progressText, secs } from "./dom.js";
 
 let ctx = null;
 let lastView = null;
@@ -169,7 +169,7 @@ function cueFact(n) {
   // same thing twice and reads as a missing capability rather than a tally
   // that happens to be zero. `off` is added on top for the dim colour, which
   // is the one thing zero should change.
-  const node = fact(`${n} cue${n === 1 ? "" : "s"}`, "count");
+  const node = fact(plural(n, "cue"), "count");
   if (!n) node.classList.add("off");
   return node;
 }
@@ -474,7 +474,7 @@ function transcriptSummary(clipId, payload) {
     ["suspect duration", payload.suspect_durations],
   ];
   for (const [name, list] of findings) {
-    if (list && list.length) bits.push(`${list.length} ${name}${list.length === 1 ? "" : "s"}`);
+    if (list && list.length) bits.push(plural(list.length, name));
   }
   return `${clipId}: ${bits.join(" · ")}`;
 }

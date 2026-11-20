@@ -162,7 +162,7 @@
  * threshold to keep in sync with it.
  */
 
-import { $, el, fmt, secs, clampFloating } from "./dom.js";
+import { $, el, fmt, plural, secs, clampFloating } from "./dom.js";
 
 let ctx = null;
 
@@ -526,7 +526,7 @@ function refreshAgentPlanBanner() {
   const suspects = agentPlan.payload?.suspect_boundaries?.length || 0;
   agentPlanWarnEl.hidden = suspects === 0;
   if (suspects) {
-    agentPlanWarnEl.textContent = `${suspects} suspect boundary${suspects === 1 ? "" : "ies"} flagged — confirm below to apply anyway.`;
+    agentPlanWarnEl.textContent = `${plural(suspects, "suspect boundary", "suspect boundaries")} flagged — confirm below to apply anyway.`;
   }
   agentPlanConfirmLabel.hidden = suspects === 0;
 }

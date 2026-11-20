@@ -24,7 +24,7 @@
  * switching or the truth strip itself — those are shell chrome (app.js).
  */
 
-import { $, el, fmt } from "./dom.js";
+import { $, canvasLabel, el, fmt, plural } from "./dom.js";
 
 let ctx = null;
 let lastFinish = null; // the last /api/finish bundle
@@ -184,14 +184,13 @@ function renderManifest() {
   // to a frame or two (CLAUDE.md § A frame count comes from
   // `autoeditor.frame_layout`). Writing "a + b = c" would assert arithmetic
   // that is false, and the render hits the third number, not the sum.
-  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
   // A mark is drawn only where the bundle itself holds a verdict (captions'
   // `burned`, the flag count, `shots_error`); every other row is a stated
   // fact with a neutral dot. This file still forms no opinion.
   const rows = [
     ["fact", `Length ${fmt(b.duration.total_seconds)}, the length the render must hit`,
       b.duration.tail_seconds ? `edit ${fmt(b.duration.edit_seconds)} · tail ${fmt(b.duration.tail_seconds)}` : null],
-    ["fact", `Canvas ${String(b.canvas.canvas).replace("x", " × ")}`, null],
+    ["fact", `Canvas ${canvasLabel(b.canvas.canvas)}`, null],
     b.captions.burned === "yes"
       ? ["yes", "Captions burned into the last render", null]
       : ["fact", `Captions burned into the last render: ${b.captions.burned}`, null],

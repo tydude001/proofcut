@@ -4471,16 +4471,6 @@ def _referenced_clip_ids(manifest: dict[str, Any], on_timeline: set[str]) -> set
     return referenced
 
 
-def _inside(path: Path, root: Path) -> bool:
-    """Whether `path` resolves to somewhere under `root` — `GET /api/output`'s
-    own confinement test, stated once more for the report that offers it."""
-    try:
-        path.resolve().relative_to(root.resolve())
-    except (OSError, ValueError):
-        return False
-    return True
-
-
 def finish_report(
     path: Path | str, *, framing: bool = False, holds: bool = False, continuity: bool = False
 ) -> dict[str, Any]:
@@ -4670,11 +4660,10 @@ def finish_report(
             "output": str(out_path),
             "name": out_path.name,
             "exists": out_path.is_file(),
-            # Whether `GET /api/output` will stream it: that route serves only
-            # a file inside the project (its own docstring has why), and an
-            # agent's `export --out ../cut.mp4` is a real render it refuses.
-            # Finish showed such a render as a black player (2026-10-12).
-            "inside": _inside(out_path, project.root),
+            # Whether `GET /api/output` will stream it, by the route's own
+            # test: an agent's `export --out ../cut.mp4` is a real render it
+            # refuses, which Finish showed as a black player (2026-10-12).
+            "inside": renderlog.output_in_project(project, run) is not None,
             "timestamp": run.get("timestamp"),
             # Whether the edit has moved since this render read it. Reported
             # and never a flag: an edit after a render is what editing is, and
@@ -11791,6 +11780,38 @@ def _tail_graphic_state(project: Project, name: str) -> dict[str, Any]:
     return report
 
 
+def _tail_asset(asset: Any) -> tuple[str, str]:
+    """A tail asset as `(kind, name)`, `kind` being `card` or `graphic` — the
+    one place its prefix is read. Anything else is refused: see `TAIL_KEY`."""
+    kind, sep, name = str(asset).partition(":")
+    if not sep or kind not in ("card", "graphic"):
+        raise ProjectError(
+            f"tail asset {asset!r} is not a card (card:name) or an animated "
+            "graphic (graphic:name) — "
+            "verify diffs a render's own transcription against the "
+            "timeline's words, and silence adds none of its own; a media "
+            "clip would give it something to disagree about on every check "
+            "from here on"
+        )
+    return kind, name
+
+
+def _tail_pieces(project: Project, asset: str, frames: int, rate: float) -> dict[str, Any]:
+    """A tail as the picture entries `_build_mlt` lays down, whichever kind it is.
+
+    `entries` are `(resource, frames)` summing to `frames`; `first` is the
+    still the tail's fade dissolves in from; `report` is what the export
+    reply says of a graphic, None for a card, which is one still held.
+    """
+    kind, name = _tail_asset(asset)
+    if kind == "graphic":
+        return _tail_graphic_pieces(project, name, frames, rate)
+    card = _resolve_asset(project, asset)
+    if not card["is_image"]:
+        raise ProjectError(f"tail asset {asset!r} resolved to a clip, not a card")
+    return {"entries": [(card["asset_path"], frames)], "first": card["asset_path"], "report": None}
+
+
 def _tail_graphic_pieces(project: Project, name: str, frames: int, rate: float) -> dict[str, Any]:
     """A `graphic:` tail as picture entries: the intro once, then the hold to
     the tail's last frame (docs/plans/ENDCARD.md). The outro never plays, since
@@ -11803,17 +11824,7 @@ def _tail_graphic_pieces(project: Project, name: str, frames: int, rate: float) 
     with a video, whose still hold would need `anim.play`'s per-length capture
     on a lane that does not take one yet.
     """
-    folder = _graphic_folder(project, name)
-    width, height, _ = _graphic_target(project)
-    frames_dir = project.graphic_frames_dir / name
-    with _graphic_errors():
-        current = anim.is_current(folder, frames_dir, width, height, rate)
-    if not current:
-        state = "has never been captured" if anim.read_capture(frames_dir) is None else "has changed since it was captured"
-        raise ProjectError(
-            f"tail graphic {name!r} {state} at this project's {width}x{height}, {rate:g} fps — run graphic_capture"
-        )
-    captured = anim.read_capture(frames_dir) or {}
+    _, frames_dir, captured = _current_capture(project, name, rate, label="tail graphic")
     if captured.get("video"):
         raise ProjectError(f"tail graphic {name!r} shows a video, and a tail does not play one on through its hold")
     with _graphic_errors():
@@ -11834,8 +11845,7 @@ def _tail_graphic_pieces(project: Project, name: str, frames: int, rate: float) 
     if intro:
         entries.append((anim.phase_pattern(frames_dir, "intro"), intro))
     if held:
-        still = str(frames_dir / "hold" / "f0000.png")
-        entries.append((anim.phase_pattern(frames_dir, "hold") if loop and hold > 1 else still, held))
+        entries.append((_hold_resource(frames_dir, hold, loop), held))
     first = str(frames_dir / ("intro" if intro else "hold") / "f0000.png")
     return {
         "entries": entries,
@@ -11931,17 +11941,8 @@ def tail(
                 "with nothing to hold. Either alone after that updates its own "
                 "field."
             )
-        if not str(merged_asset).startswith(("card:", "graphic:")):
-            raise ProjectError(
-                f"tail asset must be a card (card:name) or an animated graphic "
-                f"(graphic:name), not {merged_asset!r} — "
-                "verify diffs a render's own transcription against the "
-                "timeline's words, and silence adds none of its own; a media "
-                "clip would give it something to disagree about on every check "
-                "from here on"
-            )
-        if str(merged_asset).startswith("graphic:"):
-            name = str(merged_asset).removeprefix("graphic:")
+        kind, name = _tail_asset(merged_asset)
+        if kind == "graphic":
             with _graphic_errors():
                 spec = anim.read_spec(_graphic_folder(project, name))
             if float(merged_seconds) < spec["intro"]:
@@ -11976,12 +11977,13 @@ def tail(
 
     asset_exists: bool | None = None
     graphic: dict[str, Any] | None = None
-    if after is not None and after["asset"].startswith("graphic:"):
-        graphic = _tail_graphic_state(project, after["asset"].removeprefix("graphic:"))
-        asset_exists = graphic["capture"] != "no graphic"
-    elif after is not None:
-        name = after["asset"].removeprefix("card:")
-        asset_exists = (project.cards_dir / f"{name}.png").is_file()
+    if after is not None:
+        kind, name = _tail_asset(after["asset"])
+        if kind == "graphic":
+            graphic = _tail_graphic_state(project, name)
+            asset_exists = graphic["capture"] != "no graphic"
+        else:
+            asset_exists = (project.cards_dir / f"{name}.png").is_file()
 
     return {
         "project": str(project.root),
@@ -15063,6 +15065,30 @@ def _capture_graphic(project: Project, name: str, pages: int) -> dict[str, Any]:
         )  # fmt: skip
 
 
+def _current_capture(project: Project, name: str, rate: float, *, label: str = "graphic") -> tuple[Path, Path, dict[str, Any]]:
+    """`(folder, frames_dir, capture record)` for graphic `name`, refused by
+    `label` when its capture is missing or stale at this canvas and rate."""
+    folder = _graphic_folder(project, name)
+    width, height, _ = _graphic_target(project)
+    frames_dir = project.graphic_frames_dir / name
+    with _graphic_errors():
+        current = anim.is_current(folder, frames_dir, width, height, rate)
+    if not current:
+        state = "has never been captured" if anim.read_capture(frames_dir) is None else "has changed since it was captured"
+        raise ProjectError(
+            f"{label} {name!r} {state} at this project's {width}x{height}, {rate:g} fps — run graphic_capture"
+        )
+    return folder, frames_dir, anim.read_capture(frames_dir) or {}
+
+
+def _hold_resource(frames_dir: Path, hold: int, loop: bool) -> str:
+    """The captured hold as one resource: its frame sequence when it loops,
+    which `qimage` repeats on its own, else its one still."""
+    if loop and hold > 1:
+        return anim.phase_pattern(frames_dir, "hold")
+    return str(frames_dir / "hold" / "f0000.png")
+
+
 def _graphic_pieces(
     project: Project, record: dict[str, Any], start_frame: int, frames: int, rate: float, *, play: bool = False
 ) -> dict[str, Any]:
@@ -15086,17 +15112,7 @@ def _graphic_pieces(
     hold and the page's own outro, saying so in the hold's `video`.
     """
     name = record["graphic"]
-    folder = _graphic_folder(project, name)
-    width, height, _ = _graphic_target(project)
-    frames_dir = project.graphic_frames_dir / name
-    with _graphic_errors():
-        current = anim.is_current(folder, frames_dir, width, height, rate)
-    if not current:
-        state = "has never been captured" if anim.read_capture(frames_dir) is None else "has changed since it was captured"
-        raise ProjectError(
-            f"graphic {name!r} {state} at this project's {width}x{height}, {rate:g} fps — run graphic_capture"
-        )
-    captured = anim.read_capture(frames_dir) or {}
+    folder, frames_dir, captured = _current_capture(project, name, rate)
     intro, hold, outro, loop = int(captured["intro"]), int(captured["hold"]), int(captured["outro"]), bool(captured["loop"])
     held = frames - intro - outro
     if held < 0:
@@ -15124,8 +15140,7 @@ def _graphic_pieces(
             last = str(frames_dir / anim.PLAY_HOLD / f"f{playing - 1:04d}.png")
             pieces.append(("rest", anim.PLAY_HOLD, playing - 1, 1, last, rest))
     elif held:
-        still = str(frames_dir / "hold" / "f0000.png")
-        pieces.append(("hold", "hold", 0, hold, anim.phase_pattern(frames_dir, "hold") if loop and hold > 1 else still, held))
+        pieces.append(("hold", "hold", 0, hold, _hold_resource(frames_dir, hold, loop), held))
     if outro:
         source = f"outro-{video['outro']}" if video is not None and video.get("outro") else "outro"
         pieces.append(("outro", source, 0, outro, anim.phase_pattern(frames_dir, source), outro))
@@ -17736,16 +17751,7 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
                 "exists"
             )
         tail_frames = _tail_frames(project, rate)
-        tail_graphic: dict[str, Any] | None = None
-        if tail["asset"].startswith("graphic:"):
-            tail_graphic = _tail_graphic_pieces(project, tail["asset"].removeprefix("graphic:"), tail_frames, rate)
-            pieces = tail_graphic["entries"]
-            card = {"asset_path": tail_graphic["first"], "is_image": True}
-        else:
-            card = _resolve_asset(project, tail["asset"])
-            if not card["is_image"]:
-                raise ProjectError(f"tail asset {tail['asset']!r} resolved to a clip, not a card")
-            pieces = [(card["asset_path"], tail_frames)]
+        tail_pieces = _tail_pieces(project, tail["asset"], tail_frames, rate)
         # The fade is the card arriving over the film's last `fade` seconds,
         # opaque on the tail's first frame — so the tail stays `seconds` long
         # and the film its own length (HISTORY.md § The bumper the teaser
@@ -17759,22 +17765,22 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
                     f"{(join - head_frames) / rate:.3f}s — shorten the fade (tail)"
                 )
             tail_fade = mlt.Dissolve(
-                resource=card["asset_path"], src_in=0, start=join - fade_frames, frames=fade_frames, is_image=True
+                resource=tail_pieces["first"], src_in=0, start=join - fade_frames, frames=fade_frames, is_image=True
             )
         if lane:
             silence = _tail_silence(project, tail["seconds"])
             audio.append(mlt.Entry(str(silence), 0, tail_frames, is_image=False, has_video=False))
-            lane.extend(mlt.Entry(resource, 0, length, is_image=True, has_video=True) for resource, length in pieces)
+            lane.extend(mlt.Entry(resource, 0, length, is_image=True, has_video=True) for resource, length in tail_pieces["entries"])
         else:
             # A still has no sound, so on the Edit's track the card is its own
             # silence: MLT mixes nothing from a `qimage`.
-            audio.extend(mlt.Entry(resource, 0, length, is_image=True, has_video=True) for resource, length in pieces)
+            audio.extend(mlt.Entry(resource, 0, length, is_image=True, has_video=True) for resource, length in tail_pieces["entries"])
         # The fade the render draws, where there is one; a hard cut reports as ever.
         tail_report = {
             **tail,
             "frames": tail_frames,
             **({"fade_frames": fade_frames} if fade_frames else {}),
-            **({"graphic": tail_graphic["report"]} if tail_graphic is not None else {}),
+            **({"graphic": tail_pieces["report"]} if tail_pieces["report"] is not None else {}),
         }
 
     # The A2 music lane: the resolved bed plus real silent entries padding it
@@ -18046,14 +18052,6 @@ def _build_mlt(project: Project, edit: tl.Edit, *, fps: float | None) -> dict[st
     # `play`: a graphic whose still hold plays its video is captured at
     # this length here, the one caller that draws it (`anim.play`).
     overlay_plans = _overlay_plan(project, edit, rate, edit_frames=edit_frames, clock=clock, play=True)
-    # Every `outro-<n>/` this render does not draw is one a cut left behind.
-    drawn_from: dict[str, set[str]] = {}
-    for plan in overlay_plans:
-        if plan.get("frames_dir"):
-            drawn_from.setdefault(plan["frames_dir"], set()).update(Path(p.resource).parent.name for p in plan["drawn"])
-    if project.graphic_frames_dir.is_dir():
-        for frames_dir in project.graphic_frames_dir.iterdir():
-            anim.sweep_outros(frames_dir, drawn_from.get(str(frames_dir), set()))
     overlays = [
         replace(piece, start=piece.start + head_frames)
         for plan in overlay_plans
@@ -18249,6 +18247,23 @@ def _export_mlt(
     )
 
 
+def _sweep_outros(project: Project, built: dict[str, Any]) -> None:
+    """Drop every `outro-<n>/` the render `built` describes does not draw.
+
+    One is captured per hold length a render asked for (`anim.play`), so every
+    cut that moves a span leaves one behind. A render is what sweeps, not
+    `_build_mlt`: writing an MLT *document* must leave the frames it names on
+    disk. What each graphic draws is its plan's own `phases[].source`.
+    """
+    drawn: dict[str, set[str]] = {}
+    for plan in built["overlays"]:
+        if plan.get("graphic") and plan.get("phases"):
+            drawn.setdefault(plan["graphic"], set()).update(phase["source"] for phase in plan["phases"])
+    if project.graphic_frames_dir.is_dir():
+        for frames_dir in project.graphic_frames_dir.iterdir():
+            anim.sweep_outros(frames_dir, drawn.get(frames_dir.name, set()))
+
+
 def _render_mlt(
     project: Project,
     edit: tl.Edit,
@@ -18282,6 +18297,7 @@ def _render_mlt(
     given is the evidence for what it did with it.
     """
     built = _build_mlt(project, edit, fps=fps)
+    _sweep_outros(project, built)
     expected = built["frames"]
     work = picture.scratch("timeline-")
     project_file = mlt.write(built["document"], work / "timeline.mlt")
@@ -20370,55 +20386,50 @@ def check_frames(
     if not edit.segments:
         raise ProjectError("the timeline is empty — there are no frames to count")
 
-    rate = float(fps) if fps else _export_fps(_clips_by_id(project))
+    # The target is opened first, because a render that declares a constant
+    # rate of its own settles the grid before anything is counted on it.
+    target_path = Path(target).expanduser() if target is not None else None
+    if target_path is not None and not target_path.exists():
+        raise picture.PictureError(f"no such file to check: {target_path}")
+    is_render = target_path is not None and target_path.suffix.lower() not in picture.NLE_SUFFIXES
+    counts = media.count_frames(target_path) if is_render else None
+    notes: list[str] = []
+    rate, fps_source = (float(fps), "argument") if fps else (_export_fps(_clips_by_id(project)), "export")
+    if counts is not None and not fps and counts["has_video"]:
+        own = counts.get("fps")
+        if own is None:
+            notes.append(
+                f"this render's frame rate is variable, so it is counted against the "
+                f"{rate:g} fps proofcut's export would use. Pass `fps` if it was made at another."
+            )
+        elif abs(own - rate) > 1e-6:
+            notes.append(
+                f"this render runs at {own:g} fps, not the {rate:g} fps proofcut's export "
+                f"would use, so it is counted against {own:g}. Pass `fps` to count against another."
+            )
+            rate, fps_source = own, "render"
+
     expected = _frame_total_with_tail(project, edit, rate)
     result: dict[str, Any] = {
         "fps": rate,
-        "fps_source": "argument" if fps else "export",
+        "fps_source": fps_source,
         "segments": len(edit.segments),
         "timeline_duration": edit.duration,
         "expected_frames": expected,
         "expected_duration": expected / rate,
     }
-    if target is None:
+    if target_path is None:
         return result
-
-    target_path = Path(target).expanduser()
-    if not target_path.exists():
-        raise picture.PictureError(f"no such file to check: {target_path}")
     result["target"] = str(target_path)
-    notes: list[str] = []
 
-    if target_path.suffix.lower() in picture.NLE_SUFFIXES:
+    if counts is None:
         result["target_kind"] = "nle-project"
         counted: int | None = picture.project_frames(target_path)
         result["target_duration"] = counted / rate if counted is not None else None
     else:
         result["target_kind"] = "render"
-        counts = media.count_frames(target_path)
         counted = counts["frames"]
         result["target_duration"] = counts["duration"]
-        own = counts.get("fps")
-        if not fps and counts["has_video"] and own is None:
-            notes.append(
-                f"this render's frame rate is variable, so it is counted against the "
-                f"{rate:g} fps proofcut's export would use. Pass `fps` if it was made at another."
-            )
-        elif not fps and own is not None and abs(own - rate) > 1e-6:
-            notes.append(
-                f"this render runs at {own:g} fps, not the {rate:g} fps proofcut's export "
-                f"would use, so it is counted against {own:g}. Pass `fps` to count against another."
-            )
-            rate = own
-            expected = _frame_total_with_tail(project, edit, rate)
-            result.update(
-                {
-                    "fps": rate,
-                    "fps_source": "render",
-                    "expected_frames": expected,
-                    "expected_duration": expected / rate,
-                }
-            )
         if not counts["has_video"]:
             result.update({"target_frames": None, "delta": None, "agrees": None})
             result["notes"] = [

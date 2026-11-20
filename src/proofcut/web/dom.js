@@ -42,6 +42,18 @@ export function progressText(data) {
   return `${Math.min(100, Math.floor((100 * progress) / total))}%`;
 }
 
+/** `1 cut` / `3 cuts`, `1,204 frames`: a count and its noun, agreeing.
+ * `many` is for the plurals an `s` does not make (`stretch`/`stretches`). */
+export function plural(n, one, many = `${one}s`) {
+  const count = Number.isFinite(n) ? n.toLocaleString() : n;
+  return `${count} ${n === 1 ? one : many}`;
+}
+
+/** `1080 × 1920` — a `WxH` canvas string as the page writes one. */
+export function canvasLabel(canvas) {
+  return String(canvas).replace("x", " × ");
+}
+
 /** `12.345s` — the source-second format quoted in tooltips and echoes. */
 export function secs(t) {
   return t === null || t === undefined ? "–" : `${t.toFixed(3)}s`;

@@ -34,7 +34,7 @@
  * first place.
  */
 
-import { $, el, fmt, secs } from "./dom.js";
+import { $, canvasLabel, el, fmt, plural, secs } from "./dom.js";
 
 let ctx = null;
 let lastView = null;
@@ -94,13 +94,17 @@ function rows(obj, omit = []) {
   const table = el("table", "rows");
   const body = document.createElement("tbody");
   for (const [key, value] of Object.entries(obj)) {
-    if (omit.includes(key)) continue;
-    const tr = document.createElement("tr");
-    tr.append(el("td", null, key), el("td", null, fmtValue(key, value)));
-    body.append(tr);
+    if (!omit.includes(key)) body.append(row(key, fmtValue(key, value)));
   }
   table.append(body);
   return table;
+}
+
+/** One `.rows` line: a label cell, and a value cell carrying `cls`. */
+function row(label, text, cls = null) {
+  const tr = document.createElement("tr");
+  tr.append(el("td", null, label), el("td", cls, text));
+  return tr;
 }
 
 /** The project's own `status`, worded the way a person says it.
@@ -116,13 +120,13 @@ function statusRows(status) {
   const table = el("table", "rows");
   const body = document.createElement("tbody");
   const used = new Set(["seeded", "project"]);
+  // Returns the value cell, for the one row that titles it.
   const add = (label, text, keys, dim = false) => {
     for (const key of keys) used.add(key);
-    const tr = document.createElement("tr");
-    tr.append(el("td", null, label), el("td", dim ? "none" : null, text));
+    const tr = row(label, text, dim ? "none" : null);
     body.append(tr);
+    return tr.lastChild;
   };
-  const plural = (n, one) => `${n.toLocaleString()} ${one}${n === 1 ? "" : "s"}`;
 
   if (status.seeded === false) {
     add("Timeline", "not built yet", [], true);
@@ -139,7 +143,7 @@ function statusRows(status) {
     }
     add("Length", length, ["timeline_duration", "expected_duration", "expected_frames"]);
   }
-  if (status.canvas) add("Canvas", String(status.canvas).replace("x", " × "), ["canvas"]);
+  if (status.canvas) add("Canvas", canvasLabel(status.canvas), ["canvas"]);
   if (Array.isArray(status.clips)) add("Clips", fmtValue("clips", status.clips), ["clips"], !status.clips.length);
   if (typeof status.segments === "number") {
     const cuts = lastView && Array.isArray(lastView.seams) ? `, ${plural(lastView.seams.length, "cut")}` : "";
@@ -153,8 +157,7 @@ function statusRows(status) {
     let text = "none";
     if (retime && retime.error) text = `can't resolve: ${retime.error}`;
     else if (retime) {
-      const n = (retime.stretches || []).length;
-      text = `${n} stretch${n === 1 ? "" : "es"}`;
+      text = plural((retime.stretches || []).length, "stretch", "stretches");
     }
     add("Speed changes", text, ["retime"], !retime);
   }
@@ -172,14 +175,10 @@ function statusRows(status) {
   }
   if (status.project) {
     const folder = String(status.project).split(/[\\/]/).filter(Boolean).pop();
-    add("Folder", `…/${folder}`, ["project"]);
-    body.lastChild.lastChild.title = status.project;
+    add("Folder", `…/${folder}`, ["project"]).title = status.project;
   }
   for (const [key, value] of Object.entries(status)) {
-    if (used.has(key)) continue;
-    const tr = document.createElement("tr");
-    tr.append(el("td", null, key), el("td", null, fmtValue(key, value)));
-    body.append(tr);
+    if (!used.has(key)) body.append(row(key, fmtValue(key, value)));
   }
   table.append(body);
   return table;

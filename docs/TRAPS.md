@@ -1737,7 +1737,8 @@ built; docs/plans/INSTALL.md):
     left it. Those frames depend on the span, so **export captures them** —
     the one place a render launches the browser — into the capture's own
     folder (`hold-play/`, one growing sequence; `outro-<frames>/` per
-    offset; a render drops every outro it does not draw), and a recapture
+    offset; a render drops every outro it does not draw and a document export
+    drops none, `ops._sweep_outros`), and a recapture
     drops them all. The view never captures: until a
     render has, it hands the preview the still hold and says so in the hold's
     `video`. A looping hold is left as captured. On the 7.4 s Randy span the

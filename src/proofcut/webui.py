@@ -1428,18 +1428,10 @@ class RenderJob:
             return None
         if request["burn"] and stages.get("burn", {}).get("outcome") not in finished:
             return None
-        named = str(run.get("output") or "")
-        if not named:
+        resolved = renderlog.output_in_project(project, run)
+        if resolved is None or not resolved.is_file():
             return None
-        target = Path(named)
-        try:
-            resolved = target.resolve()
-            resolved.relative_to(project.root.resolve())
-        except (OSError, ValueError):
-            return None
-        if not resolved.is_file():
-            return None
-        return target, run
+        return Path(str(run["output"])), run
 
     def _report_error(self, exc: Exception, job_id: str) -> None:
         # Reached only for EXPECTED exceptions (CLAUDE.md's family) — anything
@@ -2774,13 +2766,9 @@ class Handler(BaseHTTPRequestHandler):
         named = str(run.get("output") or "")
         if not named:
             raise WebUIError("the last render recorded no output path")
-        target = Path(named)
-        root = project.root.resolve()
-        try:
-            resolved = target.resolve()
-            resolved.relative_to(root)
-        except (OSError, ValueError):
-            raise WebUIError(f"the last render's output is not inside this project: {named}") from None
+        resolved = renderlog.output_in_project(project, run)
+        if resolved is None:
+            raise WebUIError(f"the last render's output is not inside this project: {named}")
         if not resolved.is_file():
             raise WebUIError(f"the last render's output is no longer on disk: {named}")
         self._stream_file(resolved, head_only=head_only)

@@ -44,7 +44,7 @@
  * says so rather than drawing a blank chip.
  */
 
-import { $, el, secs, clampFloating, progressText } from "./dom.js";
+import { $, el, plural, secs, clampFloating, progressText } from "./dom.js";
 
 let ctx = null;
 
@@ -231,13 +231,13 @@ function renderCoverage(coverage) {
     staleOn ? `${coarse(coverage.stale_seconds)} stale crop` : "no stale crops",
     staleOn ? "warn" : "ok",
     staleOn
-      ? `${coverage.stale_seconds}s of framing held across a cut, over ${coverage.stale_stretches} stretch${coverage.stale_stretches === 1 ? "" : "es"}`
+      ? `${coverage.stale_seconds}s of framing held across a cut, over ${plural(coverage.stale_stretches, "stretch", "stretches")}`
       : null,
   );
   const steps = coverage.steps.length;
   setChip(
     $("frame-chip-steps"),
-    steps ? `${steps} unexplained jump${steps === 1 ? "" : "s"}` : "no jumps",
+    steps ? plural(steps, "unexplained jump") : "no jumps",
     steps > 0 ? "warn" : "ok",
   );
   // Informational only — never .warn and never .ok either. A ratio is not a
@@ -247,7 +247,7 @@ function renderCoverage(coverage) {
   // deliberately not read anywhere here.
   // Worded as what it counts: cuts where a new crop starts. "0/21 cuts
   // framed" read beside "framing ok" as a contradiction (2026-10-12).
-  setChip($("frame-chip-cuts"), `reframed at ${coverage.cuts_framed} of ${coverage.cuts} cut${coverage.cuts === 1 ? "" : "s"}`, null);
+  setChip($("frame-chip-cuts"), `reframed at ${coverage.cuts_framed} of ${plural(coverage.cuts, "cut")}`, null);
 }
 
 /* -- the sheet job --------------------------------------------------------- */
@@ -458,7 +458,7 @@ function renderShotList() {
     }
     btn.append(top);
     const span = `src ${coarse(first.src_start)}\u2013${coarse(last.src_start + last.duration)}`;
-    const count = `${entry.rows.length} window${entry.rows.length === 1 ? "" : "s"}`;
+    const count = plural(entry.rows.length, "window");
     btn.append(el("div", "frame-shot-meta", `${span} \u00b7 ${count}`));
     btn.addEventListener("click", () => {
       if (selectedShot === entry.shot) return;
@@ -500,7 +500,7 @@ function renderDetail() {
   span.title = `src ${secs(first.src_start)}\u2013${secs(last.src_start + last.duration)}`;
   head.append(span);
   head.append(
-    el("span", "hint", `${entry.rows.length} window${entry.rows.length === 1 ? "" : "s"}`),
+    el("span", "hint", plural(entry.rows.length, "window")),
   );
   box.append(head);
   const strip = buildFilmstrip(entry);

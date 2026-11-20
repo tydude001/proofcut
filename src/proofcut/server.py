@@ -1285,7 +1285,9 @@ _PARAM_DOCS: dict[str, dict[str, str]] = {
     },
     "tail": {
         "asset": (
-            "The end card or bumper, as `card:name` — never a clip id. `verify` diffs "
+            "The end card or bumper, as `card:name`, or `graphic:name` for an animated "
+            "graphic that plays its intro then holds (its page must be opaque) — never "
+            "a clip id. `verify` diffs "
             "the render's own transcription against the timeline's words, and a card "
             "behind silence adds none of its own, which a media clip would."
         ),

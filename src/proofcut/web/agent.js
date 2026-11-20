@@ -50,7 +50,7 @@
  * cannot style.
  */
 
-import { $, el, fmt, progressText } from "./dom.js";
+import { $, el, fmt, plural, progressText } from "./dom.js";
 
 let ctx = null;
 let busy = false;
@@ -592,17 +592,17 @@ function checkSummary(name, result) {
     case "verify": {
       const repeated = result.repeated?.length ?? 0;
       const dropped = result.dropped?.length ?? 0;
-      return `similarity ${result.similarity ?? "–"} · ${repeated} repeated run${repeated === 1 ? "" : "s"} · ${dropped} dropped run${dropped === 1 ? "" : "s"}`;
+      return `similarity ${result.similarity ?? "–"} · ${plural(repeated, "repeated run")} · ${plural(dropped, "dropped run")}`;
     }
     case "check_frames":
       return `expected ${result.expected_frames ?? "–"} frames · target ${result.target_frames ?? "–"} · delta ${result.delta ?? "–"}`;
     case "check_black": {
       const runs = result.runs?.length ?? 0;
-      return `${runs} black run${runs === 1 ? "" : "s"}${result.clean === false ? " — unexplained" : ""}`;
+      return `${plural(runs, "black run")}${result.clean === false ? " — unexplained" : ""}`;
     }
     case "spot_frames": {
       const frames = result.frames?.length ?? 0;
-      return `${frames} frame${frames === 1 ? "" : "s"} sampled${result.mapping_trusted === false ? " · mapping not trusted" : ""}`;
+      return `${plural(frames, "frame")} sampled${result.mapping_trusted === false ? " · mapping not trusted" : ""}`;
     }
     default: {
       const dump = JSON.stringify(result);
@@ -740,7 +740,7 @@ function describeOp(payload) {
       ? `Preview — nothing was written. Would remove ${removed}s.`
       : `Applied — removed ${removed}s. Undo rolls it back.`;
     const suspects = payload.suspect_boundaries?.length;
-    if (suspects) line += ` ${suspects} suspect boundary${suspects === 1 ? "" : "ies"} flagged.`;
+    if (suspects) line += ` ${plural(suspects, "suspect boundary", "suspect boundaries")} flagged.`;
     return line;
   }
   if (!payload) return "Applied.";

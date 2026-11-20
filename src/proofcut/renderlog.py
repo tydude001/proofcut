@@ -291,6 +291,29 @@ def last(project: Project) -> dict[str, Any] | None:
     return None
 
 
+def output_in_project(project: Project, run: dict[str, Any]) -> Path | None:
+    """`run`'s recorded output, resolved, when it names a path inside `project`.
+
+    `None` when it names none, or one outside the project (an agent's
+    `export --out ../cut.mp4`). This is the one confinement test for the
+    last render: `GET /api/output` streams only a path it passes, the web
+    pipeline reuses only one, and `finish_report` says beforehand whether a
+    render will play. A loopback server streaming whatever absolute path a
+    JSON line names is a file server, and one hand-edited line should not
+    make it one. Existence is the caller's to check: a render deleted after
+    its run still resolves.
+    """
+    named = str(run.get("output") or "")
+    if not named:
+        return None
+    try:
+        resolved = Path(named).resolve()
+        resolved.relative_to(project.root.resolve())
+    except (OSError, ValueError):
+        return None
+    return resolved
+
+
 def all_runs(project: Project) -> list[dict[str, Any]]:
     """Every parseable run, oldest first — a malformed line is skipped, not fatal."""
     path = project.renders_log_path
