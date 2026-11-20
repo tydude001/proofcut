@@ -64,6 +64,11 @@ constraint-dependencies = [
     "cryptography<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
 ]
 
+[tool.pytest.ini_options]
+# A bare `pytest` collects only the suite: anything else in the checkout (an
+# upstream clone's own tests, once under scratch/) is not proofcut's to run.
+testpaths = ["tests"]
+
 [build-system]
 requires = ["uv_build>=0.11.26,<0.13.0"]
 build-backend = "uv_build"

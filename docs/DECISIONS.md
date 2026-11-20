@@ -21,15 +21,22 @@ counts:
 - **The coupling is thin.** 89 public ops over 138 private helpers; the helper
   core reached by many ops is 13 helpers totalling 153 lines, and 98 of the 138
   are reached by three public ops or fewer. Module state is constants only.
+- **The tests are not untouched, and that half was missed.** 72 test sites patch an
+  `ops` attribute (`monkeypatch.setattr(ops, ...)`) and 57 private `ops._`
+  names are reached from tests (counted 2026-11-20). In a package, code in a
+  submodule looks up its own module's names, so a patch on `ops` stops reaching
+  it — and a patch that misses fails nothing: the test runs the real function
+  and can still pass. Each would have to be repointed at its submodule, a test
+  edit whose mistakes are silent.
 
-So the split is cheap and safe. **It is not done because nothing measured says
-the size costs anything**: no lint, test or trial finding names the file
-([TRIAL.md](TRIAL.md)'s queue does not mention it). Reopen on the file's own
-symptom — a session losing its place in it, an edit landing in the wrong op, a
-helper duplicated because the existing one wasn't found. **The last of those
-was seen 2026-11-20**, at 22,734 lines: the tail graphic's capture checks were a
-copy of `_graphic_pieces`' 3,300 lines away (fixed in the review's refactor,
-`_current_capture`). Then it is one commit:
+**Kept as one file (Tyler, 2026-11-20)**, at 22,734 lines, after its reopen
+trigger fired: the tail graphic's capture checks were a copy of
+`_graphic_pieces`' 3,300 lines away, found by review and fixed
+(`_current_capture`). One duplicate caught by review does not buy a split whose
+failures are silent. Reopen on the file's own symptom — a session losing its
+place in it, an edit landing in the wrong op, a helper duplicated because the
+existing one wasn't found — recurring past what review catches, and plan the
+72 patches as the split's main work, not an afterthought. The shape then:
 `ops/` package, `__init__.py` re-exporting the public names, `_common.py` for
 the shared core, one module per subject (render/export, edit-mutate, sheets,
 reframe, transcript, cards/pack, captions, project/asset).
