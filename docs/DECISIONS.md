@@ -26,7 +26,10 @@ So the split is cheap and safe. **It is not done because nothing measured says
 the size costs anything**: no lint, test or trial finding names the file
 ([TRIAL.md](TRIAL.md)'s queue does not mention it). Reopen on the file's own
 symptom — a session losing its place in it, an edit landing in the wrong op, a
-helper duplicated because the existing one wasn't found. Then it is one commit:
+helper duplicated because the existing one wasn't found. **The last of those
+was seen 2026-11-20**, at 22,734 lines: the tail graphic's capture checks were a
+copy of `_graphic_pieces`' 3,300 lines away (fixed in the review's refactor,
+`_current_capture`). Then it is one commit:
 `ops/` package, `__init__.py` re-exporting the public names, `_common.py` for
 the shared core, one module per subject (render/export, edit-mutate, sheets,
 reframe, transcript, cards/pack, captions, project/asset).

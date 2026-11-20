@@ -1687,7 +1687,7 @@ built; docs/plans/INSTALL.md):
   - **A tail can play one (`tail asset=graphic:NAME`), as picture entries,
     never overlay pieces**: the intro once, then the hold to the film's last
     frame. The outro never plays, since nothing follows the tail. The capture
-    must be opaque (`motion.is_opaque`, measured once into `capture.json`),
+    must be opaque (`motion.is_opaque`, measured by `capture` into `capture.json`),
     because a tail is the picture and a transparent pixel there shows black.
     A page with a `<video>` is refused as a tail: its still hold would need
     `play`'s per-length capture. docs/plans/ENDCARD.md, HISTORY.md § The end
