@@ -18993,7 +18993,7 @@ shown it.
 depend on timing, which is why three came in a row. A report for MLT is
 drafted with the stacks and a `uselocale` fix (MLT's own `mlt_properties.c` already
 switches locale per thread that way). The crash reports are in
-`~/proofcut-work/scratch/soak/`.
+`~/projects/mlt-lab/results/2026-09-30-mlt1326-soak/first-soak-2026-09-28/`.
 
 **The fix, on proofcut's side.** `picture.render` hands melt a copy of the
 document, placed beside the original so relative paths still resolve, with the
