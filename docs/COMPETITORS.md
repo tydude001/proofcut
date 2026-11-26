@@ -73,6 +73,7 @@ a dash means no source exists.
 | § cutible | montage engine, MCP + CLI | MIT | 1 | 2026-09-28 `054bdff` |
 | § OpenMontage | generator, Python registry | AGPL-3.0 | 61,742 | 2026-09-20 `08e2151` |
 | § FireRed-OpenStoryline | montage node pipeline over MCP | Apache-2.0 | 3,452 | 2026-09-28 `c9e9452` |
+| § Grip | macOS screen recorder + editor, own MCP + CLI | AGPL-3.0 | 71 (11-25) | 2026-11-25 `9cf45f4` |
 | Cardboard, Resolve 21.1 (§ Closed products) | NL editor; NLE with MCP | closed | – | – (site, press) |
 | § auto-editor | headless NLE, render backend | Unlicense | 5,385 | 2026-09-16 `1647365` |
 | clipwright (§ The OTIO + MCP niche) | OTIO-state MCP suite | MIT | 2 | 2026-09-28 `7665374` |
@@ -998,6 +999,74 @@ check.
 **Worth taking:** MCP sampling, a tool server using the host's model instead
 of holding a key, is the route docs/plans/LOCAL.md's director question has
 not considered.
+
+### Grip
+
+[bestboyhq/grip](https://github.com/bestboyhq/grip) · AGPL-3.0 with a CLA ·
+TypeScript (Electron, Svelte) · 71★
+
+**Source read** 2026-11-25 at `9cf45f4` (pushed the same day; created
+2026-10-04). Read: `electron/agents.ts` (966 lines), `src/shared/edits.ts`,
+the agent half of `src/engine/transcript/index.ts` and `zoomProblems` in
+`src/engine/zoom/index.ts`, plus the `agents`, `auto-zoom` and `transcript`
+skills in `.agents/skills/`. Not installed or run: it is macOS 15+ only.
+
+A screenshot tool, screen recorder and editor for the Mac behind one
+shortcut. The editing is for **screen recordings**: clicks and keystrokes are
+logged beside the video and become automatic zooms, a magnifying loupe and a
+redrawn cursor. Captions and transcript editing run on device (Parakeet v3,
+25 European languages). Share links with comment threads are a hosted
+service, `bestboy.dev`. Not a competitor for camera footage; the overlap is
+the agent surface.
+
+**The MCP server is hand-written, not an SDK**: JSON-RPC over a Unix socket
+in the user's temp folder (`agents.ts:915`), reached through a POSIX-sh
+`build/grip-mcp` that pipes stdio to it with `nc`. 13 tools
+(`agents.ts:185-321`), and `build/grip` is a CLI that pipes one call through
+the same launcher. One `edit_project` takes a list of typed edits that
+applies all at once or not at all, every time in it on the timeline as it
+stood before the list (`edits.ts:1-7`, `applyEdits` `:154`). An edit to a
+project open in the editor lands there as one undo step. Its stated goal is
+that a small model given the same brief as a large one exports a video with
+no problems (the `agents` skill's last line).
+
+**Every project reply lists its problems with the exact call that fixes
+each.** `problems()` (`agents.ts:597-605`) wraps `zoomProblems`
+(`zoom/index.ts:865`): a zoom that never plays, a camera move a cut jumps
+through, the video ending mid zoom-out, a zoom held too briefly to read
+(`:873-950`), and captions on with no transcript. Each carries a `fix` as
+`{tool, arguments}`. The text form prints `Fix: edit_project with edits
+[...]` per problem and, when there are several, all of them as one call
+(`agents.ts:671-673`). `export_project` still exports with problems left,
+and appends them (`:474-477`). The checks run on the export's own layout
+(`layoutOf`), so the problem list and the render agree.
+
+**`match_captions` corrects caption text from a script, not cuts.** It aligns
+the script's tokens to the shown caption words by letters and digits, using
+a full edit-distance table that costs the fewest caption changes, and caps
+it at 2,000 words a call (`transcript/index.ts:362-460`). It refuses a script
+matching under half the words (`:433`). It sets caption text only; the
+recording and its transcript are untouched, and cuts still go by time or by
+the Transcript tab's own filler and pause rules (`resolveWordEdits`, `:467`).
+
+**Lenient arguments**: nulls are dropped before validation
+(`agents.ts:806`), and an `edits` list sent as a JSON string is parsed
+(`parseEdits`, `edits.ts:60-66`). proofcut already has both. The MCP SDK's
+`pre_parse_json` (`mcp/server/mcpserver/utilities/func_metadata.py:228`)
+parses a JSON-string list or object, and every optional parameter is
+`X | None`. Replies are paged near 8k tokens (500 words, 100 items) with a
+`next` start (`agents.ts:54-56`), which docs/plans/MCP.md already did.
+
+**Worth taking:** the fix call. proofcut's checks (`verify`, `check_frames`,
+`check_black`) say what is wrong and leave the call to the agent; only
+`doctor` and a preset refusal carry a `fix`, and that is a human's
+instruction, not a tool call. A machine-runnable fix per finding would most
+help the small models docs/plans/OPENROUTER.md wants scored. It fits only
+where proofcut can name the fix without choosing for the agent: a
+mechanical repair, not an edit decision (HISTORY.md § Choosing the b-roll).
+**Not worth taking:** `match_captions` as a cutting aid. It only fixes
+caption spelling, which proofcut's `lexicon.json` `hear` table and
+`phrase=` addressing already cover by other routes.
 
 ### Closed products read from their sites
 
