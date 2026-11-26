@@ -74,6 +74,8 @@ a dash means no source exists.
 | § OpenMontage | generator, Python registry | AGPL-3.0 | 61,742 | 2026-09-20 `08e2151` |
 | § FireRed-OpenStoryline | montage node pipeline over MCP | Apache-2.0 | 3,452 | 2026-09-28 `c9e9452` |
 | § Grip | macOS screen recorder + editor, own MCP + CLI | AGPL-3.0 | 71 (11-25) | 2026-11-25 `9cf45f4` |
+| § WeftCut | Electron NLE, MCP while the app runs | MIT | 402 (11-26) | 2026-11-26 `3b03e56` |
+| § cutweave | Rust editor, pre-alpha, headless MCP + CLI | GPL-3.0 | 9 (11-26) | 2026-11-26 `d34c91d` |
 | Cardboard, Resolve 21.1 (§ Closed products) | NL editor; NLE with MCP | closed | – | – (site, press) |
 | § auto-editor | headless NLE, render backend | Unlicense | 5,385 | 2026-09-16 `1647365` |
 | clipwright (§ The OTIO + MCP niche) | OTIO-state MCP suite | MIT | 2 | 2026-09-28 `7665374` |
@@ -1067,6 +1069,130 @@ mechanical repair, not an edit decision (HISTORY.md § Choosing the b-roll).
 **Not worth taking:** `match_captions` as a cutting aid. It only fixes
 caption spelling, which proofcut's `lexicon.json` `hear` table and
 `phrase=` addressing already cover by other routes.
+
+### WeftCut
+
+[WeftCut/WeftCut](https://github.com/WeftCut/WeftCut) · MIT · TypeScript
+(Electron, React) with a Rust core and a Go stdio shim · 402★ (11-26, 189 on
+10-11)
+
+**Source read** 2026-11-26 at `3b03e56` (version 0.9.0), by a Sonnet reader
+whose citations were re-opened here; it replaces the one-row note in § The
+sweep after FilmCraft. Read: `docs/mcp.md`, `docs/data-model.md`,
+`docs/export.md`, `docs/conformance.md`, ADRs 0037, 0038 and 0046,
+`apps/desktop/src/main/state/mcp-commands.ts` (the tool table),
+`src/main/mcp/server.ts`, `src/main/lint/{checkComposition,audits}.ts`,
+`src/shared/craft.ts`, `cli/main.go`, the bench README and everything under
+`skills/`. Not installed or run.
+
+A desktop NLE whose pitch is that **an agent drives the editor a person is
+watching** (`README.md:8`). It is a full manual editor with the agent
+surface on top, a one-person project with 89 ADRs and 934 test files. The
+earlier row's claims all hold, with one correction: `remove_pauses` cuts
+from waveform peaks, not the transcript (`mcp-commands.ts:2512`).
+
+**The agent surface is MCP only, and it needs the app running.** The server
+is Streamable HTTP on loopback inside Electron's main process
+(`docs/mcp.md:13`). `weftcut mcp` is a Go binary that relays stdio to it
+(`:23`); with the app closed it lists two synthetic tools, one of which
+launches the app (`:50`). `cli/main.go` has no command per tool
+(`:32-43`), and the README's "no separate headless copy" (`:57`) means
+there is none. About 99 tools, summed from four tables by grep; the docs
+state no total. One actor serializes every mutation and each call "commits
+or rejects whole" (`docs/mcp.md:351`). Undo is in-memory snapshots capped
+at 200 (`data-model.md:571-574`). Times are integer microseconds, and the
+commit validator refuses an off-grid edge (ADR 0037). No OTIO: ADR 0038:22
+names it among formats WeftCut "does not write".
+
+**Transcription feeds captions, not cuts.** `transcribe_clip` runs
+whisper.cpp or FunASR locally, or a cloud endpoint, and marks each word's
+timing `exact` or `interpolated_from_cue` (`docs/mcp.md:1448-1454`). Cuts
+go by layer id and microsecond range; a grep of the tool definitions for
+word-index or filler verbs finds none.
+
+**Nothing checks the render; the project is linted before it.**
+`check_composition` reads project data only, "no pixels, no audio
+analysis" (`checkComposition.ts:3-4`), against 14 craft rules
+(`craft.ts:33-75`: text off screen, title holds, captions covered, a clip
+under 1 s and so on). Each finding has a severity and a prose `fix`. The
+host remembers the last audit per composition and whether the content has
+changed since (`audits.ts:1-8`). `start_export` audits a stale project and
+reports, never blocks (`server.ts:502-508`). `end_agent_session` runs the
+audit itself and keeps the session open on a hard or warning finding,
+because "agents that never ran the audit ignored a reported `never`" on
+their bench (`server.ts:528-533`). The file an export writes is never
+probed: ffmpeg's black and freeze detectors "are not used" (`spans.rs:9`),
+and the SSIM and drift analyzers in `docs/conformance.md` run in CI on
+fixtures only.
+
+**Worth taking:** the host running the check at the hand-off, not the agent.
+`agent_trial.py` already runs `verify` on the final render itself (`:852`)
+and records whether the agent called it (`tools_used`, `:641`), and the web
+UI's Render click runs the checks on its own render (`webui._run_checks`).
+What neither covers is an agent panel turn that renders and reports
+success: the turn ends on the agent's word. Running the checks, or saying
+the render was never checked, when that turn ends is the same move. Second, their "no silent no-op" rule (`docs/mcp.md:402`),
+enforced by a test that sends each optional argument alone and fails unless
+state changes or the call refuses: a gate that would catch a tool quietly
+ignoring a parameter, which proofcut's `_tool()` registration checks do not
+cover. The prose `fix` per finding is a second product doing what § Grip
+does, which strengthens the wiki row on fix calls.
+**Not worth taking:** the GUI-first surface, the in-memory undo, the
+craft rules as a model for proofcut's checks (they lint project data, the
+opposite end from checking the output), and Tacks and the timeline diff,
+which serve a person watching a window. Motifs, overlays written as web
+pages rendered as a function of time, match proofcut's animated graphics.
+
+### cutweave
+
+[cutweave/cutweave](https://github.com/cutweave/cutweave) · GPL-3.0-or-later
+(a plugin exception is drafted, not in effect) · Rust, Electron shell · 9★
+
+**Source read** 2026-11-26 at `d34c91d` (created 2026-11-22), by a Sonnet
+reader whose citations were re-opened here. Read:
+`LICENSE-PLUGIN-EXCEPTION.md`, `schema/*.json`,
+`crates/cutweave-api/src/mcp/{mod,catalog,frame,stdio}.rs`,
+`crates/cutweave-cli/src/{cli,mcp}.rs`, the edit, history, export and
+atomic-save modules, `cutweave-render`'s `inspect.rs` and `metrics.rs`, and
+`docs/04-roadmap.md`. Not installed or run.
+
+A CapCut-class editor for creators and their agents, four days old and
+pre-alpha: "Nothing is ready to use yet" (`README.md:8`). `crates/` is
+225,310 lines of Rust, nearly all engine core. The AI gateway,
+compositions, plugins, text and captions, and OTIO interchange are 20-line
+stub crates. Transcripts are roadmap Phase 3, cloud speech-to-text with
+whisper.cpp as a fallback plugin (`04-roadmap.md:157-159`); a grep of the
+crates for `transcri|whisper` finds only a reserved command namespace.
+
+**The agent surface is real, headless and budgeted.** MCP on the `rmcp` SDK
+over stdio or loopback HTTP, generated from one command registry (120
+commands, 13 queries, 19 core tools in `schema/`). Four generic tools
+(search, describe, execute, query) reach every command
+(`catalog.rs:42`), and the listing is held to a stated ceiling: at most 36
+tools and 8k tokens for the standard profile, 12 and 3k for minimal, with
+output schemas left out because they were about 45% of the bytes
+(`catalog.rs:27-31`). The CLI mirrors it and runs without the GUI
+(`cli.rs:12-14`), but export from the CLI is "not available yet"
+(`cli.rs:45`). `cutweave_execute` takes `dry_run` and `expected_rev`
+(`catalog.rs:851-852`). Undo is per actor: an inverse patch applies only if
+every preimage still holds and no invariant breaks (`history.rs:21-34`).
+
+**The render is GPU-encoded and not checked.** The exporter reports
+"exported N frames" from the encoder's own counter (`pipeline.rs:262-267`)
+and never compares the file with the plan's frame count. What an agent gets
+instead is `render_frame`: a picture plus which items drew and why each
+hidden one did not (`unavailable`, `transparent`, `offscreen`, `occluded`;
+`inspect.rs:1-12`).
+
+**Worth taking:** a total budget on the tool listing as a tested ceiling.
+proofcut caps each description's bytes (`server.DESCRIPTION_CAP`, asserted
+in `test_server_stdio.py`) and defers loading (docs/plans/MCP.md), but
+nothing bounds the whole list. Small, since deferred loading already pays
+most of the cost. **Not worth taking:** `expected_rev`, because
+PROJECT-LOCK.md already found a revision counter "the same ground
+`_manifest_stamp` already covers", and the lock allows one writer. Per-actor
+undo, for the same reason. Flicks, because MLT counts frames and proofcut's
+frame counts come from `autoeditor.frame_layout`.
 
 ### Closed products read from their sites
 
